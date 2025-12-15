@@ -1,0 +1,27 @@
+version: 0.1
+mode: "READ_ONLY"   # 只读监控：不交易
+poll_seconds: 60
+
+
+watchlist:
+  stocks: ["AAPL", "MSFT", "NVDA"]
+  etfs: ["SPY"]
+
+alerts:
+  minute_move_pct: 1.0
+  day_move_pct: 3.0           # 当日波动阈值（百分比）
+  data_stale_seconds: 30      # 数据断流阈值（秒）
+flat_repeats: 5        # 连续5次价格不变就报警（先小一点）
+stale_seconds: 180     # 3分钟都没新增数据就报警
+
+
+risk_guards:
+  require_human_confirm_for_money_actions: true
+  require_human_takeover_for_login_captcha: true
+  kill_switch_enabled: true
+
+logging:
+  save_raw_ticks: false
+  save_1min_bars: true
+  log_dir: "./Logs"
+  data_dir: "./Data"
