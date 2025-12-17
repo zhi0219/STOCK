@@ -101,8 +101,13 @@ def main() -> None:
     alerts_cfg = cfg.get("alerts", {}) or {}
     poll_seconds = int(cfg.get("poll_seconds", 60))
     minute_thr = float(alerts_cfg.get("minute_move_pct", 1.0))
-    flat_repeats = int(alerts_cfg.get("flat_repeats", 10))
-    stale_seconds = int(alerts_cfg.get("stale_seconds", max(3 * poll_seconds, 180)))
+    flat_repeats = int(alerts_cfg.get("flat_repeats", cfg.get("flat_repeats", 10)))
+    stale_seconds = int(
+        alerts_cfg.get(
+            "stale_seconds",
+            cfg.get("stale_seconds", max(3 * poll_seconds, 180)),
+        )
+    )
 
     watchlist = cfg.get("watchlist")
     if isinstance(watchlist, str):
