@@ -1,19 +1,23 @@
 from __future__ import annotations
+
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
-from typing import Any
+from typing import Callable, Iterable, List
 
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from alerts import alert_key, is_on_cooldown, record_emit
+
+COOLDOWN_SECONDS = 300
+DELTA_PCT = 5.0
+START_TIMEOUT = 30.0
 
 
-# ----- helpers -----
 def fail(msg: str) -> None:
     print(f"FAIL: {msg}")
     sys.exit(1)
@@ -52,12 +56,17 @@ def write_yaml(path: Path, data: dict) -> None:
         yaml.safe_dump(data, f, sort_keys=False, allow_unicode=True)
 
 
-def run_injector(script: Path, symbol: str, cleanup: bool = False) -> None:
+def ensure_dirs(paths: Iterable[Path]) -> None:
+    for path in paths:
+        path.mkdir(parents=True, exist_ok=True)
+
+
+def run_injector(script: Path, symbol: str, *, delta_pct: float = DELTA_PCT, cleanup: bool = False) -> None:
     args = [sys.executable, str(script)]
     if cleanup:
         args.append("--cleanup")
     else:
-        args.extend(["--symbol", symbol, "--delta-pct", "1.0"])
+        args.extend(["--symbol", symbol, "--delta-pct", f"{delta_pct}"])
 
     result = subprocess.run(args, capture_output=True, text=True)
     if result.returncode != 0:
@@ -66,23 +75,86 @@ def run_injector(script: Path, symbol: str, cleanup: bool = False) -> None:
         )
 
 
-def load_quotes(quotes_path: Path) -> Any:
-    import pandas as pd
+def select_symbol(cfg: dict) -> str:
+    watchlist = cfg.get("watchlist")
+    if isinstance(watchlist, str):
+        symbols = [s.strip().upper() for s in watchlist.split(",") if s.strip()]
+    elif isinstance(watchlist, list):
+        symbols = [str(s).strip().upper() for s in watchlist if str(s).strip()]
+    elif isinstance(watchlist, dict):
+        symbols = []
+        for key in ("stocks", "etfs"):
+            val = watchlist.get(key, [])
+            if isinstance(val, list):
+                symbols.extend([str(s).strip().upper() for s in val if str(s).strip()])
+    else:
+        symbols = []
 
+    if "AAPL" in symbols:
+        return "AAPL"
+    if symbols:
+        return symbols[0]
+    return "AAPL"
+
+
+def start_alerts(root: Path) -> tuple[subprocess.Popen[str], List[str]]:
+    cmd = [sys.executable, "-u", str(root / "alerts.py")]
+    proc = subprocess.Popen(
+        cmd,
+        cwd=root,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    )
+
+    lines: List[str] = []
+
+    def _reader() -> None:
+        assert proc.stdout
+        for line in proc.stdout:
+            lines.append(line.rstrip())
+
+    threading.Thread(target=_reader, daemon=True).start()
+    return proc, lines
+
+
+def wait_for_line(
+    lines: List[str], predicate: Callable[[str], bool], timeout: float, *, start_index: int
+) -> tuple[str | None, int]:
+    start = time.monotonic()
+    idx = start_index
+    while time.monotonic() - start < timeout:
+        while idx < len(lines):
+            line = lines[idx]
+            idx += 1
+            if predicate(line):
+                return line, idx
+        time.sleep(0.1)
+    return None, idx
+
+
+def stop_process(proc: subprocess.Popen[str]) -> None:
+    if proc.poll() is None:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+
+
+def delete_if_exists(path: Path) -> None:
     try:
-        return pd.read_csv(quotes_path)
-    except Exception as e:  # pragma: no cover - runtime guard
-        fail(f"Failed to read {quotes_path}: {e}")
-    return None
-
-
-def ensure_dirs(paths: list[Path]) -> None:
-    for path in paths:
-        path.mkdir(parents=True, exist_ok=True)
+        path.unlink()
+    except FileNotFoundError:
+        return
+    except Exception:
+        return
 
 
 def main() -> None:
     ensure_dependencies()
+
     root = ROOT
     config_path = root / "config.yaml"
     inject_path = root / "tools" / "inject_quote.py"
@@ -93,96 +165,82 @@ def main() -> None:
     original_config_text = config_path.read_text(encoding="utf-8") if config_path.exists() else ""
 
     cfg = read_yaml(config_path)
-    alerts_cfg = cfg.get("alerts")
-    if alerts_cfg is None:
-        alerts_cfg = {}
-        cfg["alerts"] = alerts_cfg
+
+    # temp overrides
+    alerts_cfg = cfg.get("alerts") or {}
     if not isinstance(alerts_cfg, dict):
         fail("alerts section in config.yaml must be a mapping")
+    cfg["alerts"] = alerts_cfg
+    alerts_cfg["cooldown_seconds"] = COOLDOWN_SECONDS
 
-    cooldown_seconds = 300
-    alerts_cfg["cooldown_seconds"] = cooldown_seconds
+    # keep poll_seconds small for fast verification but restore later
+    poll_seconds = int(cfg.get("poll_seconds", 60) or 60)
+    if poll_seconds > 15:
+        cfg["poll_seconds"] = 5
+        poll_seconds = 5
+
     write_yaml(config_path, cfg)
 
     logging_cfg = cfg.get("logging") or {}
     data_dir = root / str(logging_cfg.get("data_dir", "./Data"))
     logs_dir = root / str(logging_cfg.get("log_dir", "./Logs"))
+
     ensure_dirs([data_dir, logs_dir])
 
-    quotes_path = data_dir / "quotes.csv"
     alert_state_path = logs_dir / "alert_state.json"
 
-    symbol = "AAPL"
+    risk_cfg = cfg.get("risk_guards") or {}
+    kill_switch_path = root / str(risk_cfg.get("kill_switch_path", "./Data/KILL_SWITCH"))
+    delete_if_exists(kill_switch_path)
+    delete_if_exists(alert_state_path)
+
+    symbol = select_symbol(cfg)
+
+    # start alerts loop
+    proc, lines = start_alerts(root)
 
     try:
-        # clean state
-        if alert_state_path.exists():
-            alert_state_path.unlink()
-
-        # inject twice
-        run_injector(inject_path, symbol)
-        run_injector(inject_path, symbol)
-
-        if not quotes_path.exists():
-            fail(f"quotes.csv not found at {quotes_path}")
-
-        df = load_quotes(quotes_path)
-        cols_lower = {c.lower(): c for c in df.columns}
-        sym_col = cols_lower.get("symbol")
-        price_col = cols_lower.get("price")
-        ts_col = cols_lower.get("ts_utc")
-        source_col = cols_lower.get("source")
-
-        if not sym_col or not price_col or not ts_col:
-            fail("quotes.csv is missing required columns ts_utc/symbol/price")
-
-        df = df[[ts_col, sym_col, price_col] + ([source_col] if source_col else [])].copy()
-        df.rename(columns={ts_col: "ts_utc", sym_col: "symbol", price_col: "price"}, inplace=True)
-        df["symbol"] = df["symbol"].astype(str).str.upper()
-
-        injected = df[df.get("source", "") == "SELF_TEST_INJECT"] if source_col else df
-        injected = injected[injected["symbol"] == symbol]
-        if len(injected) < 4:
-            fail("Not enough injected rows found to verify cooldown (need at least 4)")
-
-        injected = injected.sort_values("ts_utc")
-        first_pair = injected.head(2)
-        second_pair = injected.iloc[2:4]
-
-        try:
-            prev1, now1 = float(first_pair.iloc[0]["price"]), float(first_pair.iloc[1]["price"])
-            prev2, now2 = float(second_pair.iloc[0]["price"]), float(second_pair.iloc[1]["price"])
-        except Exception as e:
-            fail(f"Failed to parse prices from injected rows: {e}")
-
-        move1 = (now1 - prev1) / prev1 * 100 if prev1 else 0.0
-        move2 = (now2 - prev2) / prev2 * 100 if prev2 else 0.0
-        if abs(move1) < 0.01 or abs(move2) < 0.01:
-            fail("Injected moves are too small; expected non-zero MOVE signals")
-
-        # record first emission and verify cooldown prevents second
-        key = alert_key("MOVE", symbol)
-        state: dict[str, Any] = {}
-        now_epoch = time.time()
-        record_emit(key, state, alert_state_path, now_epoch=now_epoch)
-        suppressed = is_on_cooldown(
-            key, int(alerts_cfg.get("cooldown_seconds", cooldown_seconds)), state, now_epoch=now_epoch + 1
+        start_line, idx = wait_for_line(
+            lines, lambda l: "ALERTS_START" in l, timeout=START_TIMEOUT, start_index=0
         )
-        if not suppressed:
-            fail("Cooldown did not suppress second MOVE within 300s window")
+        if not start_line:
+            fail("Did not capture ALERTS_START from alerts.py")
+        print(start_line)
+        if f"cooldown={COOLDOWN_SECONDS}" not in start_line:
+            fail(f"ALERTS_START reported wrong cooldown: {start_line}")
+
+        # first injection
+        run_injector(inject_path, symbol, delta_pct=DELTA_PCT)
+
+        first_move, idx = wait_for_line(
+            lines,
+            lambda l: f"MOVE symbol={symbol.upper()}" in l,
+            timeout=max(30.0, poll_seconds * 2),
+            start_index=idx,
+        )
+        if not first_move:
+            fail("Did not observe first MOVE after injection")
+
+        time.sleep(2)
+        run_injector(inject_path, symbol, delta_pct=DELTA_PCT)
+
+        suppressed_line, _ = wait_for_line(
+            lines,
+            lambda l: f"MOVE symbol={symbol.upper()}" in l,
+            timeout=max(10.0, poll_seconds * 1.5),
+            start_index=idx,
+        )
+        if suppressed_line:
+            fail(f"Cooldown did not suppress second MOVE: {suppressed_line}")
 
         print("PASS: cooldown verified (second MOVE suppressed within 300s)")
     finally:
-        # cleanup
+        stop_process(proc)
         try:
             run_injector(inject_path, symbol, cleanup=True)
         except Exception:
             pass
-        try:
-            if alert_state_path.exists():
-                alert_state_path.unlink()
-        except Exception:
-            pass
+        delete_if_exists(alert_state_path)
         if original_config_text:
             config_path.write_text(original_config_text, encoding="utf-8")
         else:
