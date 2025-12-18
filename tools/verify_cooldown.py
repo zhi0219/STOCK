@@ -100,7 +100,8 @@ def main() -> None:
     if not isinstance(alerts_cfg, dict):
         fail("alerts section in config.yaml must be a mapping")
 
-    alerts_cfg["cooldown_seconds"] = 300
+    cooldown_seconds = 300
+    alerts_cfg["cooldown_seconds"] = cooldown_seconds
     write_yaml(config_path, cfg)
 
     logging_cfg = cfg.get("logging") or {}
@@ -160,13 +161,13 @@ def main() -> None:
             fail("Injected moves are too small; expected non-zero MOVE signals")
 
         # record first emission and verify cooldown prevents second
-        from alerts import alert_key, is_on_cooldown, record_emit
-
         key = alert_key("MOVE", symbol)
         state: dict[str, Any] = {}
         now_epoch = time.time()
         record_emit(key, state, alert_state_path, now_epoch=now_epoch)
-        suppressed = is_on_cooldown(key, int(alerts_cfg.get("cooldown_seconds", 0)), state, now_epoch=now_epoch + 1)
+        suppressed = is_on_cooldown(
+            key, int(alerts_cfg.get("cooldown_seconds", cooldown_seconds)), state, now_epoch=now_epoch + 1
+        )
         if not suppressed:
             fail("Cooldown did not suppress second MOVE within 300s window")
 
