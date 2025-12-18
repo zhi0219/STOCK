@@ -149,7 +149,13 @@ def main() -> None:
             cfg.get("stale_seconds", max(3 * poll_seconds, 180)),
         )
     )
-    cooldown_seconds = int(alerts_cfg.get("cooldown_seconds", poll_seconds))
+    # cooldown prefers alerts.cooldown_seconds, falling back to poll_seconds for
+    # backward compatibility.
+    cooldown_seconds = (
+        int(alerts_cfg["cooldown_seconds"])
+        if "cooldown_seconds" in alerts_cfg
+        else poll_seconds
+    )
     debug_enabled = bool(alerts_cfg.get("debug", False))
 
     risk_cfg = cfg.get("risk_guards", {}) or {}
