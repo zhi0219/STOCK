@@ -24,17 +24,20 @@
    python -m pip install -r requirements.txt
    ```
 
-## Acceptance commands (PowerShell)
-Run from the repository root; no `PYTHONPATH` configuration is needed.
+## Cooldown acceptance (zero-understanding version)
+Run directly from PowerShell with the recommended venv interpreter; no YAML edits are required.
 
 ```powershell
-cd %USERPROFILE%\Desktop\STOCK
-.\.venv\Scripts\python.exe -m py_compile tools\verify_cooldown.py
-.\.venv\Scripts\python.exe tools\verify_smoke.py
-.\.venv\Scripts\python.exe tools\verify_cooldown.py
+cd $HOME\Desktop\STOCK
+\.\.venv\Scripts\python.exe .\tools\verify_cooldown.py
 ```
 
-Expected: `verify_smoke` prints `PASS` and `verify_cooldown` prints `PASS` without import errors.
+Expected output (example):
+
+```
+[2024-01-01T00:00:00+00:00 | 2024-01-01T08:00:00+08:00 CST] ALERTS_START thr=1.0% poll=5s flat=5 stale=180s cooldown=300s debug=False quotes=...\Data\quotes.csv
+PASS: cooldown verified (second MOVE suppressed within 300s)
+```
 
 ## Deterministic MOVE self-test
 Run a synthetic injection so `alerts.py` emits a MOVE alert without waiting for real market moves.
