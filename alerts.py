@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -30,10 +31,49 @@ def load_config() -> Dict[str, Any]:
         return yaml.safe_load(f) or {}
 
 
+def load_alert_state(path: Path) -> Dict[str, Any]:
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {}
+    except Exception:
+        return {}
+
+
+def save_alert_state(path: Path, state: Dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with tmp.open("w", encoding="utf-8") as f:
+        json.dump(state, f, indent=2)
+    tmp.replace(path)
+
+
 def append_line(path: Path, line: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as f:
         f.write(line + "\n")
+
+
+def alert_key(alert_type: str, symbol: str) -> str:
+    sym = symbol.strip().upper() if symbol else "__GLOBAL__"
+    if sym == "-":
+        sym = "__GLOBAL__"
+    return f"{alert_type}|{sym}"
+
+
+def is_on_cooldown(
+    key: str, cooldown_seconds: int, state: Dict[str, Any], *, now_epoch: Optional[float] = None
+) -> bool:
+    now_epoch = now_epoch if now_epoch is not None else time.time()
+    last = state.get(key, {}).get("last_emit_epoch")
+    return bool(last) and (now_epoch - float(last) < cooldown_seconds)
+
+
+def record_emit(key: str, state: Dict[str, Any], path: Path, *, now_epoch: Optional[float] = None) -> None:
+    now_epoch = now_epoch if now_epoch is not None else time.time()
+    state[key] = {"last_emit_epoch": float(now_epoch)}
+    save_alert_state(path, state)
 
 
 def append_learning_card(
@@ -96,6 +136,7 @@ def main() -> None:
     quotes_path = data_dir / "quotes.csv"
     alerts_log = logs_dir / "alerts.log"
     learning_cards_path = data_dir / "learning_cards.md"
+    alert_state_path = logs_dir / "alert_state.json"
 
     # config values
     alerts_cfg = cfg.get("alerts", {}) or {}
@@ -108,6 +149,13 @@ def main() -> None:
             cfg.get("stale_seconds", max(3 * poll_seconds, 180)),
         )
     )
+    cooldown_seconds = int(alerts_cfg.get("cooldown_seconds", poll_seconds))
+    debug_enabled = bool(alerts_cfg.get("debug", False))
+
+    risk_cfg = cfg.get("risk_guards", {}) or {}
+    kill_switch_path = ROOT / str(risk_cfg.get("kill_switch_path", "./Data/KILL_SWITCH"))
+
+    alert_state = load_alert_state(alert_state_path)
 
     watchlist = cfg.get("watchlist")
     if isinstance(watchlist, str):
@@ -122,23 +170,30 @@ def main() -> None:
     start_line = (
         f"[{utc_s} | {local_s} {tzname}] ALERTS_START "
         f"thr={minute_thr}% poll={poll_seconds}s flat={flat_repeats} stale={stale_seconds}s "
-        f"quotes={quotes_path}"
+        f"cooldown={cooldown_seconds}s debug={debug_enabled} quotes={quotes_path}"
     )
     print(start_line)
     append_line(alerts_log, start_line)
 
     # file health state
     last_file_mtime: float = 0.0
-    stale_reported = False
-    missing_reported = False
 
     # per-symbol state
     flat_state: Dict[str, FlatState] = {}
 
     while True:
+        if kill_switch_path.exists():
+            utc_s, local_s, tzname = now_stamps()
+            msg = f"[{utc_s} | {local_s} {tzname}] KILL_SWITCH detected at {kill_switch_path}, exiting"
+            print(msg)
+            append_line(alerts_log, msg)
+            return
+
         # --- DATA_MISSING ---
         if not quotes_path.exists():
-            if not missing_reported:
+            now_epoch = time.time()
+            key = alert_key("DATA_MISSING", "__GLOBAL__")
+            if not is_on_cooldown(key, cooldown_seconds, alert_state, now_epoch=now_epoch):
                 utc_s, local_s, tzname = now_stamps()
                 msg = f"[{utc_s} | {local_s} {tzname}] ⚠️ DATA_MISSING symbol=- quotes.csv not found: {quotes_path}"
                 print(msg)
@@ -152,12 +207,9 @@ def main() -> None:
                     checks="- `dir .\\Data` 看看有没有 quotes.csv\n- 重新运行：`python .\\quotes.py`",
                     concepts="- DATA_MISSING：数据文件缺失（不是行情波动）。",
                 )
-                missing_reported = True
-
+                record_emit(key, alert_state, alert_state_path, now_epoch=now_epoch)
             time.sleep(poll_seconds)
             continue
-
-        missing_reported = False
 
         # --- DATA_STALE (mtime based) ---
         try:
@@ -168,42 +220,57 @@ def main() -> None:
 
         if last_file_mtime == 0.0:
             last_file_mtime = mtime
-            stale_reported = False
         else:
             if mtime != last_file_mtime:
                 last_file_mtime = mtime
-                stale_reported = False
             else:
                 # unchanged mtime
-                if (not stale_reported) and ((time.time() - mtime) >= stale_seconds):
-                    utc_s, local_s, tzname = now_stamps()
-                    msg = (
-                        f"[{utc_s} | {local_s} {tzname}] ⚠️ DATA_STALE symbol=- "
-                        f"quotes.csv mtime unchanged >= {stale_seconds}s"
-                    )
-                    print(msg)
-                    append_line(alerts_log, msg)
-                    append_learning_card(
-                        learning_cards_path,
-                        alert_type="DATA_STALE",
-                        symbol="-",
-                        facts=f"- quotes.csv 超过 {stale_seconds}s 没有更新（mtime 未变化）。",
-                        hypotheses="- quotes.py 停了 / 网络断了 / 数据源卡住 / 进程挂起",
-                        checks="- quotes.py 窗口是否还在输出？\n- `dir .\\Data\\quotes.csv` 看修改时间\n- 先重启 quotes：Ctrl+C → `python .\\quotes.py`",
-                        concepts="- DATA_STALE：数据流健康检查，和市场是否波动是两回事。",
-                    )
-                    stale_reported = True
+                age = time.time() - mtime
+                if age >= stale_seconds:
+                    now_epoch = time.time()
+                    key = alert_key("DATA_STALE", "__GLOBAL__")
+                    if not is_on_cooldown(key, cooldown_seconds, alert_state, now_epoch=now_epoch):
+                        utc_s, local_s, tzname = now_stamps()
+                        msg = (
+                            f"[{utc_s} | {local_s} {tzname}] ⚠️ DATA_STALE symbol=- "
+                            f"quotes.csv mtime unchanged >= {stale_seconds}s"
+                        )
+                        print(msg)
+                        append_line(alerts_log, msg)
+                        append_learning_card(
+                            learning_cards_path,
+                            alert_type="DATA_STALE",
+                            symbol="-",
+                            facts=f"- quotes.csv 超过 {stale_seconds}s 没有更新（mtime 未变化）。",
+                            hypotheses="- quotes.py 停了 / 网络断了 / 数据源卡住 / 进程挂起",
+                            checks="- quotes.py 窗口是否还在输出？\n- `dir .\\Data\\quotes.csv` 看修改时间\n- 先重启 quotes：Ctrl+C → `python .\\quotes.py`",
+                            concepts="- DATA_STALE：数据流健康检查，和市场是否波动是两回事。",
+                        )
+                        record_emit(key, alert_state, alert_state_path, now_epoch=now_epoch)
 
         # --- read csv (with retry) ---
         try:
             df = safe_read_csv(quotes_path)
         except Exception as e:
+            now_epoch = time.time()
+            key = alert_key("READ_FAIL", "__GLOBAL__")
+            if is_on_cooldown(key, cooldown_seconds, alert_state, now_epoch=now_epoch):
+                time.sleep(poll_seconds)
+                continue
             utc_s, local_s, tzname = now_stamps()
             msg = f"[{utc_s} | {local_s} {tzname}] ⚠️ READ_FAIL symbol=- {type(e).__name__}: {e}"
             print(msg)
             append_line(alerts_log, msg)
+            record_emit(key, alert_state, alert_state_path, now_epoch=now_epoch)
             time.sleep(poll_seconds)
             continue
+
+        if debug_enabled:
+            age = time.time() - mtime
+            utc_s, _, _ = now_stamps()
+            print(
+                f"[{utc_s}] DEBUG FILE age={age:.1f}s stale_thr={stale_seconds}s rows={len(df)}"
+            )
 
         if df.empty:
             time.sleep(poll_seconds)
@@ -244,7 +311,6 @@ def main() -> None:
                 continue
 
             last2 = g.tail(2)
-            prev_ts = last2.iloc[0]["ts_utc"]
             now_ts = last2.iloc[1]["ts_utc"]
             prev = float(last2.iloc[0]["price"])
             now = float(last2.iloc[1]["price"])
@@ -270,43 +336,65 @@ def main() -> None:
             flat_state[sym] = st
 
             if st.run_len == flat_repeats:
-                utc_s, local_s, tzname = now_stamps()
-                msg = (
-                    f"[{utc_s} | {local_s} {tzname}] ⚠️ DATA_FLAT symbol={sym} "
-                    f"unchanged run_len={st.run_len} price={now:.6f} last_ts={now_ts.isoformat(timespec='seconds')}"
-                )
-                print(msg)
-                append_line(alerts_log, msg)
-                append_learning_card(
-                    learning_cards_path,
-                    alert_type="DATA_FLAT",
-                    symbol=sym,
-                    facts=f"- {sym} 价格连续 {flat_repeats} 次更新未变化\n- price={now:.6f}\n- last_ts={now_ts.isoformat(timespec='seconds')}",
-                    hypotheses="- 周末/盘后正常冻结\n- 数据源只给昨收/最后成交\n- 你拿到的是缓存价",
-                    checks="- 看 SPY 是否也冻结\n- 检查是否周末/盘后\n- 后续可在 quotes.py 增加 source 字段区分数据来源",
-                    concepts="- DATA_FLAT：文件在更新，但数值不变（可能市场没动，也可能数据源不刷新）。",
-                )
-
-            # MOVE
-            if prev > 0:
-                move = (now - prev) / prev * 100.0
-                if abs(move) >= minute_thr:
+                now_epoch = time.time()
+                key = alert_key("DATA_FLAT", sym)
+                if not is_on_cooldown(key, cooldown_seconds, alert_state, now_epoch=now_epoch):
                     utc_s, local_s, tzname = now_stamps()
                     msg = (
-                        f"[{utc_s} | {local_s} {tzname}] 🚨 MOVE symbol={sym} "
-                        f"move={move:+.2f}% prev={prev:.6f} now={now:.6f} now_ts={now_ts.isoformat(timespec='seconds')}"
+                        f"[{utc_s} | {local_s} {tzname}] ⚠️ DATA_FLAT symbol={sym} "
+                        f"unchanged run_len={st.run_len} price={now:.6f} last_ts={now_ts.isoformat(timespec='seconds')}"
                     )
                     print(msg)
                     append_line(alerts_log, msg)
                     append_learning_card(
                         learning_cards_path,
-                        alert_type="MOVE",
+                        alert_type="DATA_FLAT",
                         symbol=sym,
-                        facts=f"- move={move:+.2f}% (thr={minute_thr:.2f}%)\n- prev={prev:.6f} now={now:.6f}\n- now_ts={now_ts.isoformat(timespec='seconds')}",
-                        hypotheses="- 市场真实波动\n- 盘后流动性导致跳价\n- 新闻/财报/宏观事件",
-                        checks="- 同期 SPY 是否同向？\n- 查该标的新闻/公告\n- 查是否财报/分红/拆股相关日期",
-                        concepts="- MOVE：相邻两条记录的涨跌幅；采样频率由 poll_seconds 决定。",
+                        facts=f"- {sym} 价格连续 {flat_repeats} 次更新未变化\n- price={now:.6f}\n- last_ts={now_ts.isoformat(timespec='seconds')}",
+                        hypotheses="- 周末/盘后正常冻结\n- 数据源只给昨收/最后成交\n- 你拿到的是缓存价",
+                        checks="- 看 SPY 是否也冻结\n- 检查是否周末/盘后\n- 后续可在 quotes.py 增加 source 字段区分数据来源",
+                        concepts="- DATA_FLAT：文件在更新，但数值不变（可能市场没动，也可能数据源不刷新）。",
                     )
+                    record_emit(key, alert_state, alert_state_path, now_epoch=now_epoch)
+
+            # MOVE
+            if prev > 0:
+                move = (now - prev) / prev * 100.0
+                if debug_enabled:
+                    utc_s, _, _ = now_stamps()
+                    will_move = abs(move) >= minute_thr
+                    print(
+                        f"[{utc_s}] DEBUG {sym} prev={prev:.6f} now={now:.6f} "
+                        f"move={move:+.2f}% thr={minute_thr:.2f}% flat_count={st.run_len} will_move={will_move}"
+                    )
+                if abs(move) >= minute_thr:
+                    now_epoch = time.time()
+                    key = alert_key("MOVE", sym)
+                    if not is_on_cooldown(key, cooldown_seconds, alert_state, now_epoch=now_epoch):
+                        utc_s, local_s, tzname = now_stamps()
+                        msg = (
+                            f"[{utc_s} | {local_s} {tzname}] 🚨 MOVE symbol={sym} "
+                            f"move={move:+.2f}% prev={prev:.6f} now={now:.6f} now_ts={now_ts.isoformat(timespec='seconds')}"
+                        )
+                        print(msg)
+                        append_line(alerts_log, msg)
+                        append_learning_card(
+                            learning_cards_path,
+                            alert_type="MOVE",
+                            symbol=sym,
+                            facts=f"- move={move:+.2f}% (thr={minute_thr:.2f}%)\n- prev={prev:.6f} now={now:.6f}\n- now_ts={now_ts.isoformat(timespec='seconds')}",
+                            hypotheses="- 市场真实波动\n- 盘后流动性导致跳价\n- 新闻/财报/宏观事件",
+                            checks="- 同期 SPY 是否同向？\n- 查该标的新闻/公告\n- 查是否财报/分红/拆股相关日期",
+                            concepts="- MOVE：相邻两条记录的涨跌幅；采样频率由 poll_seconds 决定。",
+                        )
+                        record_emit(key, alert_state, alert_state_path, now_epoch=now_epoch)
+
+            elif debug_enabled:
+                utc_s, _, _ = now_stamps()
+                print(
+                    f"[{utc_s}] DEBUG {sym} prev={prev:.6f} now={now:.6f} move=0.00% "
+                    f"thr={minute_thr:.2f}% flat_count={st.run_len} will_move=False"
+                )
 
         time.sleep(poll_seconds)
 

@@ -57,6 +57,11 @@ def get_dirs(cfg: dict) -> tuple[Path, Path]:
     return log_dir, data_dir
 
 
+def get_kill_switch_path(cfg: dict) -> Path:
+    risk_cfg = cfg.get("risk_guards", {}) or {}
+    return ROOT / str(risk_cfg.get("kill_switch_path", "./Data/KILL_SWITCH"))
+
+
 def fetch_last_price(symbol: str) -> Optional[float]:
     """
     取“最新价”：先 fast_info，失败则用 1分钟K线最后一个 close
@@ -102,6 +107,7 @@ def append_quotes_csv(data_dir: Path, quotes: list[Quote]) -> Path:
 def main() -> None:
     cfg = load_config()
     log_dir, data_dir = get_dirs(cfg)
+    kill_switch_path = get_kill_switch_path(cfg)
 
     wl = cfg.get("watchlist", {})
     symbols = list(wl.get("stocks", [])) + list(wl.get("etfs", []))
@@ -114,9 +120,18 @@ def main() -> None:
 
     last_good_ts = time.time()
 
-    write_log(log_dir, f"[{now_utc_iso()}] QUOTES_START symbols={symbols} poll_seconds={poll_seconds}")
+    write_log(
+        log_dir,
+        f"[{now_utc_iso()}] QUOTES_START symbols={symbols} poll_seconds={poll_seconds} kill_switch={kill_switch_path}",
+    )
 
     while True:
+        if kill_switch_path.exists():
+            msg = f"[{now_utc_iso()}] KILL_SWITCH detected at {kill_switch_path}, exiting"
+            print(msg)
+            write_log(log_dir, msg)
+            return
+
         ts = now_utc_iso()
         quotes: list[Quote] = []
         failed: list[str] = []
