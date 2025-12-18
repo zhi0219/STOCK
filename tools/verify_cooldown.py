@@ -10,6 +10,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from alerts import alert_key, is_on_cooldown, record_emit
+
 
 # ----- helpers -----
 def fail(msg: str) -> None:
@@ -81,7 +83,7 @@ def ensure_dirs(paths: list[Path]) -> None:
 
 def main() -> None:
     ensure_dependencies()
-    root = Path(__file__).resolve().parent.parent
+    root = ROOT
     config_path = root / "config.yaml"
     inject_path = root / "tools" / "inject_quote.py"
 
