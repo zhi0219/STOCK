@@ -11,12 +11,17 @@
    .\.venv\Scripts\python.exe -m pip install -r requirements.txt
    ```
 
-## One-line acceptance (PowerShell)
-Run the two verification scripts in a single line; both must print `PASS`:
+## Acceptance commands (PowerShell)
+Run from the repository root; no `PYTHONPATH` configuration is needed.
 
 ```powershell
-\.\.venv\Scripts\python.exe .\tools\verify_smoke.py; .\.venv\Scripts\python.exe .\tools\verify_cooldown.py
+cd %USERPROFILE%\Desktop\STOCK
+.\.venv\Scripts\python.exe -m py_compile tools\verify_cooldown.py
+.\.venv\Scripts\python.exe tools\verify_smoke.py
+.\.venv\Scripts\python.exe tools\verify_cooldown.py
 ```
+
+Expected: `verify_smoke` prints `PASS` and `verify_cooldown` prints `PASS` without import errors.
 
 ## Deterministic MOVE self-test
 Run a synthetic injection so `alerts.py` emits a MOVE alert without waiting for real market moves.
