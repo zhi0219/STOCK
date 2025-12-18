@@ -1,24 +1,42 @@
 # STOCK utilities
 
+## Environment setup
+
+1. Create and activate a venv (PowerShell):
+   ```powershell
+   python -m venv .\.venv
+   ```
+2. Install pinned dependencies:
+   ```powershell
+   .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+   ```
+
+## One-line acceptance (PowerShell)
+Run the two verification scripts in a single line; both must print `PASS`:
+
+```powershell
+\.\.venv\Scripts\python.exe .\tools\verify_smoke.py; .\.venv\Scripts\python.exe .\tools\verify_cooldown.py
+```
+
 ## Deterministic MOVE self-test
 Run a synthetic injection so `alerts.py` emits a MOVE alert without waiting for real market moves.
 
 1. Compile-time check:
    ```powershell
-   python -m py_compile .\main.py .\quotes.py .\alerts.py .\tools\inject_quote.py
+   .\.venv\Scripts\python.exe -m py_compile .\main.py .\quotes.py .\alerts.py .\tools\inject_quote.py .\tools\verify_cooldown.py .\tools\verify_smoke.py
    ```
 2. Inject a deterministic price jump (defaults: symbol AAPL, +1.0%):
    ```powershell
-   python .\tools\inject_quote.py --symbol AAPL --delta-pct 1.0
+   .\.venv\Scripts\python.exe .\tools\inject_quote.py --symbol AAPL --delta-pct 1.0
    ```
 3. Trigger alerts using the injected rows:
    ```powershell
-   python .\alerts.py
+   .\.venv\Scripts\python.exe .\alerts.py
    ```
    Expected: console prints at least one `🚨 MOVE ...` line, and entries are appended to `.\Logs\alerts.log` and `.\Data\learning_cards.md`.
 4. Cleanup to remove only the injected rows:
    ```powershell
-   python .\tools\inject_quote.py --cleanup
+   .\.venv\Scripts\python.exe .\tools\inject_quote.py --cleanup
    ```
 
 The injector writes to `.\Data\quotes.csv` with `source=SELF_TEST_INJECT` so the synthetic rows can be removed safely after testing.
