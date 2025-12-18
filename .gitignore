@@ -12,10 +12,12 @@ Thumbs.db
 
 # --- Runtime outputs (do not commit) ---
 Data/quotes.csv
+Data/learning_cards.md
 Logs/*.log
 Logs/alert_state.json
 Logs/KILL_SWITCH
 
-# Optional: keep Data folder but ignore other runtime artifacts
+# Optional: keep Data and Logs folders but ignore other runtime artifacts
 Data/*.tmp
 Data/*.bak
+Logs/*.tmp
