@@ -2,13 +2,26 @@
 
 ## Environment setup
 
-1. Create and activate a venv (PowerShell):
+### Windows (PowerShell)
+1. Create and activate a venv:
    ```powershell
    python -m venv .\.venv
+   .\.venv\Scripts\Activate.ps1
    ```
 2. Install pinned dependencies:
    ```powershell
    .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+   ```
+
+### macOS / Linux (bash)
+1. Create and activate a venv:
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate
+   ```
+2. Install pinned dependencies:
+   ```bash
+   python -m pip install -r requirements.txt
    ```
 
 ## Acceptance commands (PowerShell)
