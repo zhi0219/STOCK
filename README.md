@@ -3,7 +3,7 @@
 ## Environment setup
 
 ### Windows (PowerShell)
-1. Create and activate a venv:
+1. Create and activate a venv (if you want to reuse system packages under restricted networks, add `--system-site-packages`):
    ```powershell
    python -m venv .\.venv
    .\.venv\Scripts\Activate.ps1
@@ -25,11 +25,13 @@
    ```
 
 ## 零理解验收（Windows / PowerShell）
-只需在 PowerShell 里顺序执行下面四行命令，无需手工改 YAML：
+只需在 PowerShell 里顺序执行下面几行命令，无需手工改 YAML：
 
 ```powershell
 cd $HOME\Desktop\STOCK
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+# 如果已有可用 venv，可直接运行验收脚本；若首次创建且网络允许，可选运行：
+# python -m venv .\.venv            # 若需复用系统依赖，可改为: python -m venv .\.venv --system-site-packages
+# .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 .\.venv\Scripts\python.exe .\tools\verify_smoke.py
 .\.venv\Scripts\python.exe .\tools\verify_cooldown.py
 ```
