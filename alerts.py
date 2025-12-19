@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import yaml
@@ -13,6 +14,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parent
 CONFIG_PATH = ROOT / "config.yaml"
+EVENT_SCHEMA_VERSION = 1
 
 
 # ---------- time helpers ----------
@@ -23,6 +25,21 @@ def now_stamps() -> Tuple[str, str, str]:
     local = local_dt.isoformat(timespec="seconds")
     tzname = local_dt.tzname() or "LOCAL"
     return u, local, tzname
+
+
+def utc_et_stamps() -> Tuple[str, str]:
+    """Return (ts_utc_iso, ts_et_iso)."""
+
+    now_utc = datetime.now(timezone.utc)
+    ts_utc = now_utc.isoformat(timespec="seconds")
+
+    try:
+        et = now_utc.astimezone(ZoneInfo("America/New_York"))
+    except Exception:
+        et = now_utc.astimezone()
+    ts_et = et.isoformat(timespec="seconds")
+
+    return ts_utc, ts_et
 
 
 # ---------- io helpers ----------
@@ -53,6 +70,82 @@ def append_line(path: Path, line: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as f:
         f.write(line + "\n")
+
+
+def event_log_path(logs_dir: Path, ts_utc: str) -> Path:
+    date_part = ts_utc.split("T", 1)[0].replace("-", "")
+    return logs_dir / f"events_{date_part}.jsonl"
+
+
+def emit_event(
+    logs_dir: Path,
+    *,
+    event_type: str,
+    symbol: str,
+    severity: str,
+    message: str,
+    metrics: Optional[Dict[str, Any]] = None,
+    source: str = "alerts",
+) -> Optional[str]:
+    ts_utc, ts_et = utc_et_stamps()
+    payload = {
+        "schema_version": EVENT_SCHEMA_VERSION,
+        "ts_utc": ts_utc,
+        "ts_et": ts_et,
+        "event_type": event_type,
+        "symbol": symbol,
+        "severity": severity,
+        "message": message,
+        "metrics": metrics or {},
+        "source": source,
+    }
+
+    path = event_log_path(logs_dir, ts_utc)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    except Exception as e:
+        print(f"[WARN] failed to write event log {path}: {e}")
+        return None
+
+    return ts_utc
+
+
+def write_status_snapshot(
+    logs_dir: Path,
+    *,
+    quotes_path: Path,
+    quotes_file_age_s: Optional[float],
+    last_rows: int,
+    last_prices: Dict[str, float],
+    last_alert_ts: Optional[str],
+) -> None:
+    ts_utc, ts_et = utc_et_stamps()
+    snapshot = {
+        "ts_utc": ts_utc,
+        "ts_et": ts_et,
+        "quotes_path": str(quotes_path),
+        "quotes_file_age_s": quotes_file_age_s,
+        "last_rows": last_rows,
+        "last_prices": last_prices,
+        "last_alert_ts": last_alert_ts,
+    }
+
+    status_path = logs_dir / "status.json"
+    tmp_path = status_path.with_suffix(status_path.suffix + ".tmp")
+
+    try:
+        status_path.parent.mkdir(parents=True, exist_ok=True)
+        with tmp_path.open("w", encoding="utf-8") as f:
+            json.dump(snapshot, f, ensure_ascii=False, indent=2)
+        tmp_path.replace(status_path)
+    except Exception as e:
+        print(f"[WARN] failed to write status.json at {status_path}: {e}")
+        try:
+            tmp_path.unlink(missing_ok=True)  # type: ignore[arg-type]
+        except Exception:
+            pass
 
 
 def alert_key(alert_type: str, symbol: str) -> str:
@@ -185,6 +278,7 @@ def main() -> None:
 
     # per-symbol state
     flat_state: Dict[str, FlatState] = {}
+    last_alert_ts: Optional[str] = None
 
     while True:
         if kill_switch_path.exists():
@@ -192,7 +286,27 @@ def main() -> None:
             msg = f"[{utc_s} | {local_s} {tzname}] KILL_SWITCH detected at {kill_switch_path}, exiting"
             print(msg)
             append_line(alerts_log, msg)
+            last_alert_ts = emit_event(
+                logs_dir,
+                event_type="KILL_SWITCH",
+                symbol="-",
+                severity="warning",
+                message=msg,
+                metrics={},
+            )
+            write_status_snapshot(
+                logs_dir,
+                quotes_path=quotes_path,
+                quotes_file_age_s=None,
+                last_rows=0,
+                last_prices={},
+                last_alert_ts=last_alert_ts,
+            )
             return
+
+        quotes_file_age_s: Optional[float] = None
+        last_rows = 0
+        last_prices: Dict[str, float] = {}
 
         # --- DATA_MISSING ---
         if not quotes_path.exists():
@@ -213,13 +327,38 @@ def main() -> None:
                     concepts="- DATA_MISSING：数据文件缺失（不是行情波动）。",
                 )
                 record_emit(key, alert_state, alert_state_path, now_epoch=now_epoch)
+                last_alert_ts = emit_event(
+                    logs_dir,
+                    event_type="DATA_MISSING",
+                    symbol="-",
+                    severity="warning",
+                    message=msg,
+                    metrics={},
+                )
+            write_status_snapshot(
+                logs_dir,
+                quotes_path=quotes_path,
+                quotes_file_age_s=quotes_file_age_s,
+                last_rows=last_rows,
+                last_prices=last_prices,
+                last_alert_ts=last_alert_ts,
+            )
             time.sleep(poll_seconds)
             continue
 
         # --- DATA_STALE (mtime based) ---
         try:
             mtime = quotes_path.stat().st_mtime
+            quotes_file_age_s = time.time() - mtime
         except Exception:
+            write_status_snapshot(
+                logs_dir,
+                quotes_path=quotes_path,
+                quotes_file_age_s=None,
+                last_rows=last_rows,
+                last_prices=last_prices,
+                last_alert_ts=last_alert_ts,
+            )
             time.sleep(poll_seconds)
             continue
 
@@ -252,6 +391,14 @@ def main() -> None:
                             concepts="- DATA_STALE：数据流健康检查，和市场是否波动是两回事。",
                         )
                         record_emit(key, alert_state, alert_state_path, now_epoch=now_epoch)
+                        last_alert_ts = emit_event(
+                            logs_dir,
+                            event_type="DATA_STALE",
+                            symbol="-",
+                            severity="warning",
+                            message=msg,
+                            metrics={"age_s": age, "stale_seconds": stale_seconds},
+                        )
 
         # --- read csv (with retry) ---
         try:
@@ -260,6 +407,14 @@ def main() -> None:
             now_epoch = time.time()
             key = alert_key("READ_FAIL", "__GLOBAL__")
             if is_on_cooldown(key, cooldown_seconds, alert_state, now_epoch=now_epoch):
+                write_status_snapshot(
+                    logs_dir,
+                    quotes_path=quotes_path,
+                    quotes_file_age_s=quotes_file_age_s,
+                    last_rows=last_rows,
+                    last_prices=last_prices,
+                    last_alert_ts=last_alert_ts,
+                )
                 time.sleep(poll_seconds)
                 continue
             utc_s, local_s, tzname = now_stamps()
@@ -267,6 +422,22 @@ def main() -> None:
             print(msg)
             append_line(alerts_log, msg)
             record_emit(key, alert_state, alert_state_path, now_epoch=now_epoch)
+            last_alert_ts = emit_event(
+                logs_dir,
+                event_type="READ_FAIL",
+                symbol="-",
+                severity="warning",
+                message=msg,
+                metrics={"exception": type(e).__name__},
+            )
+            write_status_snapshot(
+                logs_dir,
+                quotes_path=quotes_path,
+                quotes_file_age_s=quotes_file_age_s,
+                last_rows=last_rows,
+                last_prices=last_prices,
+                last_alert_ts=last_alert_ts,
+            )
             time.sleep(poll_seconds)
             continue
 
@@ -278,6 +449,14 @@ def main() -> None:
             )
 
         if df.empty:
+            write_status_snapshot(
+                logs_dir,
+                quotes_path=quotes_path,
+                quotes_file_age_s=quotes_file_age_s,
+                last_rows=last_rows,
+                last_prices=last_prices,
+                last_alert_ts=last_alert_ts,
+            )
             time.sleep(poll_seconds)
             continue
 
@@ -289,6 +468,14 @@ def main() -> None:
 
         if not sym_col or not price_col or not ts_col:
             # silently wait; file schema not ready
+            write_status_snapshot(
+                logs_dir,
+                quotes_path=quotes_path,
+                quotes_file_age_s=quotes_file_age_s,
+                last_rows=last_rows,
+                last_prices=last_prices,
+                last_alert_ts=last_alert_ts,
+            )
             time.sleep(poll_seconds)
             continue
 
@@ -306,6 +493,14 @@ def main() -> None:
             df = df[df["symbol"].isin(watchlist_set)]
 
         if df.empty:
+            write_status_snapshot(
+                logs_dir,
+                quotes_path=quotes_path,
+                quotes_file_age_s=quotes_file_age_s,
+                last_rows=last_rows,
+                last_prices=last_prices,
+                last_alert_ts=last_alert_ts,
+            )
             time.sleep(poll_seconds)
             continue
 
@@ -355,12 +550,24 @@ def main() -> None:
                         learning_cards_path,
                         alert_type="DATA_FLAT",
                         symbol=sym,
-                        facts=f"- {sym} 价格连续 {flat_repeats} 次更新未变化\n- price={now:.6f}\n- last_ts={now_ts.isoformat(timespec='seconds')}",
+                        facts=(
+                            f"- {sym} 价格连续 {flat_repeats} 次更新未变化\n"
+                            f"- price={now:.6f}\n"
+                            f"- last_ts={now_ts.isoformat(timespec='seconds')}"
+                        ),
                         hypotheses="- 周末/盘后正常冻结\n- 数据源只给昨收/最后成交\n- 你拿到的是缓存价",
                         checks="- 看 SPY 是否也冻结\n- 检查是否周末/盘后\n- 后续可在 quotes.py 增加 source 字段区分数据来源",
                         concepts="- DATA_FLAT：文件在更新，但数值不变（可能市场没动，也可能数据源不刷新）。",
                     )
                     record_emit(key, alert_state, alert_state_path, now_epoch=now_epoch)
+                    last_alert_ts = emit_event(
+                        logs_dir,
+                        event_type="DATA_FLAT",
+                        symbol=sym,
+                        severity="warning",
+                        message=msg,
+                        metrics={"run_len": st.run_len, "price": now},
+                    )
 
             # MOVE
             if prev > 0:
@@ -393,6 +600,14 @@ def main() -> None:
                             concepts="- MOVE：相邻两条记录的涨跌幅；采样频率由 poll_seconds 决定。",
                         )
                         record_emit(key, alert_state, alert_state_path, now_epoch=now_epoch)
+                        last_alert_ts = emit_event(
+                            logs_dir,
+                            event_type="MOVE",
+                            symbol=sym,
+                            severity="info",
+                            message=msg,
+                            metrics={"move_pct": move, "prev": prev, "now": now},
+                        )
 
             elif debug_enabled:
                 utc_s, _, _ = now_stamps()
@@ -400,6 +615,21 @@ def main() -> None:
                     f"[{utc_s}] DEBUG {sym} prev={prev:.6f} now={now:.6f} move=0.00% "
                     f"thr={minute_thr:.2f}% flat_count={st.run_len} will_move=False"
                 )
+
+        last_rows = len(df)
+        try:
+            last_prices = {sym: float(g.tail(1)["price"].iloc[0]) for sym, g in df.groupby("symbol")}
+        except Exception:
+            last_prices = {}
+
+        write_status_snapshot(
+            logs_dir,
+            quotes_path=quotes_path,
+            quotes_file_age_s=quotes_file_age_s,
+            last_rows=last_rows,
+            last_prices=last_prices,
+            last_alert_ts=last_alert_ts,
+        )
 
         time.sleep(poll_seconds)
 

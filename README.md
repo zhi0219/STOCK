@@ -44,7 +44,7 @@ Run a synthetic injection so `alerts.py` emits a MOVE alert without waiting for 
 
 1. Compile-time check:
    ```powershell
-   .\.venv\Scripts\python.exe -m py_compile .\main.py .\quotes.py .\alerts.py .\tools\inject_quote.py .\tools\verify_cooldown.py .\tools\verify_smoke.py
+   .\.venv\Scripts\python.exe -m py_compile .\main.py .\quotes.py .\alerts.py .\tools\inject_quote.py .\tools\verify_cooldown.py .\tools\verify_smoke.py .\tools\tail_events.py
    ```
 2. Inject a deterministic price jump (defaults: symbol AAPL, +1.0%):
    ```powershell
@@ -77,12 +77,15 @@ The injector writes to `.\Data\quotes.csv` with `source=SELF_TEST_INJECT` so the
   Expected: the first run emits a `MOVE` line, the second quick repeat is suppressed during the cooldown window (check the tail of `.\Logs\alerts.log`).
 - Kill switch demo:
   ```powershell
-  New-Item -ItemType File .\Data\KILL_SWITCH
-  python .\alerts.py
-  python .\quotes.py
-  Remove-Item .\Data\KILL_SWITCH
+  New-Item -ItemType File .\Data\KILL_SWITCH -Force
+  .\.venv\Scripts\python.exe .\alerts.py
+  echo $LASTEXITCODE
+  .\.venv\Scripts\python.exe .\quotes.py
+  echo $LASTEXITCODE
+  Remove-Item .\Data\KILL_SWITCH -Force
   ```
   Expected: alerts/quotes notice the kill switch file, print `KILL_SWITCH detected at ... exiting`, and stop cleanly until the file is removed.
+  `$LASTEXITCODE` should be `0` after each run.
 - Debug mode demo:
   ```powershell
   # in config.yaml
@@ -91,3 +94,11 @@ The injector writes to `.\Data\quotes.csv` with `source=SELF_TEST_INJECT` so the
   python .\alerts.py
   ```
   Expected: each polling cycle prints compact `DEBUG` lines showing prev/now/move%/threshold/flat_count and file-health stats.
+
+## Events (JSONL) rotation and tailing
+- Events now append to daily files under `./Logs/events_YYYYMMDD.jsonl` (UTC date, relative to repo root). Each event includes `schema_version: 1` plus the existing fields.
+- Tailing with filtering and bad-line tolerance:
+  ```powershell
+  .\.venv\Scripts\python.exe .\tools\tail_events.py --limit 20 --symbol AAPL --type MOVE
+  ```
+  The tool automatically picks the latest daily file, skips malformed JSON lines with warnings, and prints the newest matching rows.
