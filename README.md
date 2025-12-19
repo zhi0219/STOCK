@@ -24,20 +24,52 @@
    python -m pip install -r requirements.txt
    ```
 
-## Cooldown acceptance (zero-understanding version)
+## Zero-understanding acceptance (PowerShell)
 Run directly from PowerShell with the recommended venv interpreter; no YAML edits are required.
 
+1) Compile check
+
 ```powershell
-cd $HOME\Desktop\STOCK
+\.\.venv\Scripts\python.exe -m py_compile .\main.py .\quotes.py .\alerts.py .\tools\inject_quote.py .\tools\verify_cooldown.py
+```
+
+Expected: exits quietly when syntax is valid.
+
+2) Cooldown one-click self-test
+
+```powershell
 \.\.venv\Scripts\python.exe .\tools\verify_cooldown.py
 ```
 
-Expected output (example):
+Expected: banner shows `cooldown=300` and the second injected MOVE is suppressed (PASS message printed).
 
+3) Kill switch validation
+
+```powershell
+New-Item -ItemType File .\Data\KILL_SWITCH -Force
+\.\.venv\Scripts\python.exe .\alerts.py
+\.\.venv\Scripts\python.exe .\quotes.py
+Remove-Item .\Data\KILL_SWITCH -Force
 ```
-[2024-01-01T00:00:00+00:00 | 2024-01-01T08:00:00+08:00 CST] ALERTS_START thr=1.0% poll=5s flat=5 stale=180s cooldown=300s debug=False quotes=...\Data\quotes.csv
-PASS: cooldown verified (second MOVE suppressed within 300s)
+
+Expected: both scripts print `KILL_SWITCH detected ... exiting` and return exit code `0`.
+
+4) Debug-mode inspection (if `alerts.debug: true` in `config.yaml`)
+
+```powershell
+\.\.venv\Scripts\python.exe .\alerts.py
 ```
+
+Expected: every cycle prints DEBUG lines (prev/now/move/thr/flat_count/will_alert/cooldown_remaining when applicable).
+
+5) JSONL event stream check (new)
+
+```powershell
+\.\.venv\Scripts\python.exe .\tools\inject_quote.py --delta-pct 1.0
+\.\.venv\Scripts\python.exe .\alerts.py
+```
+
+Expected: at least one MOVE is printed, `.\Logs\events.jsonl` gains a valid JSON line containing `ts_utc`, `ts_et`, `event_type`, `symbol`, `severity`, `message`, `metrics`, and `source`.
 
 ## Deterministic MOVE self-test
 Run a synthetic injection so `alerts.py` emits a MOVE alert without waiting for real market moves.
