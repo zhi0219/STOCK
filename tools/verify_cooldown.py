@@ -26,14 +26,13 @@ def fail(msg: str) -> None:
 def ensure_dependencies() -> None:
     try:
         import yaml  # noqa: F401
+    except ImportError:  # pragma: no cover - runtime guard
+        print("你没有用 Windows venv 运行。请用 .\\.venv\\Scripts\\python.exe tools/verify_cooldown.py")
+        sys.exit(1)
+    try:
         import pandas  # noqa: F401
     except ImportError as e:  # pragma: no cover - runtime guard
-        fail(
-            "Missing dependency: {}. Please install with PowerShell: "
-            ".\\.venv\\Scripts\\python.exe -m pip install -r requirements.txt".format(
-                e.name or "package"
-            )
-        )
+        fail(f"Missing dependency: {e.name or 'package'}")
 
 
 def read_yaml(path: Path) -> dict:
