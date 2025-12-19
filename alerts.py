@@ -4,6 +4,7 @@ import json
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
@@ -55,6 +56,80 @@ def append_line(path: Path, line: str) -> None:
         f.write(line + "\n")
 
 
+def make_event(
+    alert_type: str,
+    symbol: str,
+    severity: str,
+    message: str,
+    metrics: Dict[str, Any],
+    *,
+    source: str,
+) -> Dict[str, Any]:
+    ts_utc = datetime.now(timezone.utc)
+    ts_et = ts_utc.astimezone(ZoneInfo("America/New_York"))
+    sym = symbol if symbol else "__GLOBAL__"
+    return {
+        "ts_utc": ts_utc.isoformat(timespec="seconds"),
+        "ts_et": ts_et.isoformat(timespec="seconds"),
+        "event_type": alert_type,
+        "symbol": sym,
+        "severity": severity,
+        "message": message,
+        "metrics": metrics,
+        "source": source,
+    }
+
+
+def emit_event(
+    event: Dict[str, Any],
+    message: str,
+    *,
+    alerts_log: Path,
+    events_log: Path,
+    learning_card: Optional[Dict[str, str]] = None,
+) -> None:
+    try:
+        print(message)
+    except Exception:
+        pass
+
+    try:
+        append_line(alerts_log, message)
+    except Exception as e:
+        try:
+            print(f"[WARN] failed to append alerts.log: {e}")
+        except Exception:
+            pass
+
+    try:
+        events_log.parent.mkdir(parents=True, exist_ok=True)
+        with events_log.open("a", encoding="utf-8") as f:
+            json.dump(event, f, ensure_ascii=False)
+            f.write("\n")
+    except Exception as e:
+        try:
+            print(f"[WARN] failed to append events.jsonl: {e}")
+        except Exception:
+            pass
+
+    if learning_card is not None:
+        try:
+            append_learning_card(
+                learning_card["path"],
+                alert_type=learning_card["alert_type"],
+                symbol=learning_card["symbol"],
+                facts=learning_card["facts"],
+                hypotheses=learning_card["hypotheses"],
+                checks=learning_card["checks"],
+                concepts=learning_card["concepts"],
+            )
+        except Exception as e:
+            try:
+                print(f"[WARN] failed to append learning card: {e}")
+            except Exception:
+                pass
+
+
 def alert_key(alert_type: str, symbol: str) -> str:
     sym = symbol.strip().upper() if symbol else "__GLOBAL__"
     if sym == "-":
@@ -102,6 +177,39 @@ def append_learning_card(
         f.write(f"{concepts.strip()}\n")
 
 
+def write_status(
+    path: Path,
+    *,
+    ts_utc: datetime,
+    ts_et: datetime,
+    quotes_path: Path,
+    quotes_file_age_s: Optional[float],
+    last_rows: Optional[int],
+    last_prices: Optional[Dict[str, float]],
+    last_alert_ts: Optional[str],
+) -> None:
+    try:
+        payload = {
+            "ts_utc": ts_utc.isoformat(timespec="seconds"),
+            "ts_et": ts_et.isoformat(timespec="seconds"),
+            "quotes_path": str(quotes_path),
+            "quotes_file_age_s": quotes_file_age_s,
+            "last_rows": last_rows,
+            "last_prices": last_prices,
+            "last_alert_ts": last_alert_ts,
+        }
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        with tmp.open("w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+        tmp.replace(path)
+    except Exception as e:
+        try:
+            print(f"[WARN] failed to write status.json: {e}")
+        except Exception:
+            pass
+
+
 def safe_read_csv(path: Path, retries: int = 3, sleep_s: float = 0.25) -> pd.DataFrame:
     last_err: Optional[Exception] = None
     for _ in range(retries):
@@ -135,6 +243,8 @@ def main() -> None:
 
     quotes_path = data_dir / "quotes.csv"
     alerts_log = logs_dir / "alerts.log"
+    events_log = logs_dir / "events.jsonl"
+    status_path = logs_dir / "status.json"
     learning_cards_path = data_dir / "learning_cards.md"
     alert_state_path = logs_dir / "alert_state.json"
 
@@ -162,6 +272,26 @@ def main() -> None:
 
     alert_state = load_alert_state(alert_state_path)
 
+    last_alert_ts: Optional[str] = None
+
+    def flush_status(
+        quotes_file_age_s: Optional[float],
+        last_rows: Optional[int],
+        last_prices: Optional[Dict[str, float]],
+    ) -> None:
+        ts_utc_dt = datetime.now(timezone.utc)
+        ts_et_dt = ts_utc_dt.astimezone(ZoneInfo("America/New_York"))
+        write_status(
+            status_path,
+            ts_utc=ts_utc_dt,
+            ts_et=ts_et_dt,
+            quotes_path=quotes_path,
+            quotes_file_age_s=quotes_file_age_s,
+            last_rows=last_rows,
+            last_prices=last_prices,
+            last_alert_ts=last_alert_ts,
+        )
+
     watchlist = cfg.get("watchlist")
     if isinstance(watchlist, str):
         watchlist_set = {x.strip().upper() for x in watchlist.split(",") if x.strip()}
@@ -187,11 +317,26 @@ def main() -> None:
     flat_state: Dict[str, FlatState] = {}
 
     while True:
+        quotes_file_age_s: Optional[float] = None
+        last_rows: Optional[int] = None
+        last_prices: Optional[Dict[str, float]] = None
+
         if kill_switch_path.exists():
             utc_s, local_s, tzname = now_stamps()
             msg = f"[{utc_s} | {local_s} {tzname}] KILL_SWITCH detected at {kill_switch_path}, exiting"
-            print(msg)
-            append_line(alerts_log, msg)
+            emit_event(
+                make_event(
+                    "KILL_SWITCH",
+                    "__GLOBAL__",
+                    "high",
+                    msg,
+                    metrics={"path": str(kill_switch_path)},
+                    source="quotes.csv",
+                ),
+                msg,
+                alerts_log=alerts_log,
+                events_log=events_log,
+            )
             return
 
         # --- DATA_MISSING ---
@@ -201,18 +346,32 @@ def main() -> None:
             if not is_on_cooldown(key, cooldown_seconds, alert_state, now_epoch=now_epoch):
                 utc_s, local_s, tzname = now_stamps()
                 msg = f"[{utc_s} | {local_s} {tzname}] ⚠️ DATA_MISSING symbol=- quotes.csv not found: {quotes_path}"
-                print(msg)
-                append_line(alerts_log, msg)
-                append_learning_card(
-                    learning_cards_path,
-                    alert_type="DATA_MISSING",
-                    symbol="-",
-                    facts=f"- quotes.csv 不存在：`{quotes_path}`",
-                    hypotheses="- quotes.py 没运行 / 路径不对 / Data 目录被改名",
-                    checks="- `dir .\\Data` 看看有没有 quotes.csv\n- 重新运行：`python .\\quotes.py`",
-                    concepts="- DATA_MISSING：数据文件缺失（不是行情波动）。",
+                event = make_event(
+                    "DATA_MISSING",
+                    "__GLOBAL__",
+                    "med",
+                    msg,
+                    metrics={"path": str(quotes_path)},
+                    source="quotes.csv",
                 )
+                emit_event(
+                    event,
+                    msg,
+                    alerts_log=alerts_log,
+                    events_log=events_log,
+                    learning_card={
+                        "path": learning_cards_path,
+                        "alert_type": "DATA_MISSING",
+                        "symbol": "-",
+                        "facts": f"- quotes.csv 不存在：`{quotes_path}`",
+                        "hypotheses": "- quotes.py 没运行 / 路径不对 / Data 目录被改名",
+                        "checks": "- `dir .\\Data` 看看有没有 quotes.csv\n- 重新运行：`python .\\quotes.py`",
+                        "concepts": "- DATA_MISSING：数据文件缺失（不是行情波动）。",
+                    },
+                )
+                last_alert_ts = event["ts_utc"]
                 record_emit(key, alert_state, alert_state_path, now_epoch=now_epoch)
+            flush_status(quotes_file_age_s, last_rows, last_prices)
             time.sleep(poll_seconds)
             continue
 
@@ -220,8 +379,11 @@ def main() -> None:
         try:
             mtime = quotes_path.stat().st_mtime
         except Exception:
+            flush_status(quotes_file_age_s, last_rows, last_prices)
             time.sleep(poll_seconds)
             continue
+
+        quotes_file_age_s = time.time() - mtime
 
         if last_file_mtime == 0.0:
             last_file_mtime = mtime
@@ -231,6 +393,7 @@ def main() -> None:
             else:
                 # unchanged mtime
                 age = time.time() - mtime
+                quotes_file_age_s = age
                 if age >= stale_seconds:
                     now_epoch = time.time()
                     key = alert_key("DATA_STALE", "__GLOBAL__")
@@ -240,17 +403,30 @@ def main() -> None:
                             f"[{utc_s} | {local_s} {tzname}] ⚠️ DATA_STALE symbol=- "
                             f"quotes.csv mtime unchanged >= {stale_seconds}s"
                         )
-                        print(msg)
-                        append_line(alerts_log, msg)
-                        append_learning_card(
-                            learning_cards_path,
-                            alert_type="DATA_STALE",
-                            symbol="-",
-                            facts=f"- quotes.csv 超过 {stale_seconds}s 没有更新（mtime 未变化）。",
-                            hypotheses="- quotes.py 停了 / 网络断了 / 数据源卡住 / 进程挂起",
-                            checks="- quotes.py 窗口是否还在输出？\n- `dir .\\Data\\quotes.csv` 看修改时间\n- 先重启 quotes：Ctrl+C → `python .\\quotes.py`",
-                            concepts="- DATA_STALE：数据流健康检查，和市场是否波动是两回事。",
+                        event = make_event(
+                            "DATA_STALE",
+                            "__GLOBAL__",
+                            "med",
+                            msg,
+                            metrics={"stale_age_s": age, "threshold": stale_seconds},
+                            source="quotes.csv",
                         )
+                        emit_event(
+                            event,
+                            msg,
+                            alerts_log=alerts_log,
+                            events_log=events_log,
+                            learning_card={
+                                "path": learning_cards_path,
+                                "alert_type": "DATA_STALE",
+                                "symbol": "-",
+                                "facts": f"- quotes.csv 超过 {stale_seconds}s 没有更新（mtime 未变化）。",
+                                "hypotheses": "- quotes.py 停了 / 网络断了 / 数据源卡住 / 进程挂起",
+                                "checks": "- quotes.py 窗口是否还在输出？\n- `dir .\\Data\\quotes.csv` 看修改时间\n- 先重启 quotes：Ctrl+C → `python .\\quotes.py`",
+                                "concepts": "- DATA_STALE：数据流健康检查，和市场是否波动是两回事。",
+                            },
+                        )
+                        last_alert_ts = event["ts_utc"]
                         record_emit(key, alert_state, alert_state_path, now_epoch=now_epoch)
 
         # --- read csv (with retry) ---
@@ -260,13 +436,23 @@ def main() -> None:
             now_epoch = time.time()
             key = alert_key("READ_FAIL", "__GLOBAL__")
             if is_on_cooldown(key, cooldown_seconds, alert_state, now_epoch=now_epoch):
+                flush_status(quotes_file_age_s, last_rows, last_prices)
                 time.sleep(poll_seconds)
                 continue
             utc_s, local_s, tzname = now_stamps()
             msg = f"[{utc_s} | {local_s} {tzname}] ⚠️ READ_FAIL symbol=- {type(e).__name__}: {e}"
-            print(msg)
-            append_line(alerts_log, msg)
+            event = make_event(
+                "READ_FAIL",
+                "__GLOBAL__",
+                "med",
+                msg,
+                metrics={"error": str(e)},
+                source="quotes.csv",
+            )
+            emit_event(event, msg, alerts_log=alerts_log, events_log=events_log)
+            last_alert_ts = event["ts_utc"]
             record_emit(key, alert_state, alert_state_path, now_epoch=now_epoch)
+            flush_status(quotes_file_age_s, last_rows, last_prices)
             time.sleep(poll_seconds)
             continue
 
@@ -278,6 +464,8 @@ def main() -> None:
             )
 
         if df.empty:
+            last_rows = 0
+            flush_status(quotes_file_age_s, last_rows, last_prices)
             time.sleep(poll_seconds)
             continue
 
@@ -289,6 +477,7 @@ def main() -> None:
 
         if not sym_col or not price_col or not ts_col:
             # silently wait; file schema not ready
+            flush_status(quotes_file_age_s, last_rows, last_prices)
             time.sleep(poll_seconds)
             continue
 
@@ -306,8 +495,19 @@ def main() -> None:
             df = df[df["symbol"].isin(watchlist_set)]
 
         if df.empty:
+            last_rows = 0
+            flush_status(quotes_file_age_s, last_rows, last_prices)
             time.sleep(poll_seconds)
             continue
+
+        last_rows = int(len(df))
+        last_prices = {}
+        latest_by_symbol = df.sort_values("ts_utc").drop_duplicates("symbol", keep="last")
+        for _, row in latest_by_symbol.iterrows():
+            try:
+                last_prices[str(row["symbol"])] = float(row["price"])
+            except Exception:
+                continue
 
         # --- per symbol: MOVE + DATA_FLAT ---
         for sym, g in df.groupby("symbol"):
@@ -349,17 +549,35 @@ def main() -> None:
                         f"[{utc_s} | {local_s} {tzname}] ⚠️ DATA_FLAT symbol={sym} "
                         f"unchanged run_len={st.run_len} price={now:.6f} last_ts={now_ts.isoformat(timespec='seconds')}"
                     )
-                    print(msg)
-                    append_line(alerts_log, msg)
-                    append_learning_card(
-                        learning_cards_path,
-                        alert_type="DATA_FLAT",
-                        symbol=sym,
-                        facts=f"- {sym} 价格连续 {flat_repeats} 次更新未变化\n- price={now:.6f}\n- last_ts={now_ts.isoformat(timespec='seconds')}",
-                        hypotheses="- 周末/盘后正常冻结\n- 数据源只给昨收/最后成交\n- 你拿到的是缓存价",
-                        checks="- 看 SPY 是否也冻结\n- 检查是否周末/盘后\n- 后续可在 quotes.py 增加 source 字段区分数据来源",
-                        concepts="- DATA_FLAT：文件在更新，但数值不变（可能市场没动，也可能数据源不刷新）。",
+                    event = make_event(
+                        "DATA_FLAT",
+                        sym,
+                        "low",
+                        msg,
+                        metrics={
+                            "run_len": st.run_len,
+                            "price": now,
+                            "threshold": flat_repeats,
+                            "last_ts": now_ts.isoformat(timespec="seconds"),
+                        },
+                        source="quotes.csv",
                     )
+                    emit_event(
+                        event,
+                        msg,
+                        alerts_log=alerts_log,
+                        events_log=events_log,
+                        learning_card={
+                            "path": learning_cards_path,
+                            "alert_type": "DATA_FLAT",
+                            "symbol": sym,
+                            "facts": f"- {sym} 价格连续 {flat_repeats} 次更新未变化\n- price={now:.6f}\n- last_ts={now_ts.isoformat(timespec='seconds')}",
+                            "hypotheses": "- 周末/盘后正常冻结\n- 数据源只给昨收/最后成交\n- 你拿到的是缓存价",
+                            "checks": "- 看 SPY 是否也冻结\n- 检查是否周末/盘后\n- 后续可在 quotes.py 增加 source 字段区分数据来源",
+                            "concepts": "- DATA_FLAT：文件在更新，但数值不变（可能市场没动，也可能数据源不刷新）。",
+                        },
+                    )
+                    last_alert_ts = event["ts_utc"]
                     record_emit(key, alert_state, alert_state_path, now_epoch=now_epoch)
 
             # MOVE
@@ -381,17 +599,36 @@ def main() -> None:
                             f"[{utc_s} | {local_s} {tzname}] 🚨 MOVE symbol={sym} "
                             f"move={move:+.2f}% prev={prev:.6f} now={now:.6f} now_ts={now_ts.isoformat(timespec='seconds')}"
                         )
-                        print(msg)
-                        append_line(alerts_log, msg)
-                        append_learning_card(
-                            learning_cards_path,
-                            alert_type="MOVE",
-                            symbol=sym,
-                            facts=f"- move={move:+.2f}% (thr={minute_thr:.2f}%)\n- prev={prev:.6f} now={now:.6f}\n- now_ts={now_ts.isoformat(timespec='seconds')}",
-                            hypotheses="- 市场真实波动\n- 盘后流动性导致跳价\n- 新闻/财报/宏观事件",
-                            checks="- 同期 SPY 是否同向？\n- 查该标的新闻/公告\n- 查是否财报/分红/拆股相关日期",
-                            concepts="- MOVE：相邻两条记录的涨跌幅；采样频率由 poll_seconds 决定。",
+                        event = make_event(
+                            "MOVE",
+                            sym,
+                            "high",
+                            msg,
+                            metrics={
+                                "prev": prev,
+                                "now": now,
+                                "move_pct": move,
+                                "threshold": minute_thr,
+                                "now_ts": now_ts.isoformat(timespec="seconds"),
+                            },
+                            source="quotes.csv",
                         )
+                        emit_event(
+                            event,
+                            msg,
+                            alerts_log=alerts_log,
+                            events_log=events_log,
+                            learning_card={
+                                "path": learning_cards_path,
+                                "alert_type": "MOVE",
+                                "symbol": sym,
+                                "facts": f"- move={move:+.2f}% (thr={minute_thr:.2f}%)\n- prev={prev:.6f} now={now:.6f}\n- now_ts={now_ts.isoformat(timespec='seconds')}",
+                                "hypotheses": "- 市场真实波动\n- 盘后流动性导致跳价\n- 新闻/财报/宏观事件",
+                                "checks": "- 同期 SPY 是否同向？\n- 查该标的新闻/公告\n- 查是否财报/分红/拆股相关日期",
+                                "concepts": "- MOVE：相邻两条记录的涨跌幅；采样频率由 poll_seconds 决定。",
+                            },
+                        )
+                        last_alert_ts = event["ts_utc"]
                         record_emit(key, alert_state, alert_state_path, now_epoch=now_epoch)
 
             elif debug_enabled:
@@ -401,6 +638,7 @@ def main() -> None:
                     f"thr={minute_thr:.2f}% flat_count={st.run_len} will_move=False"
                 )
 
+        flush_status(quotes_file_age_s, last_rows, last_prices)
         time.sleep(poll_seconds)
 
 
