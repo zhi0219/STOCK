@@ -74,11 +74,22 @@ def filter_events(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Tail latest events jsonl")
+    parser = argparse.ArgumentParser(
+        description="Tail latest events jsonl (accepts --tail or its alias --limit)"
+    )
     parser.add_argument("--symbol", help="filter by symbol", dest="symbol")
     parser.add_argument("--type", help="filter by event_type", dest="event_type")
-    parser.add_argument("--since-minutes", type=float, help="only events within N minutes")
-    parser.add_argument("--tail", type=int, default=20, help="number of lines from the end to show")
+    parser.add_argument(
+        "--since-minutes", type=float, help="only events within N minutes"
+    )
+    parser.add_argument(
+        "--tail",
+        "--limit",
+        dest="tail",
+        type=int,
+        default=20,
+        help="number of lines from the end to show (use either --tail or its alias --limit)",
+    )
     args = parser.parse_args()
 
     cfg = load_config()
