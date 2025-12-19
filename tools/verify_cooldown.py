@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import threading
@@ -9,17 +10,30 @@ from typing import Callable, Iterable, List
 
 
 ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
 
 COOLDOWN_SECONDS = 300
-DELTA_PCT = 5.0
 START_TIMEOUT = 30.0
+LOG_TAIL = 80
 
 
-def fail(msg: str) -> None:
+def tail_file(path: Path, lines: int = LOG_TAIL) -> list[str]:
+    if not path.exists():
+        return []
+    try:
+        return path.read_text(encoding="utf-8", errors="ignore").splitlines()[-lines:]
+    except Exception:
+        return []
+
+
+def fail(msg: str, *, log_path: Path | None = None) -> None:
     print(f"FAIL: {msg}")
+    if log_path:
+        tail = tail_file(log_path)
+        if tail:
+            print(f"--- tail of {log_path} (last {LOG_TAIL} lines) ---")
+            for line in tail:
+                print(line)
+    print("Next: .\\.venv\\Scripts\\python.exe .\\tools\\verify_cooldown.py")
     sys.exit(1)
 
 
@@ -32,7 +46,10 @@ def ensure_dependencies() -> None:
     try:
         import pandas  # noqa: F401
     except ImportError as e:  # pragma: no cover - runtime guard
-        fail(f"Missing dependency: {e.name or 'package'}")
+        fail(
+            f"Missing dependency: {e.name or 'package'}. "
+            "Install with: .\\.venv\\Scripts\\python.exe -m pip install -r requirements.txt"
+        )
 
 
 def read_yaml(path: Path) -> dict:
@@ -60,7 +77,7 @@ def ensure_dirs(paths: Iterable[Path]) -> None:
         path.mkdir(parents=True, exist_ok=True)
 
 
-def run_injector(script: Path, symbol: str, *, delta_pct: float = DELTA_PCT, cleanup: bool = False) -> None:
+def run_injector(script: Path, symbol: str, *, delta_pct: float, cleanup: bool = False, log_path: Path | None = None) -> None:
     args = [sys.executable, str(script)]
     if cleanup:
         args.append("--cleanup")
@@ -70,7 +87,8 @@ def run_injector(script: Path, symbol: str, *, delta_pct: float = DELTA_PCT, cle
     result = subprocess.run(args, capture_output=True, text=True)
     if result.returncode != 0:
         fail(
-            f"inject_quote.py failed (code {result.returncode}): {result.stdout}\n{result.stderr}"
+            f"inject_quote.py failed (code {result.returncode}): {result.stdout}\n{result.stderr}",
+            log_path=log_path,
         )
 
 
@@ -98,6 +116,8 @@ def select_symbol(cfg: dict) -> str:
 
 def start_alerts(root: Path) -> tuple[subprocess.Popen[str], List[str]]:
     cmd = [sys.executable, "-u", str(root / "alerts.py")]
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(root)
     proc = subprocess.Popen(
         cmd,
         cwd=root,
@@ -105,6 +125,7 @@ def start_alerts(root: Path) -> tuple[subprocess.Popen[str], List[str]]:
         stderr=subprocess.STDOUT,
         text=True,
         bufsize=1,
+        env=env,
     )
 
     lines: List[str] = []
@@ -172,6 +193,12 @@ def main() -> None:
     cfg["alerts"] = alerts_cfg
     alerts_cfg["cooldown_seconds"] = COOLDOWN_SECONDS
 
+    try:
+        minute_move_pct = float(alerts_cfg.get("minute_move_pct", 1.0) or 1.0)
+    except Exception:
+        minute_move_pct = 1.0
+    delta_pct = max(5.0, minute_move_pct * 3.0)
+
     # keep poll_seconds small for fast verification but restore later
     poll_seconds = int(cfg.get("poll_seconds", 60) or 60)
     if poll_seconds > 15:
@@ -183,6 +210,7 @@ def main() -> None:
     logging_cfg = cfg.get("logging") or {}
     data_dir = root / str(logging_cfg.get("data_dir", "./Data"))
     logs_dir = root / str(logging_cfg.get("log_dir", "./Logs"))
+    log_path = logs_dir / "alerts.log"
 
     ensure_dirs([data_dir, logs_dir])
 
@@ -203,13 +231,13 @@ def main() -> None:
             lines, lambda l: "ALERTS_START" in l, timeout=START_TIMEOUT, start_index=0
         )
         if not start_line:
-            fail("Did not capture ALERTS_START from alerts.py")
+            fail("Did not capture ALERTS_START from alerts.py", log_path=log_path)
         print(start_line)
         if f"cooldown={COOLDOWN_SECONDS}" not in start_line:
-            fail(f"ALERTS_START reported wrong cooldown: {start_line}")
+            fail(f"ALERTS_START reported wrong cooldown: {start_line}", log_path=log_path)
 
         # first injection
-        run_injector(inject_path, symbol, delta_pct=DELTA_PCT)
+        run_injector(inject_path, symbol, delta_pct=delta_pct, log_path=log_path)
 
         first_move, idx = wait_for_line(
             lines,
@@ -218,10 +246,11 @@ def main() -> None:
             start_index=idx,
         )
         if not first_move:
-            fail("Did not observe first MOVE after injection")
+            fail("Did not observe first MOVE after injection", log_path=log_path)
+        print(first_move)
 
         time.sleep(2)
-        run_injector(inject_path, symbol, delta_pct=DELTA_PCT)
+        run_injector(inject_path, symbol, delta_pct=delta_pct, log_path=log_path)
 
         suppressed_line, _ = wait_for_line(
             lines,
@@ -230,16 +259,19 @@ def main() -> None:
             start_index=idx,
         )
         if suppressed_line:
-            fail(f"Cooldown did not suppress second MOVE: {suppressed_line}")
+            fail(f"Cooldown did not suppress second MOVE: {suppressed_line}", log_path=log_path)
 
-        print("PASS: cooldown verified (second MOVE suppressed within 300s)")
+        print(
+            "PASS: cooldown verified (cooldown=300s, first MOVE observed, second suppressed)"
+        )
     finally:
         stop_process(proc)
         try:
-            run_injector(inject_path, symbol, cleanup=True)
+            run_injector(inject_path, symbol, cleanup=True, delta_pct=delta_pct, log_path=log_path)
         except Exception:
             pass
         delete_if_exists(alert_state_path)
+        delete_if_exists(kill_switch_path)
         if original_config_text:
             config_path.write_text(original_config_text, encoding="utf-8")
         else:

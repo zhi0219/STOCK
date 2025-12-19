@@ -24,52 +24,21 @@
    python -m pip install -r requirements.txt
    ```
 
-## Zero-understanding acceptance (PowerShell)
-Run directly from PowerShell with the recommended venv interpreter; no YAML edits are required.
-
-1) Compile check
+## 零理解验收（Windows / PowerShell）
+只需在 PowerShell 里顺序执行下面四行命令，无需手工改 YAML：
 
 ```powershell
-.\.venv\Scripts\python.exe -m py_compile .\main.py .\quotes.py .\alerts.py .\tools\inject_quote.py .\tools\verify_cooldown.py
-```
-
-Expected: exits quietly when syntax is valid.
-
-2) Cooldown one-click self-test
-
-```powershell
+cd $HOME\Desktop\STOCK
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe .\tools\verify_smoke.py
 .\.venv\Scripts\python.exe .\tools\verify_cooldown.py
 ```
 
-Expected: banner shows `cooldown=300` and the second injected MOVE is suppressed (PASS message printed).
+预期输出：
+- `verify_smoke` 末行打印 `PASS: verify_smoke completed`。
+- `verify_cooldown` 会打印 `ALERTS_START ... cooldown=300s`，随后首个 MOVE 行，最后以 `PASS: cooldown verified ...` 收尾。
 
-3) Kill switch validation
-
-```powershell
-New-Item -ItemType File .\Data\KILL_SWITCH -Force
-.\.venv\Scripts\python.exe .\alerts.py
-.\.venv\Scripts\python.exe .\quotes.py
-Remove-Item .\Data\KILL_SWITCH -Force
-```
-
-Expected: both scripts print `KILL_SWITCH detected ... exiting` and return exit code `0`.
-
-4) Debug-mode inspection (if `alerts.debug: true` in `config.yaml`)
-
-```powershell
-.\.venv\Scripts\python.exe .\alerts.py
-```
-
-Expected: every cycle prints DEBUG lines (prev/now/move/thr/flat_count/will_alert/cooldown_remaining when applicable).
-
-5) JSONL event stream check (new)
-
-```powershell
-.\.venv\Scripts\python.exe .\tools\inject_quote.py --delta-pct 1.0
-.\.venv\Scripts\python.exe .\alerts.py
-```
-
-Expected: at least one MOVE is printed, `.\Logs\events.jsonl` gains a valid JSON line containing `ts_utc`, `ts_et`, `event_type`, `symbol`, `severity`, `message`, `metrics`, and `source`.
+提示：不要把 `config.yaml` 的 YAML 片段当成 PowerShell 命令去敲；验收脚本会自动临时调整配置并在退出时还原。
 
 ## Deterministic MOVE self-test
 Run a synthetic injection so `alerts.py` emits a MOVE alert without waiting for real market moves.

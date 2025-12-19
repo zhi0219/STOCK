@@ -16,6 +16,7 @@ Data/learning_cards.md
 Logs/*.log
 Logs/alert_state.json
 Logs/KILL_SWITCH
+Data/KILL_SWITCH
 
 # Optional: keep Data and Logs folders but ignore other runtime artifacts
 Data/*.tmp
