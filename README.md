@@ -66,7 +66,7 @@ The injector writes to `.\Data\quotes.csv` with `source=SELF_TEST_INJECT` so the
 ## Stability features
 - Compile-time check:
   ```powershell
-  .\.venv\Scripts\python.exe -m py_compile .\main.py .\quotes.py .\alerts.py .\tools\inject_quote.py
+  .\.venv\Scripts\python.exe -m py_compile .\main.py .\quotes.py .\alerts.py .\tools\inject_quote.py .\tools\tail_events.py
   ```
   Expected: command exits quietly if the files are syntactically valid.
 - Cooldown / dedupe demo:
@@ -92,3 +92,25 @@ The injector writes to `.\Data\quotes.csv` with `source=SELF_TEST_INJECT` so the
   .\.venv\Scripts\python.exe .\alerts.py
   ```
   Expected: each polling cycle prints compact `DEBUG` lines showing prev/now/move%/threshold/flat_count and file-health stats.
+
+## Events / Status 观察与排障
+- 启动 alerts（会立刻写入一条 `ALERTS_START` 事件行，以及 `Logs\\status.json` 快照）：
+  ```powershell
+  .\.venv\Scripts\python.exe .\alerts.py
+  ```
+- 查看/轮转 events：事件文件按 **UTC 日期** 分片，位于 `Logs\\events_YYYY-MM-DD.jsonl`；每天会自动写入当天文件，选择“最新文件”依赖这个 UTC 命名规则。
+- tail 最新 events（支持过滤，容错坏行）：
+  ```powershell
+  .\.venv\Scripts\python.exe .\tools\tail_events.py --tail 5
+  .\.venv\Scripts\python.exe .\tools\tail_events.py --symbol AAPL --type MOVE --since-minutes 10
+  ```
+  预期：打印最新 events json 对象；如果存在坏行会在 stderr 提示 `[WARN] skipped ...` 但不中断。
+- Kill switch（PowerShell）：创建/移除 `Data\\KILL_SWITCH` 可让 alerts/quotes 安全退出，事件日志也会记录 `KILL_SWITCH`：
+  ```powershell
+  New-Item -ItemType File .\Data\KILL_SWITCH
+  Remove-Item .\Data\KILL_SWITCH
+  ```
+
+### Risks / Assumptions
+- 选择“最新 events 文件”依赖 `events_YYYY-MM-DD.jsonl` 的 UTC 命名模式，如果手工改名需自行注意。
+- 当 `zoneinfo` 不可用或本地时区获取失败时，`ts_local` 会回退为本地系统时间（无时区信息），不会阻断主流程。
