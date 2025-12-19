@@ -97,7 +97,7 @@ def main() -> None:
     latest = find_latest_events_file(logs_dir)
     if latest is None:
         print(f"No events file found in {logs_dir}", file=sys.stderr)
-        sys.exit(1)
+        return
 
     symbol = args.symbol.upper() if args.symbol else None
     event_type = args.event_type.upper() if args.event_type else None
