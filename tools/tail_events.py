@@ -29,7 +29,16 @@ def get_logs_dir(cfg: dict) -> Path:
 
 
 def latest_events_file(logs_dir: Path) -> Optional[Path]:
-    candidates = sorted(logs_dir.glob("events_*.jsonl"))
+    if not logs_dir.exists():
+        return None
+
+    def sort_key(p: Path) -> tuple[int, str]:
+        try:
+            return (int(p.stat().st_mtime), p.name)
+        except Exception:
+            return (0, p.name)
+
+    candidates = sorted(logs_dir.glob("events_*.jsonl"), key=sort_key)
     if candidates:
         return candidates[-1]
 

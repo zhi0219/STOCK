@@ -97,6 +97,7 @@ The injector writes to `.\Data\quotes.csv` with `source=SELF_TEST_INJECT` so the
 
 ## Events (JSONL) rotation and tailing
 - Events now append to daily files under `./Logs/events_YYYYMMDD.jsonl` (UTC date, relative to repo root). Each event includes `schema_version: 1` plus the existing fields.
+- `tools/tail_events.py` picks the newest daily file (by mtime/name), falls back to `./Logs/events.jsonl` if present, and exits quietly when the log folder does not yet exist.
 - Tailing with filtering and bad-line tolerance:
   ```powershell
   .\.venv\Scripts\python.exe .\tools\tail_events.py --limit 20 --symbol AAPL --type MOVE
