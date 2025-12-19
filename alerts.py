@@ -1,12 +1,19 @@
 from __future__ import annotations
 
+import importlib.util
 import json
+import os
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from zoneinfo import ZoneInfo
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
+
+_zoneinfo_spec = importlib.util.find_spec("zoneinfo")
+if _zoneinfo_spec is not None:
+    from zoneinfo import ZoneInfo
+else:  # pragma: no cover - fallback when zoneinfo is unavailable
+    ZoneInfo = None
 
 import pandas as pd
 import yaml
@@ -14,15 +21,32 @@ import yaml
 
 ROOT = Path(__file__).resolve().parent
 CONFIG_PATH = ROOT / "config.yaml"
+EVENT_SCHEMA_VERSION = 1
+STATUS_SCHEMA_VERSION = 1
 
 
 # ---------- time helpers ----------
+def _local_dt_from_utc(ts_utc: datetime) -> Tuple[str, str]:
+    try:
+        if ZoneInfo is not None:
+            local_dt = ts_utc.astimezone()
+            return local_dt.isoformat(timespec="seconds"), local_dt.tzname() or "LOCAL"
+    except Exception:
+        pass
+
+    try:
+        local_dt = datetime.now().astimezone()
+        return local_dt.isoformat(timespec="seconds"), local_dt.tzname() or "LOCAL"
+    except Exception:
+        local_dt = datetime.now()
+        return local_dt.isoformat(timespec="seconds"), "LOCAL"
+
+
 def now_stamps() -> Tuple[str, str, str]:
     """Return (utc_iso, local_iso, local_tz_name)."""
-    u = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    local_dt = datetime.now(timezone.utc).astimezone()
-    local = local_dt.isoformat(timespec="seconds")
-    tzname = local_dt.tzname() or "LOCAL"
+    ts_utc_dt = datetime.now(timezone.utc)
+    u = ts_utc_dt.isoformat(timespec="seconds")
+    local, tzname = _local_dt_from_utc(ts_utc_dt)
     return u, local, tzname
 
 
@@ -56,6 +80,11 @@ def append_line(path: Path, line: str) -> None:
         f.write(line + "\n")
 
 
+def _events_path_for_ts(log_dir: Path, ts_utc: datetime) -> Path:
+    date_str = ts_utc.date().isoformat()
+    return log_dir / f"events_{date_str}.jsonl"
+
+
 def make_event(
     alert_type: str,
     symbol: str,
@@ -64,28 +93,34 @@ def make_event(
     metrics: Dict[str, Any],
     *,
     source: str,
-) -> Dict[str, Any]:
+) -> Tuple[Dict[str, Any], datetime]:
     ts_utc = datetime.now(timezone.utc)
-    ts_et = ts_utc.astimezone(ZoneInfo("America/New_York"))
+    ts_local, tzname = _local_dt_from_utc(ts_utc)
     sym = symbol if symbol else "__GLOBAL__"
-    return {
-        "ts_utc": ts_utc.isoformat(timespec="seconds"),
-        "ts_et": ts_et.isoformat(timespec="seconds"),
-        "event_type": alert_type,
-        "symbol": sym,
-        "severity": severity,
-        "message": message,
-        "metrics": metrics,
-        "source": source,
-    }
+    return (
+        {
+            "schema_version": EVENT_SCHEMA_VERSION,
+            "ts_utc": ts_utc.isoformat(timespec="seconds"),
+            "ts_local": ts_local,
+            "local_tz": tzname,
+            "event_type": alert_type,
+            "symbol": sym,
+            "severity": severity,
+            "message": message,
+            "metrics": metrics,
+            "source": source,
+        },
+        ts_utc,
+    )
 
 
 def emit_event(
     event: Dict[str, Any],
+    event_ts: datetime,
     message: str,
     *,
     alerts_log: Path,
-    events_log: Path,
+    events_log_dir: Path,
     learning_card: Optional[Dict[str, str]] = None,
 ) -> None:
     try:
@@ -102,10 +137,13 @@ def emit_event(
             pass
 
     try:
+        events_log = _events_path_for_ts(events_log_dir, event_ts)
         events_log.parent.mkdir(parents=True, exist_ok=True)
         with events_log.open("a", encoding="utf-8") as f:
             json.dump(event, f, ensure_ascii=False)
             f.write("\n")
+            f.flush()
+            os.fsync(f.fileno())
     except Exception as e:
         try:
             print(f"[WARN] failed to append events.jsonl: {e}")
@@ -181,22 +219,31 @@ def write_status(
     path: Path,
     *,
     ts_utc: datetime,
-    ts_et: datetime,
+    ts_local: str,
     quotes_path: Path,
     quotes_file_age_s: Optional[float],
     last_rows: Optional[int],
     last_prices: Optional[Dict[str, float]],
     last_alert_ts: Optional[str],
+    last_start_utc: str,
+    config_snapshot: Dict[str, Any],
+    last_move: Optional[Dict[str, Any]],
 ) -> None:
     try:
         payload = {
+            "schema_version": STATUS_SCHEMA_VERSION,
             "ts_utc": ts_utc.isoformat(timespec="seconds"),
-            "ts_et": ts_et.isoformat(timespec="seconds"),
-            "quotes_path": str(quotes_path),
-            "quotes_file_age_s": quotes_file_age_s,
-            "last_rows": last_rows,
-            "last_prices": last_prices,
-            "last_alert_ts": last_alert_ts,
+            "ts_local": ts_local,
+            "last_start_utc": last_start_utc,
+            "last_event_utc": last_alert_ts,
+            "config": config_snapshot,
+            "quotes": {
+                "path": str(quotes_path),
+                "file_age_s": quotes_file_age_s,
+                "last_rows": last_rows,
+                "last_prices": last_prices,
+            },
+            "last_move": last_move,
         }
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(path.suffix + ".tmp")
@@ -243,7 +290,6 @@ def main() -> None:
 
     quotes_path = data_dir / "quotes.csv"
     alerts_log = logs_dir / "alerts.log"
-    events_log = logs_dir / "events.jsonl"
     status_path = logs_dir / "status.json"
     learning_cards_path = data_dir / "learning_cards.md"
     alert_state_path = logs_dir / "alert_state.json"
@@ -274,22 +320,36 @@ def main() -> None:
 
     last_alert_ts: Optional[str] = None
 
+    start_ts_utc_dt = datetime.now(timezone.utc)
+    start_ts_utc = start_ts_utc_dt.isoformat(timespec="seconds")
+
+    last_move: Optional[Dict[str, Any]] = None
+
     def flush_status(
         quotes_file_age_s: Optional[float],
         last_rows: Optional[int],
         last_prices: Optional[Dict[str, float]],
     ) -> None:
         ts_utc_dt = datetime.now(timezone.utc)
-        ts_et_dt = ts_utc_dt.astimezone(ZoneInfo("America/New_York"))
+        ts_local, _ = _local_dt_from_utc(ts_utc_dt)
         write_status(
             status_path,
             ts_utc=ts_utc_dt,
-            ts_et=ts_et_dt,
+            ts_local=ts_local,
             quotes_path=quotes_path,
             quotes_file_age_s=quotes_file_age_s,
             last_rows=last_rows,
             last_prices=last_prices,
             last_alert_ts=last_alert_ts,
+            last_start_utc=start_ts_utc,
+            config_snapshot={
+                "poll_seconds": poll_seconds,
+                "cooldown_seconds": cooldown_seconds,
+                "flat_repeats": flat_repeats,
+                "stale_seconds": stale_seconds,
+                "minute_move_pct": minute_thr,
+            },
+            last_move=last_move,
         )
 
     watchlist = cfg.get("watchlist")
@@ -307,8 +367,29 @@ def main() -> None:
         f"thr={minute_thr}% poll={poll_seconds}s flat={flat_repeats} stale={stale_seconds}s "
         f"cooldown={cooldown_seconds}s debug={debug_enabled} quotes={quotes_path}"
     )
-    print(start_line)
-    append_line(alerts_log, start_line)
+    start_event, start_ts = make_event(
+        "ALERTS_START",
+        "__GLOBAL__",
+        "info",
+        start_line,
+        metrics={
+            "poll_seconds": poll_seconds,
+            "cooldown_seconds": cooldown_seconds,
+            "flat_repeats": flat_repeats,
+            "stale_seconds": stale_seconds,
+            "minute_move_pct": minute_thr,
+            "quotes_path": str(quotes_path),
+        },
+        source="alerts.py",
+    )
+    emit_event(
+        start_event,
+        start_ts,
+        start_line,
+        alerts_log=alerts_log,
+        events_log_dir=logs_dir,
+    )
+    last_alert_ts = start_event["ts_utc"]
 
     # file health state
     last_file_mtime: float = 0.0
@@ -324,19 +405,22 @@ def main() -> None:
         if kill_switch_path.exists():
             utc_s, local_s, tzname = now_stamps()
             msg = f"[{utc_s} | {local_s} {tzname}] KILL_SWITCH detected at {kill_switch_path}, exiting"
+            kill_event, kill_ts = make_event(
+                "KILL_SWITCH",
+                "__GLOBAL__",
+                "high",
+                msg,
+                metrics={"path": str(kill_switch_path)},
+                source="quotes.csv",
+            )
             emit_event(
-                make_event(
-                    "KILL_SWITCH",
-                    "__GLOBAL__",
-                    "high",
-                    msg,
-                    metrics={"path": str(kill_switch_path)},
-                    source="quotes.csv",
-                ),
+                kill_event,
+                kill_ts,
                 msg,
                 alerts_log=alerts_log,
-                events_log=events_log,
+                events_log_dir=logs_dir,
             )
+            last_alert_ts = kill_event["ts_utc"]
             return
 
         # --- DATA_MISSING ---
@@ -346,7 +430,7 @@ def main() -> None:
             if not is_on_cooldown(key, cooldown_seconds, alert_state, now_epoch=now_epoch):
                 utc_s, local_s, tzname = now_stamps()
                 msg = f"[{utc_s} | {local_s} {tzname}] ⚠️ DATA_MISSING symbol=- quotes.csv not found: {quotes_path}"
-                event = make_event(
+                event, event_ts = make_event(
                     "DATA_MISSING",
                     "__GLOBAL__",
                     "med",
@@ -356,9 +440,10 @@ def main() -> None:
                 )
                 emit_event(
                     event,
+                    event_ts,
                     msg,
                     alerts_log=alerts_log,
-                    events_log=events_log,
+                    events_log_dir=logs_dir,
                     learning_card={
                         "path": learning_cards_path,
                         "alert_type": "DATA_MISSING",
@@ -403,7 +488,7 @@ def main() -> None:
                             f"[{utc_s} | {local_s} {tzname}] ⚠️ DATA_STALE symbol=- "
                             f"quotes.csv mtime unchanged >= {stale_seconds}s"
                         )
-                        event = make_event(
+                        event, event_ts = make_event(
                             "DATA_STALE",
                             "__GLOBAL__",
                             "med",
@@ -413,9 +498,10 @@ def main() -> None:
                         )
                         emit_event(
                             event,
+                            event_ts,
                             msg,
                             alerts_log=alerts_log,
-                            events_log=events_log,
+                            events_log_dir=logs_dir,
                             learning_card={
                                 "path": learning_cards_path,
                                 "alert_type": "DATA_STALE",
@@ -441,7 +527,7 @@ def main() -> None:
                 continue
             utc_s, local_s, tzname = now_stamps()
             msg = f"[{utc_s} | {local_s} {tzname}] ⚠️ READ_FAIL symbol=- {type(e).__name__}: {e}"
-            event = make_event(
+            event, event_ts = make_event(
                 "READ_FAIL",
                 "__GLOBAL__",
                 "med",
@@ -449,7 +535,7 @@ def main() -> None:
                 metrics={"error": str(e)},
                 source="quotes.csv",
             )
-            emit_event(event, msg, alerts_log=alerts_log, events_log=events_log)
+            emit_event(event, event_ts, msg, alerts_log=alerts_log, events_log_dir=logs_dir)
             last_alert_ts = event["ts_utc"]
             record_emit(key, alert_state, alert_state_path, now_epoch=now_epoch)
             flush_status(quotes_file_age_s, last_rows, last_prices)
@@ -549,7 +635,7 @@ def main() -> None:
                         f"[{utc_s} | {local_s} {tzname}] ⚠️ DATA_FLAT symbol={sym} "
                         f"unchanged run_len={st.run_len} price={now:.6f} last_ts={now_ts.isoformat(timespec='seconds')}"
                     )
-                    event = make_event(
+                    event, event_ts = make_event(
                         "DATA_FLAT",
                         sym,
                         "low",
@@ -564,9 +650,10 @@ def main() -> None:
                     )
                     emit_event(
                         event,
+                        event_ts,
                         msg,
                         alerts_log=alerts_log,
-                        events_log=events_log,
+                        events_log_dir=logs_dir,
                         learning_card={
                             "path": learning_cards_path,
                             "alert_type": "DATA_FLAT",
@@ -599,7 +686,7 @@ def main() -> None:
                             f"[{utc_s} | {local_s} {tzname}] 🚨 MOVE symbol={sym} "
                             f"move={move:+.2f}% prev={prev:.6f} now={now:.6f} now_ts={now_ts.isoformat(timespec='seconds')}"
                         )
-                        event = make_event(
+                        event, event_ts = make_event(
                             "MOVE",
                             sym,
                             "high",
@@ -615,9 +702,10 @@ def main() -> None:
                         )
                         emit_event(
                             event,
+                            event_ts,
                             msg,
                             alerts_log=alerts_log,
-                            events_log=events_log,
+                            events_log_dir=logs_dir,
                             learning_card={
                                 "path": learning_cards_path,
                                 "alert_type": "MOVE",
@@ -629,6 +717,14 @@ def main() -> None:
                             },
                         )
                         last_alert_ts = event["ts_utc"]
+                        last_move = {
+                            "ts_utc": event["ts_utc"],
+                            "symbol": sym,
+                            "move_pct": move,
+                            "prev": prev,
+                            "now": now,
+                            "now_ts": now_ts.isoformat(timespec="seconds"),
+                        }
                         record_emit(key, alert_state, alert_state_path, now_epoch=now_epoch)
 
             elif debug_enabled:
