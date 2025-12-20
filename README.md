@@ -112,6 +112,14 @@ The injector writes to `.\Data\quotes.csv` with `source=SELF_TEST_INJECT` so the
   New-Item -ItemType File .\Data\KILL_SWITCH
   Remove-Item .\Data\KILL_SWITCH
   ```
+- 证据驱动简报（pip install 可选，不作为验收前置）：
+  ```powershell
+  .\.venv\Scripts\python.exe .\tools\brief_report.py --limit 50
+  ```
+- 自测简报生成（pip install 可选，不作为验收前置）：
+  ```powershell
+  .\.venv\Scripts\python.exe .\tools\verify_brief.py
+  ```
 
 ## 回放 / 复盘（复制即用）
 - 回放最近 60 分钟并输出统计（pip install 可选，不是前置条件）：
