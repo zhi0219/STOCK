@@ -132,6 +132,25 @@ The injector writes to `.\Data\quotes.csv` with `source=SELF_TEST_INJECT` so the
   .\.venv\Scripts\python.exe .\tools\verify_ai_packet.py
   ```
 
+## 零成本 AI 闭环（复制即用）
+- 1) 生成证据包（只读、零成本）：
+  ```powershell
+  .\.venv\Scripts\python.exe .\tools\make_ai_packet.py --question "今天需要关注什么？给出证据引用"
+  ```
+- 2) 将生成的包粘贴到 ChatGPT，按照 "REQUIRED OUTPUT FORMAT" 输出。
+- 3) 保存回答并入库（可直接传文本，也可先保存到文件）：
+  ```powershell
+  # 直接传回答文本
+  .\.venv\Scripts\python.exe .\tools\capture_ai_answer.py --packet .\qa_packets\2024-01-01\packet.md --answer-text "粘贴 ChatGPT 回答"
+
+  # 如先保存为 answer.md，可用 --answer-file
+  .\.venv\Scripts\python.exe .\tools\capture_ai_answer.py --packet .\qa_packets\2024-01-01\packet.md --answer-file .\answer.md --strict
+  ```
+- 4) 回放 AI 回答事件（可过滤 AI_ANSWER）：
+  ```powershell
+  .\.venv\Scripts\python.exe .\tools\replay_events.py --type AI_ANSWER --limit 20
+  ```
+
 ## 回放 / 复盘（复制即用）
 - 回放最近 60 分钟并输出统计（pip install 可选，不是前置条件）：
   ```powershell
