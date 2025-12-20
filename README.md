@@ -113,6 +113,16 @@ The injector writes to `.\Data\quotes.csv` with `source=SELF_TEST_INJECT` so the
   Remove-Item .\Data\KILL_SWITCH
   ```
 
+## 回放 / 复盘（复制即用）
+- 回放最近 60 分钟并输出统计（pip install 可选，不是前置条件）：
+  ```powershell
+  .\.venv\Scripts\python.exe .\tools\replay_events.py --since-minutes 60 --limit 50 --stats
+  ```
+- 可选：拉长窗口并生成学习卡（追加到 `Data\\learning_cards.md`）：
+  ```powershell
+  .\.venv\Scripts\python.exe .\tools\replay_events.py --since-minutes 1440 --limit 200 --stats --write-learning-card
+  ```
+
 ### Risks / Assumptions
 - 选择“最新 events 文件”依赖 `events_YYYY-MM-DD.jsonl` 的 UTC 命名模式，如果手工改名需自行注意。
 - 当 `zoneinfo` 不可用或本地时区获取失败时，`ts_local` 会回退为本地系统时间（无时区信息），不会阻断主流程。
