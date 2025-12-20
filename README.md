@@ -121,6 +121,17 @@ The injector writes to `.\Data\quotes.csv` with `source=SELF_TEST_INJECT` so the
   .\.venv\Scripts\python.exe .\tools\verify_brief.py
   ```
 
+## 零成本 AI 问答（复制即用）
+- 生成证据包：
+  ```powershell
+  .\.venv\Scripts\python.exe .\tools\make_ai_packet.py --question "我想知道今天哪些事件最重要？为什么？"
+  ```
+- 把上述输出完整复制粘贴到 ChatGPT（无需 API、无需额外付费），按提示生成可审计回答。
+- 一键验收：
+  ```powershell
+  .\.venv\Scripts\python.exe .\tools\verify_ai_packet.py
+  ```
+
 ## 回放 / 复盘（复制即用）
 - 回放最近 60 分钟并输出统计（pip install 可选，不是前置条件）：
   ```powershell
