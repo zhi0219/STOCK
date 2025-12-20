@@ -161,6 +161,17 @@ The injector writes to `.\Data\quotes.csv` with `source=SELF_TEST_INJECT` so the
   .\.venv\Scripts\python.exe .\tools\replay_events.py --since-minutes 1440 --limit 200 --stats --write-learning-card
   ```
 
+## 解决字符限制：迷你证据包
+- 生成迷你证据包（按关键词裁剪最近事件，自动限制输出长度）：
+  ```powershell
+  .\.venv\Scripts\python.exe .\tools\select_evidence.py --question "今天哪些事件最重要？为什么？" --since-minutes 1440 --limit 30 --max-chars 12000
+  ```
+- 一键验收（生成并自测截断逻辑）：
+  ```powershell
+  .\.venv\Scripts\python.exe .\tools\verify_select_evidence.py
+  ```
+  说明：`pip install -r requirements.txt` 依然可选，但不是验收前置条件。
+
 ### Risks / Assumptions
 - 选择“最新 events 文件”依赖 `events_YYYY-MM-DD.jsonl` 的 UTC 命名模式，如果手工改名需自行注意。
 - 当 `zoneinfo` 不可用或本地时区获取失败时，`ts_local` 会回退为本地系统时间（无时区信息），不会阻断主流程。
