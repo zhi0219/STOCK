@@ -36,6 +36,8 @@ CONFIG_PATH = ROOT / "config.yaml"
 SERVICE_STATE_PATH = ROOT / "Logs" / "train_service" / "state.json"
 SERVICE_KILL_SWITCH = ROOT / "Logs" / "train_service" / "KILL_SWITCH"
 SERVICE_ROLLING_SUMMARY = ROOT / "Logs" / "train_service" / "rolling_summary.md"
+PROGRESS_INDEX_PATH = ROOT / "Logs" / "train_runs" / "progress_index.json"
+PROGRESS_INDEX_SCRIPT = ROOT / "tools" / "progress_index.py"
 
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -307,6 +309,10 @@ class App(tk.Tk):
         self._hud_last_summary_rendered: Path | None = None
         self._latest_wakeup_run_dir: Path | None = None
         self._latest_wakeup_summary_path: Path | None = None
+        self.progress_index_path = PROGRESS_INDEX_PATH
+        self.progress_entries: list[dict[str, object]] = []
+        self.progress_selected_entry: dict[str, object] | None = None
+        self.progress_status_var = tk.StringVar(value="Progress index: not loaded")
         self.hud_mode_detail_var = tk.StringVar(value="Status: unknown")
         self.hud_kill_switch_var = tk.StringVar(value="Kill switch: unknown")
         self.hud_data_health_var = tk.StringVar(value="Data health: unknown")
@@ -339,6 +345,7 @@ class App(tk.Tk):
         self.run_tab = tk.Frame(notebook)
         self.health_tab = tk.Frame(notebook)
         self.events_tab = tk.Frame(notebook)
+        self.progress_tab = tk.Frame(notebook)
         self.summary_tab = tk.Frame(notebook)
         self.qa_tab = tk.Frame(notebook)
         self.verify_tab = tk.Frame(notebook)
@@ -346,6 +353,7 @@ class App(tk.Tk):
         notebook.add(self.run_tab, text="Run")
         notebook.add(self.health_tab, text="Dashboard")
         notebook.add(self.events_tab, text="Events")
+        notebook.add(self.progress_tab, text="Progress (SIM-only)")
         notebook.add(self.summary_tab, text="摘要")
         notebook.add(self.qa_tab, text="AI Q&A")
         notebook.add(self.verify_tab, text="Verify")
@@ -353,6 +361,7 @@ class App(tk.Tk):
         self._build_run_tab()
         self._build_health_tab()
         self._build_events_tab()
+        self._build_progress_tab()
         self._build_summary_tab()
         self._build_qa_panel()
         self._build_verify_tab()
@@ -888,6 +897,316 @@ class App(tk.Tk):
         self._refresh_wakeup_dashboard()
         self._refresh_service_state()
         self._refresh_training_hud()
+
+    def _sparkline_text(self, values: List[float]) -> str:
+        if not values:
+            return "(no equity points)"
+        chars = "▁▂▃▄▅▆▇█"
+        lo, hi = min(values), max(values)
+        if hi == lo:
+            return chars[0] * min(len(values), 60)
+        step = max(1, len(values) // 60)
+        sampled = values[::step][:60]
+        result = ""
+        for v in sampled:
+            idx = int((v - lo) / (hi - lo) * (len(chars) - 1))
+            result += chars[idx]
+        return result
+
+    def _draw_equity_canvas(self, values: List[float]) -> None:
+        if not hasattr(self, "progress_equity_canvas"):
+            return
+        canvas = self.progress_equity_canvas
+        canvas.delete("all")
+        if not values:
+            canvas.create_text(10, 20, anchor="w", text="No equity curve available")
+            return
+        width = int(canvas.winfo_width() or 320)
+        height = int(canvas.winfo_height() or 120)
+        lo, hi = min(values), max(values)
+        if hi == lo:
+            hi = lo + 1
+        step = max(1, len(values) // max(width // 4, 1))
+        sampled = values[::step]
+        points = []
+        for idx, val in enumerate(sampled):
+            x = idx * (width / max(len(sampled) - 1, 1))
+            y = height - ((val - lo) / (hi - lo) * height)
+            points.append((x, y))
+        for idx in range(1, len(points)):
+            x0, y0 = points[idx - 1]
+            x1, y1 = points[idx]
+            canvas.create_line(x0, y0, x1, y1, fill="#2563eb", width=2)
+
+    def _load_progress_index(self) -> None:
+        path = self.progress_index_path
+        if not path.exists():
+            self.progress_status_var.set(f"progress_index.json missing: {path}")
+            self.progress_entries = []
+            self._render_progress_entries()
+            return
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            self.progress_status_var.set(f"Failed to load progress index: {exc}")
+            self.progress_entries = []
+            self._render_progress_entries()
+            return
+        entries = payload.get("entries", []) if isinstance(payload, dict) else []
+        self.progress_entries = entries if isinstance(entries, list) else []
+        generated_ts = payload.get("generated_ts") if isinstance(payload, dict) else None
+        self.progress_status_var.set(
+            f"Progress index runs={len(self.progress_entries)} | generated_at={generated_ts or 'unknown'}"
+        )
+        self._render_progress_entries()
+
+    def _render_progress_entries(self) -> None:
+        if not hasattr(self, "progress_tree"):
+            return
+        tree = self.progress_tree
+        for item in tree.get_children():
+            tree.delete(item)
+        for entry in self.progress_entries:
+            summary = entry.get("summary", {}) if isinstance(entry, dict) else {}
+            net_change = summary.get("net_change", "?")
+            stop_reason = summary.get("stop_reason", "?")
+            mtime = entry.get("mtime", "")
+            tree.insert("", tk.END, values=(entry.get("run_id", "-"), net_change, stop_reason, mtime))
+        if self.progress_entries:
+            tree.selection_set(tree.get_children()[0])
+            self._on_progress_select()
+        else:
+            self._render_progress_detail(None)
+
+    def _handle_generate_progress_index(self) -> None:
+        def runner() -> None:
+            cmd = [sys.executable, str(PROGRESS_INDEX_SCRIPT)]
+            proc = subprocess.run(
+                cmd,
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                env=_utf8_env(),
+            )
+            output = (proc.stdout or "") + ("\n" + proc.stderr if proc.stderr else "")
+
+            def updater() -> None:
+                if proc.returncode == 0:
+                    self.progress_status_var.set("Progress index refreshed from disk")
+                    self._load_progress_index()
+                else:
+                    self.progress_status_var.set("Progress index generation failed")
+                    messagebox.showerror("Progress", output or "progress_index.py failed")
+                self._log_run(output or "progress index run complete")
+
+            self._enqueue_ui(updater)
+
+        threading.Thread(target=runner, daemon=True).start()
+
+    def _handle_refresh_progress_view(self) -> None:
+        self.progress_status_var.set("Refreshing progress index view...")
+        self._load_progress_index()
+
+    def _selected_progress_entry(self) -> dict[str, object] | None:
+        if not hasattr(self, "progress_tree"):
+            return None
+        selection = self.progress_tree.selection()
+        if not selection:
+            return None
+        index = self.progress_tree.index(selection[0])
+        if index < len(self.progress_entries):
+            return self.progress_entries[index]
+        return None
+
+    def _on_progress_select(self, event=None) -> None:  # type: ignore[override]
+        entry = self._selected_progress_entry()
+        self.progress_selected_entry = entry
+        self._render_progress_detail(entry)
+
+    def _render_progress_detail(self, entry: dict[str, object] | None) -> None:
+        summary_text = "No selection"
+        holdings_text = "No holdings preview"
+        ascii_text = "(no equity points)"
+        equity_values: List[float] = []
+        if entry:
+            summary = entry.get("summary", {}) if isinstance(entry, dict) else {}
+            preview = summary.get("raw_preview") if isinstance(summary, dict) else None
+            summary_text = preview or json.dumps(summary, ensure_ascii=False, indent=2) if summary else "Summary missing"
+            holdings = entry.get("holdings_preview", []) if isinstance(entry, dict) else []
+            if holdings:
+                holdings_text = "\n".join(
+                    f"{item.get('symbol', '?')}: {item.get('count', 0)}" for item in holdings
+                )
+            equity_points = entry.get("equity_points", []) if isinstance(entry, dict) else []
+            equity_values = [float(p.get("equity", 0.0)) for p in equity_points if isinstance(p, dict)]
+            if equity_values:
+                ascii_text = self._sparkline_text(equity_values)
+        self.progress_summary_preview.configure(state=tk.NORMAL)
+        self.progress_summary_preview.delete("1.0", tk.END)
+        self.progress_summary_preview.insert(tk.END, summary_text)
+        self.progress_summary_preview.configure(state=tk.DISABLED)
+
+        self.progress_holdings_text.configure(state=tk.NORMAL)
+        self.progress_holdings_text.delete("1.0", tk.END)
+        self.progress_holdings_text.insert(tk.END, holdings_text)
+        self.progress_holdings_text.configure(state=tk.DISABLED)
+
+        self.progress_equity_ascii.configure(text=ascii_text)
+        self._draw_equity_canvas(equity_values)
+
+    def _open_progress_folder(self) -> None:
+        folder = self.progress_index_path.parent
+        try:
+            if hasattr(os, "startfile"):
+                os.startfile(str(folder))  # type: ignore[attr-defined]
+            else:
+                subprocess.Popen(["xdg-open", str(folder)], env=_utf8_env())
+        except Exception as exc:  # pragma: no cover - UI feedback
+            messagebox.showerror("Progress", f"Failed to open folder: {exc}")
+
+    def _open_progress_index_file(self) -> None:
+        if not self.progress_index_path.exists():
+            messagebox.showinfo("Progress", "progress_index.json not found")
+            return
+        try:
+            if hasattr(os, "startfile"):
+                os.startfile(str(self.progress_index_path))  # type: ignore[attr-defined]
+            else:
+                subprocess.Popen(["xdg-open", str(self.progress_index_path)], env=_utf8_env())
+        except Exception as exc:  # pragma: no cover - UI feedback
+            messagebox.showerror("Progress", f"Failed to open index: {exc}")
+
+    def _open_selected_run_dir(self) -> None:
+        entry = self._selected_progress_entry()
+        if not entry:
+            messagebox.showinfo("Progress", "No run selected")
+            return
+        run_dir = entry.get("run_dir")
+        if not run_dir:
+            messagebox.showinfo("Progress", "Run directory missing")
+            return
+        try:
+            path = Path(str(run_dir))
+            if hasattr(os, "startfile"):
+                os.startfile(str(path))  # type: ignore[attr-defined]
+            else:
+                subprocess.Popen(["xdg-open", str(path)], env=_utf8_env())
+        except Exception as exc:  # pragma: no cover - UI feedback
+            messagebox.showerror("Progress", f"Failed to open run dir: {exc}")
+
+    def _open_selected_summary(self) -> None:
+        entry = self._selected_progress_entry()
+        if not entry:
+            messagebox.showinfo("Progress", "No run selected")
+            return
+        summary_path = entry.get("summary_path")
+        if not summary_path:
+            messagebox.showinfo("Progress", "Summary path missing")
+            return
+        path = Path(str(summary_path))
+        if not path.exists():
+            messagebox.showinfo("Progress", "Summary file not found")
+            return
+        try:
+            if hasattr(os, "startfile"):
+                os.startfile(str(path))  # type: ignore[attr-defined]
+            else:
+                subprocess.Popen(["xdg-open", str(path)], env=_utf8_env())
+        except Exception as exc:  # pragma: no cover - UI feedback
+            messagebox.showerror("Progress", f"Failed to open summary: {exc}")
+
+    def _open_selected_equity(self) -> None:
+        entry = self._selected_progress_entry()
+        equity_path = entry.get("equity_path") if entry else None
+        if not equity_path:
+            messagebox.showinfo("Progress", "Equity curve missing for selection")
+            return
+        path = Path(str(equity_path))
+        if not path.exists():
+            messagebox.showinfo("Progress", "Equity curve file not found")
+            return
+        try:
+            if hasattr(os, "startfile"):
+                os.startfile(str(path))  # type: ignore[attr-defined]
+            else:
+                subprocess.Popen(["xdg-open", str(path)], env=_utf8_env())
+        except Exception as exc:  # pragma: no cover - UI feedback
+            messagebox.showerror("Progress", f"Failed to open equity curve: {exc}")
+
+    def _build_progress_tab(self) -> None:
+        banner = tk.Label(
+            self.progress_tab,
+            text="Progress panel (SIM-only). Uses Logs/train_runs/progress_index.json to render training snapshots.",
+            fg="#2563eb",
+            anchor="w",
+        )
+        banner.pack(fill=tk.X, padx=6, pady=4)
+        status_label = tk.Label(self.progress_tab, textvariable=self.progress_status_var, anchor="w")
+        status_label.pack(fill=tk.X, padx=6)
+
+        button_frame = tk.Frame(self.progress_tab)
+        button_frame.pack(fill=tk.X, padx=6, pady=4)
+        tk.Button(button_frame, text="Generate index", command=self._handle_generate_progress_index).pack(
+            side=tk.LEFT, padx=4
+        )
+        tk.Button(button_frame, text="Refresh view", command=self._handle_refresh_progress_view).pack(
+            side=tk.LEFT, padx=4
+        )
+        tk.Button(button_frame, text="Open progress folder", command=self._open_progress_folder).pack(
+            side=tk.LEFT, padx=4
+        )
+        tk.Button(button_frame, text="Open index file", command=self._open_progress_index_file).pack(
+            side=tk.LEFT, padx=4
+        )
+
+        container = tk.Frame(self.progress_tab)
+        container.pack(fill=tk.BOTH, expand=True, padx=6, pady=4)
+        left = tk.Frame(container)
+        left.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        right = tk.Frame(container)
+        right.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+
+        runs_frame = tk.LabelFrame(left, text="Runs (SIM-only)", padx=4, pady=4)
+        runs_frame.pack(fill=tk.BOTH, expand=True, padx=4)
+        columns = ("run_id", "net_change", "stop_reason", "mtime")
+        self.progress_tree = ttk.Treeview(runs_frame, columns=columns, show="headings", height=8)
+        for name, width in [("run_id", 140), ("net_change", 120), ("stop_reason", 140), ("mtime", 180)]:
+            self.progress_tree.heading(name, text=name)
+            self.progress_tree.column(name, width=width, anchor="w")
+        self.progress_tree.pack(fill=tk.BOTH, expand=True)
+        self.progress_tree.bind("<<TreeviewSelect>>", self._on_progress_select)
+
+        actions = tk.Frame(runs_frame)
+        actions.pack(fill=tk.X, pady=4)
+        tk.Button(actions, text="Open run folder", command=self._open_selected_run_dir).pack(side=tk.LEFT, padx=3)
+        tk.Button(actions, text="Open summary", command=self._open_selected_summary).pack(side=tk.LEFT, padx=3)
+        tk.Button(actions, text="Open equity_curve.csv", command=self._open_selected_equity).pack(side=tk.LEFT, padx=3)
+
+        detail_frame = tk.LabelFrame(right, text="Details", padx=4, pady=4)
+        detail_frame.pack(fill=tk.BOTH, expand=True, padx=4)
+        tk.Label(detail_frame, text="Summary preview:").pack(anchor="w")
+        self.progress_summary_preview = ScrolledText(detail_frame, height=8, wrap=tk.WORD)
+        self.progress_summary_preview.pack(fill=tk.BOTH, expand=True)
+        self.progress_summary_preview.configure(state=tk.DISABLED)
+
+        holdings_frame = tk.Frame(detail_frame)
+        holdings_frame.pack(fill=tk.X, pady=4)
+        tk.Label(holdings_frame, text="Holdings preview:").pack(anchor="w")
+        self.progress_holdings_text = tk.Text(holdings_frame, height=3, width=50)
+        self.progress_holdings_text.pack(fill=tk.X)
+        self.progress_holdings_text.configure(state=tk.DISABLED)
+
+        equity_frame = tk.Frame(detail_frame)
+        equity_frame.pack(fill=tk.BOTH, expand=True, pady=4)
+        tk.Label(equity_frame, text="Equity sparkline (ASCII + canvas)").pack(anchor="w")
+        self.progress_equity_ascii = tk.Label(equity_frame, font=("Courier", 10), anchor="w", justify=tk.LEFT)
+        self.progress_equity_ascii.pack(fill=tk.X)
+        self.progress_equity_canvas = tk.Canvas(equity_frame, height=140, bg="#f8fafc")
+        self.progress_equity_canvas.pack(fill=tk.BOTH, expand=True)
+
+        self._load_progress_index()
 
     def _load_dashboard(self) -> None:
         if not compute_health or not compute_event_rows:

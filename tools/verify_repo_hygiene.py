@@ -18,6 +18,8 @@ REQUIRED_RULES = [
     "logs/train_daemon_state.json",
     "Logs/train_runs/",
     "logs/train_runs/",
+    "Logs/progress_index.json",
+    "logs/progress_index.json",
     "Logs/train_service/",
     "logs/train_service/",
     "Logs/tournament_runs/",
@@ -41,6 +43,8 @@ RUNTIME_ROOTS = [
 HIGHLIGHT_PATHS = {
     "Logs/train_daemon_state.json",
     "logs/train_daemon_state.json",
+    "Logs/progress_index.json",
+    "logs/progress_index.json",
 }
 
 

@@ -433,6 +433,9 @@ def _py_compile_targets() -> List[Path]:
         "verify_policy_lifecycle.py",
         "verify_train_semantic_loop.py",
         "verify_ui_hud_parsing.py",
+        "progress_index.py",
+        "verify_progress_index.py",
+        "verify_ui_progress_panel.py",
     ]:
         target = TOOLS_DIR / name
         if target.exists():
@@ -482,6 +485,8 @@ def _run_quick_verifiers(missing_deps: List[str], env: dict[str, str | bool]) ->
         TOOLS_DIR / "verify_e2e_qa_loop.py",
         TOOLS_DIR / "verify_ui_qapacket_path.py",
         TOOLS_DIR / "verify_train_semantic_loop.py",
+        TOOLS_DIR / "verify_progress_index.py",
+        TOOLS_DIR / "verify_ui_progress_panel.py",
     ]
     results: List[CheckResult] = []
     for script in quick:
