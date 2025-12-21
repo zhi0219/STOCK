@@ -9,7 +9,9 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List
+from typing import List, Sequence
+
+import yaml
 
 try:
     import tkinter as tk
@@ -27,7 +29,7 @@ SUPERVISOR_SCRIPT = ROOT / "tools" / "supervisor.py"
 QA_FLOW_SCRIPT = ROOT / "tools" / "qa_flow.py"
 CAPTURE_ANSWER_SCRIPT = ROOT / "tools" / "capture_ai_answer.py"
 UI_LOG_PATH = ROOT / "Logs" / "ui_actions.log"
-KILL_SWITCH = ROOT / "Data" / "KILL_SWITCH"
+CONFIG_PATH = ROOT / "config.yaml"
 
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -61,6 +63,23 @@ def _utf8_env(extra: dict[str, str] | None = None) -> dict[str, str]:
     return env
 
 
+def load_config() -> dict:
+    if not CONFIG_PATH.exists():
+        return {}
+    try:
+        with CONFIG_PATH.open("r", encoding="utf-8") as fh:
+            return yaml.safe_load(fh) or {}
+    except Exception:
+        return {}
+
+
+def get_kill_switch_path(cfg: dict | None = None) -> Path:
+    cfg = cfg or load_config()
+    risk_cfg = cfg.get("risk_guards", {}) or {}
+    kill_switch = risk_cfg.get("kill_switch_path", "./Data/KILL_SWITCH")
+    return ROOT / str(kill_switch)
+
+
 def read_text_tail(path: Path, lines: int = 20) -> str:
     if not path or not path.exists():
         return "(no events file)"
@@ -77,9 +96,9 @@ def latest_events_file() -> Path | None:
     return candidates[-1] if candidates else None
 
 
-def run_supervisor_command(command: str) -> subprocess.CompletedProcess:
+def run_supervisor_command(commands: Sequence[str]) -> subprocess.CompletedProcess:
     return subprocess.run(
-        [sys.executable, str(SUPERVISOR_SCRIPT), command],
+        [sys.executable, str(SUPERVISOR_SCRIPT), *commands],
         cwd=ROOT,
         capture_output=True,
         text=True,
@@ -121,9 +140,10 @@ def _append_ui_log(content: str) -> None:
 def run_verify_script(script_name: str) -> RunResult:
     script_path = ROOT / "tools" / script_name
     note = ""
-    if KILL_SWITCH.exists():
+    kill_switch = get_kill_switch_path()
+    if kill_switch.exists():
         try:
-            KILL_SWITCH.unlink()
+            kill_switch.unlink()
             note = "Removed stale KILL_SWITCH before verify"
         except Exception as exc:
             note = f"KILL_SWITCH present and could not be removed: {exc}"
@@ -195,19 +215,50 @@ class App(tk.Tk):
         self.after(500, self._drain_summary_queue)
 
     def _handle_start(self) -> None:
-        self._run_supervisor_async("start")
+        kill_switch = get_kill_switch_path()
+        if kill_switch.exists():
+            self._show_kill_switch_prompt(kill_switch)
+            return
+        self._run_supervisor_async(["start"])
 
     def _handle_stop(self) -> None:
-        self._run_supervisor_async("stop")
+        self._run_supervisor_async(["stop"])
 
-    def _run_supervisor_async(self, command: str) -> None:
-        threading.Thread(target=self._run_supervisor, args=(command,), daemon=True).start()
+    def _show_kill_switch_prompt(self, kill_switch: Path) -> None:
+        dialog = tk.Toplevel(self)
+        dialog.title("KILL_SWITCH present")
+        dialog.grab_set()
 
-    def _run_supervisor(self, command: str) -> None:
+        text = (
+            "紧急停止开关(KILL_SWITCH)仍在，系统按安全规则拒绝启动。\n"
+            "如果你是故意停机：保持不动即可。\n"
+            "如果你要恢复运行：点击 Remove & Start（将删除 KILL_SWITCH 并启动 quotes/alerts）"
+        )
+
+        tk.Label(dialog, text=text, justify=tk.LEFT, wraplength=520).pack(anchor="w", padx=10, pady=10)
+        tk.Label(dialog, text=f"位置: {kill_switch}", fg="gray").pack(anchor="w", padx=10)
+
+        button_frame = tk.Frame(dialog)
+        button_frame.pack(pady=10)
+
+        def do_remove_and_start() -> None:
+            dialog.destroy()
+            self._run_supervisor_async(["start", "--force-remove-kill-switch"])
+
+        def do_cancel() -> None:
+            dialog.destroy()
+
+        tk.Button(button_frame, text="Remove & Start", command=do_remove_and_start).pack(side=tk.LEFT, padx=5)
+        tk.Button(button_frame, text="Cancel", command=do_cancel).pack(side=tk.LEFT, padx=5)
+
+    def _run_supervisor_async(self, commands: Sequence[str]) -> None:
+        threading.Thread(target=self._run_supervisor, args=(commands,), daemon=True).start()
+
+    def _run_supervisor(self, commands: Sequence[str]) -> None:
         with self._lock:
-            proc = run_supervisor_command(command)
+            proc = run_supervisor_command(commands)
         result = RunResult(
-            command=[sys.executable, str(SUPERVISOR_SCRIPT), command],
+            command=[sys.executable, str(SUPERVISOR_SCRIPT), *commands],
             cwd=ROOT,
             returncode=proc.returncode,
             stdout=proc.stdout or "",

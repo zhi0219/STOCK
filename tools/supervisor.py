@@ -11,12 +11,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Optional
 
+import yaml
+
 
 ROOT = Path(__file__).resolve().parent.parent
+CONFIG_PATH = ROOT / "config.yaml"
 DATA_DIR = ROOT / "Data"
 LOGS_DIR = ROOT / "Logs"
 STATE_PATH = LOGS_DIR / "supervisor_state.json"
-KILL_SWITCH = DATA_DIR / "KILL_SWITCH"
 DEFAULT_QUOTE_SCRIPT = ROOT / "quotes.py"
 DEFAULT_ALERT_SCRIPT = ROOT / "alerts.py"
 
@@ -24,6 +26,23 @@ DEFAULT_ALERT_SCRIPT = ROOT / "alerts.py"
 def ensure_dirs() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def load_config() -> Dict:
+    if not CONFIG_PATH.exists():
+        return {}
+    try:
+        with CONFIG_PATH.open("r", encoding="utf-8") as fh:
+            return yaml.safe_load(fh) or {}
+    except Exception:
+        return {}
+
+
+def get_kill_switch_path(cfg: Optional[Dict] = None) -> Path:
+    cfg = cfg or load_config()
+    risk_cfg = cfg.get("risk_guards", {}) or {}
+    kill_switch = risk_cfg.get("kill_switch_path", "./Data/KILL_SWITCH")
+    return ROOT / str(kill_switch)
 
 
 def utc_now() -> datetime:
@@ -149,11 +168,18 @@ def update_running_flags(state: Dict) -> Dict:
 
 def start_sources(args: argparse.Namespace) -> int:
     ensure_dirs()
-    if KILL_SWITCH.exists():
+    kill_switch_path = get_kill_switch_path()
+    if kill_switch_path.exists():
         if not args.force_remove_kill_switch:
-            print("[WARN] KILL_SWITCH present. Remove or pass --force-remove-kill-switch to continue.")
+            print(
+                f"[WARN] KILL_SWITCH present at {kill_switch_path}. Remove or pass --force-remove-kill-switch to continue."
+            )
             return 1
-        KILL_SWITCH.unlink(missing_ok=True)
+        try:
+            kill_switch_path.unlink(missing_ok=True)
+        except Exception as exc:
+            print(f"[ERROR] Failed to remove kill switch at {kill_switch_path}: {exc}", file=sys.stderr)
+            return 1
 
     existing_state = read_state()
     existing_state = update_running_flags(existing_state) if existing_state else existing_state
@@ -192,7 +218,9 @@ def start_sources(args: argparse.Namespace) -> int:
 
 def stop_sources(args: argparse.Namespace) -> int:
     ensure_dirs()
-    KILL_SWITCH.touch()
+    kill_switch_path = get_kill_switch_path()
+    kill_switch_path.parent.mkdir(parents=True, exist_ok=True)
+    kill_switch_path.touch()
     state = read_state()
     sources = state.get("sources", {}) if state else {}
     timeout = args.timeout
