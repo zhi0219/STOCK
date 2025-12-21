@@ -133,6 +133,22 @@ cd $HOME\Desktop\STOCK
   - 守护/候选/决策报告：`Logs/tournament_runs/tournament_report_*`、`Logs/policy_candidate.json` 与 `Logs/events_train.jsonl` 中的路径可回溯提案/候选/决策来源。
   - 一键停机：创建 `config.yaml` 里 `risk_guards.kill_switch_path` 指向的文件（默认 `Data/KILL_SWITCH`）即可强制停机。
 
+## Progress Panel (SIM-only)
+
+- UI 新增 “Progress (SIM-only)” 页签，突出风险优先：顶部灯显示 SAFE/OBSERVE/RUNNING、KILL_SWITCH 状态与数据健康；核心行优先展示最近/历史最佳的 Max drawdown、拒绝次数/原因、触发的 risk gates，其次才显示收益。
+- 图表：
+  - 左侧曲线：最近一次 run 的 equity 曲线（Tk Canvas 折线，缺数据时有 ASCII fallback）。
+  - 右侧曲线：跨 run 的期末 equity 走势，便于观察迭代是否在改进。
+  - 持仓快照：run 目录存在 holdings_snapshot.json 时直接展示；若训练暂未落盘持仓，系统会基于 equity 曲线生成一个空持仓+现金快照（仍然是 SIM-only）。
+- 一键跳转：按钮可直接打开最新/最佳 run 目录、最新 summary 或 tail TRAIN_/PROMOTION_/GUARD_ 事件，方便排查风险闸门被触发的原因。
+- 复制即用检查（PowerShell，带 CMD-YYYYMMDD-### 前缀，保持可追踪）：
+  ```powershell
+  CMD-20240215-001: .\.venv\Scripts\python.exe .\tools\verify_progress_index.py
+  CMD-20240215-002: .\.venv\Scripts\python.exe .\tools\verify_ui_progress_panel.py
+  CMD-20240215-003: .\.venv\Scripts\python.exe .\tools\verify_consistency.py
+  ```
+- 提醒：运行时产物依旧落在 `Logs/train_runs/` 与 `Logs/train_service/`（已 gitignore），无需 git clean；卫生闸门 `verify_repo_hygiene` 会提示遗漏的 ignore 规则。
+
 ## 像应用一样一键启动
 
 - 打开 UI：

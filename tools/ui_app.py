@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import csv
 import json
 import queue
 import subprocess
@@ -49,6 +50,7 @@ try:
         load_latest_status,
         load_recent_events,
     )
+    from tools.progress_index import OUTPUT_INDEX, RunProgress, build_progress_index
     from tools.stdio_utf8 import configure_stdio_utf8
     from tools.wakeup_dashboard import (
         MISSING_FIELD_TEXT,
@@ -64,6 +66,9 @@ except Exception:
     compute_move_leaderboard = None  # type: ignore[assignment]
     load_latest_status = None  # type: ignore[assignment]
     load_recent_events = None  # type: ignore[assignment]
+    OUTPUT_INDEX = ROOT / "Logs" / "train_service" / "progress_index.json"  # type: ignore[assignment]
+    RunProgress = None  # type: ignore[assignment]
+    build_progress_index = None  # type: ignore[assignment]
     configure_stdio_utf8 = None  # type: ignore[assignment]
     MISSING_FIELD_TEXT = "字段缺失/版本差异"  # type: ignore[assignment]
     find_latest_run_dir = None  # type: ignore[assignment]
@@ -113,6 +118,48 @@ def read_text_tail(path: Path, lines: int = 20) -> str:
 def latest_events_file() -> Path | None:
     candidates = sorted((ROOT / "Logs").glob("events_*.jsonl"))
     return candidates[-1] if candidates else None
+
+
+def render_polyline(canvas: tk.Canvas, values: list[float], color: str = "#0ea5e9") -> None:
+    canvas.delete("all")
+    width = int(canvas.cget("width"))
+    height = int(canvas.cget("height"))
+    if len(values) < 2 or width <= 0 or height <= 0:
+        canvas.create_text(
+            width // 2,
+            height // 2,
+            text="(no curve)",
+            fill="#6b7280",
+        )
+        return
+    padding = 6
+    span_y = max(max(values) - min(values), 1e-6)
+    step_x = (width - 2 * padding) / max(len(values) - 1, 1)
+    coords: list[float] = []
+    min_v = min(values)
+    for idx, val in enumerate(values):
+        x = padding + idx * step_x
+        normalized = (val - min_v) / span_y
+        y = height - padding - normalized * (height - 2 * padding)
+        coords.extend([x, y])
+    canvas.create_line(*coords, fill=color, width=2, smooth=True)
+    canvas.create_rectangle(1, 1, width - 1, height - 1, outline="#e5e7eb")
+
+
+def ascii_sparkline(values: list[float], width: int = 28) -> str:
+    if not values:
+        return "(no data)"
+    if len(values) == 1:
+        return "-" * max(1, width // 4)
+    min_v = min(values)
+    max_v = max(values)
+    span = max(max_v - min_v, 1e-6)
+    buckets = [" "] * width
+    for idx, val in enumerate(values):
+        pos = int(idx * (width - 1) / max(len(values) - 1, 1))
+        level = int((val - min_v) / span * 7)
+        buckets[pos] = "▁▂▃▄▅▆▇█"[max(0, min(level, 7))]
+    return "".join(buckets)
 
 
 def run_supervisor_command(commands: Sequence[str]) -> subprocess.CompletedProcess:
@@ -307,6 +354,8 @@ class App(tk.Tk):
         self._hud_last_summary_rendered: Path | None = None
         self._latest_wakeup_run_dir: Path | None = None
         self._latest_wakeup_summary_path: Path | None = None
+        self._progress_index: dict | None = None
+        self._progress_last_refresh: float = 0.0
         self.hud_mode_detail_var = tk.StringVar(value="Status: unknown")
         self.hud_kill_switch_var = tk.StringVar(value="Kill switch: unknown")
         self.hud_data_health_var = tk.StringVar(value="Data health: unknown")
@@ -322,6 +371,16 @@ class App(tk.Tk):
         self.hud_rejects_var = tk.StringVar(value="Rejects: -")
         self.hud_gates_var = tk.StringVar(value="Gates triggered: -")
         self.hud_equity_var = tk.StringVar(value="Equity delta: -")
+        self.progress_status_var = tk.StringVar(value="Progress index: idle")
+        self.progress_last_equity_var = tk.StringVar(value="Last equity: -")
+        self.progress_best_equity_var = tk.StringVar(value="Best equity: -")
+        self.progress_last_dd_var = tk.StringVar(value="Last drawdown: -")
+        self.progress_best_dd_var = tk.StringVar(value="Best drawdown: -")
+        self.progress_turnover_var = tk.StringVar(value="Turnover: -")
+        self.progress_reject_var = tk.StringVar(value="Rejects: -")
+        self.progress_gates_var = tk.StringVar(value="Gates: -")
+        self.progress_kill_var = tk.StringVar(value="Kill switch: unknown")
+        self.progress_data_var = tk.StringVar(value="Data health: unknown")
         self.service_status_var = tk.StringVar(value="Service: unknown")
         self.service_run_dir_var = tk.StringVar(value="Last run: (none)")
         self.service_summary_var = tk.StringVar(value="Last summary: (none)")
@@ -338,6 +397,7 @@ class App(tk.Tk):
 
         self.run_tab = tk.Frame(notebook)
         self.health_tab = tk.Frame(notebook)
+        self.progress_tab = tk.Frame(notebook)
         self.events_tab = tk.Frame(notebook)
         self.summary_tab = tk.Frame(notebook)
         self.qa_tab = tk.Frame(notebook)
@@ -345,6 +405,7 @@ class App(tk.Tk):
 
         notebook.add(self.run_tab, text="Run")
         notebook.add(self.health_tab, text="Dashboard")
+        notebook.add(self.progress_tab, text="Progress (SIM-only)")
         notebook.add(self.events_tab, text="Events")
         notebook.add(self.summary_tab, text="摘要")
         notebook.add(self.qa_tab, text="AI Q&A")
@@ -352,6 +413,7 @@ class App(tk.Tk):
 
         self._build_run_tab()
         self._build_health_tab()
+        self._build_progress_tab()
         self._build_events_tab()
         self._build_summary_tab()
         self._build_qa_panel()
@@ -883,11 +945,178 @@ class App(tk.Tk):
                 self._update_training_summary_text(summary_fields.raw_preview)
                 self._hud_last_summary_rendered = snapshot.summary_path
 
+    def _load_equity_values(self, path: Path | None) -> list[float]:
+        if not path or not path.exists():
+            return []
+        values: list[float] = []
+        try:
+            with path.open("r", encoding="utf-8") as fh:
+                reader = csv.DictReader(fh)
+                for row in reader:
+                    try:
+                        values.append(float(row.get("equity_usd") or 0.0))
+                    except Exception:
+                        continue
+        except Exception:
+            return []
+        return values
+
+    def _render_progress_index(self, index: dict) -> None:
+        latest = index.get("latest_run") or {}
+        best = index.get("best_equity_run") or {}
+        best_dd = index.get("best_drawdown_run") or {}
+        runs = index.get("runs") or []
+
+        def _fmt(value: object, suffix: str = "") -> str:
+            try:
+                num = float(value)
+                return f"{num:.2f}{suffix}"
+            except Exception:
+                return "-"
+
+        self.progress_last_equity_var.set(
+            f"Last equity: {_fmt(latest.get('final_equity'))}"
+        )
+        self.progress_best_equity_var.set(
+            f"Best equity: {_fmt(best.get('final_equity'))} ({best.get('run_dir', '(n/a)')})"
+        )
+        self.progress_last_dd_var.set(
+            f"Last drawdown: {_fmt(latest.get('max_drawdown'), '%')}"
+        )
+        self.progress_best_dd_var.set(
+            f"Best drawdown: {_fmt(best_dd.get('max_drawdown'), '%')} ({best_dd.get('run_dir', '(n/a)')})"
+        )
+        self.progress_turnover_var.set(
+            f"Turnover: {_fmt(latest.get('turnover'))}"
+        )
+        self.progress_reject_var.set(
+            f"Rejects: {_fmt(latest.get('reject_count'))}"
+        )
+        gates_text = latest.get("gate_triggers") or "(none)"
+        self.progress_gates_var.set(f"Gates: {gates_text}")
+
+        latest_curve = self._load_equity_values(Path(latest.get("equity_curve")) if latest else None)
+        render_polyline(self.progress_curve_canvas, latest_curve, color="#2563eb")
+        self.progress_curve_ascii.configure(text=f"ASCII: {ascii_sparkline(latest_curve)}")
+
+        cross_values = [
+            float(r.get("final_equity"))
+            for r in runs
+            if isinstance(r, dict) and r.get("final_equity") is not None
+        ]
+        render_polyline(self.progress_runs_canvas, cross_values, color="#0d9488")
+        self.progress_runs_ascii.configure(text=f"ASCII: {ascii_sparkline(cross_values)}")
+
+        holdings_path = latest.get("holdings_path") if isinstance(latest, dict) else None
+        self._load_holdings_preview(holdings_path)
+
+    def _load_holdings_preview(self, path_text: str | None) -> None:
+        if not path_text:
+            content = "(no holdings snapshot)"
+        else:
+            path = Path(path_text)
+            if not path.exists():
+                content = f"(missing snapshot at {path})"
+            else:
+                try:
+                    content = path.read_text(encoding="utf-8")
+                except Exception as exc:  # pragma: no cover - UI feedback
+                    content = f"Error reading holdings: {exc}"
+        self.progress_holdings.configure(state=tk.NORMAL)
+        self.progress_holdings.delete("1.0", tk.END)
+        self.progress_holdings.insert(tk.END, content)
+        self.progress_holdings.configure(state=tk.DISABLED)
+
+    def _refresh_progress_panel(self) -> None:
+        now = time.time()
+        if now - self._progress_last_refresh < 3:
+            return
+        self._progress_last_refresh = now
+        snapshot = compute_training_hud() if compute_training_hud else None
+        if snapshot:
+            lamp_colors = {
+                "RUNNING": "#16a34a",
+                "OBSERVE": "#eab308",
+                "SAFE": "#f97316",
+                "STOPPED": "#8B0000",
+            }
+            color = lamp_colors.get(snapshot.mode, "#6b7280")
+            self.progress_mode_lamp.configure(text=snapshot.mode, bg=color)
+            kill_paths = ", ".join(snapshot.kill_switch_paths) or "(none)"
+            self.progress_kill_var.set(f"Kill switch: {snapshot.kill_switch} | {kill_paths}")
+            self.progress_data_var.set(f"Data health: {snapshot.data_health}")
+            health_colors = {"OK": "#15803d", "WARN": "#eab308", "UNKNOWN": "#6b7280", "FAIL": "#b91c1c"}
+            self.progress_data_label.configure(bg=health_colors.get(snapshot.data_health, "#6b7280"))
+        if not build_progress_index:
+            self.progress_status_var.set("Progress index unavailable")
+            return
+        try:
+            index = build_progress_index(emit_markers=False)
+        except Exception as exc:  # pragma: no cover - UI feedback
+            self.progress_status_var.set(f"Progress index failed: {exc}")
+            return
+        self._progress_index = index
+        status = index.get("status", "?")
+        run_count = len(index.get("runs") or [])
+        self.progress_status_var.set(f"Progress index {status} | runs={run_count}")
+        self._render_progress_index(index)
+
+    def _open_path(self, path: Path | None) -> None:
+        if not path:
+            messagebox.showinfo("Open", "No path available")
+            return
+        if not path.exists():
+            messagebox.showwarning("Open", f"Path not found: {path}")
+            return
+        try:
+            if path.is_dir():
+                if hasattr(os, "startfile"):
+                    os.startfile(str(path))  # type: ignore[attr-defined]
+                else:
+                    subprocess.Popen(["xdg-open", str(path)], env=_utf8_env())
+            else:
+                if hasattr(os, "startfile"):
+                    os.startfile(str(path))  # type: ignore[attr-defined]
+                else:
+                    subprocess.Popen(["xdg-open", str(path)], env=_utf8_env())
+        except Exception as exc:  # pragma: no cover - UI feedback
+            messagebox.showerror("Open", f"Failed to open: {exc}")
+
+    def _handle_open_progress_latest(self) -> None:
+        latest = (self._progress_index or {}).get("latest_run") if self._progress_index else None
+        run_dir = Path(latest.get("run_dir")) if latest and latest.get("run_dir") else None
+        self._open_path(run_dir)
+
+    def _handle_open_progress_best(self) -> None:
+        best = (self._progress_index or {}).get("best_equity_run") if self._progress_index else None
+        run_dir = Path(best.get("run_dir")) if best and best.get("run_dir") else None
+        self._open_path(run_dir)
+
+    def _handle_open_progress_summary(self) -> None:
+        latest = (self._progress_index or {}).get("latest_run") if self._progress_index else None
+        summary = Path(latest.get("summary_path")) if latest and latest.get("summary_path") else None
+        self._open_path(summary)
+
+    def _handle_tail_training_events(self) -> None:
+        path = latest_events_file()
+        markers = ("TRAIN_", "PROMOTION_", "GUARD_")
+        if not path or not path.exists():
+            message = "(no events file found)"
+        else:
+            try:
+                lines = path.read_text(encoding="utf-8", errors="replace").splitlines()[-200:]
+            except Exception as exc:
+                lines = [f"error reading events: {exc}"]
+            filtered = [ln for ln in lines if any(key in ln for key in markers)]
+            message = "\n".join(filtered[-60:]) if filtered else "(no TRAIN/PROMOTION/GUARD events)"
+        messagebox.showinfo("Training Events", f"TAIL|{message}")
+
     def _refresh(self) -> None:
         self._load_dashboard()
         self._refresh_wakeup_dashboard()
         self._refresh_service_state()
         self._refresh_training_hud()
+        self._refresh_progress_panel()
 
     def _load_dashboard(self) -> None:
         if not compute_health or not compute_event_rows:
@@ -1575,6 +1804,75 @@ class App(tk.Tk):
         self.evidence_text = ScrolledText(evidence_frame, height=6, wrap=tk.WORD)
         self.evidence_text.pack(fill=tk.BOTH, expand=True)
         self.evidence_text.configure(state=tk.DISABLED)
+
+    def _build_progress_tab(self) -> None:
+        container = tk.Frame(self.progress_tab)
+        container.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        hud = tk.LabelFrame(container, text="Risk-first HUD (SIM-only)", padx=6, pady=6)
+        hud.pack(fill=tk.X, pady=4)
+        row = tk.Frame(hud)
+        row.pack(fill=tk.X)
+        self.progress_mode_lamp = tk.Label(
+            row, text="SAFE", width=10, relief=tk.SOLID, fg="white", bg="#8B0000"
+        )
+        self.progress_mode_lamp.pack(side=tk.LEFT, padx=4)
+        tk.Label(row, textvariable=self.progress_status_var, anchor="w").pack(
+            side=tk.LEFT, padx=6
+        )
+        tk.Label(row, text="(SIM-only)", fg="#6b7280").pack(side=tk.LEFT, padx=6)
+        tk.Label(row, textvariable=self.progress_kill_var, anchor="w").pack(side=tk.LEFT, padx=6)
+        self.progress_data_label = tk.Label(
+            row, textvariable=self.progress_data_var, anchor="w", bg="#6b7280", fg="white"
+        )
+        self.progress_data_label.pack(side=tk.LEFT, padx=6)
+
+        risk_row = tk.Frame(hud)
+        risk_row.pack(fill=tk.X, pady=2)
+        tk.Label(risk_row, textvariable=self.progress_last_equity_var, font=("Arial", 11, "bold"), fg="#0f766e").pack(anchor="w")
+        tk.Label(risk_row, textvariable=self.progress_best_equity_var, font=("Arial", 10)).pack(anchor="w")
+        tk.Label(risk_row, textvariable=self.progress_last_dd_var, font=("Arial", 11, "bold"), fg="#b91c1c").pack(anchor="w")
+        tk.Label(risk_row, textvariable=self.progress_best_dd_var, font=("Arial", 10)).pack(anchor="w")
+        tk.Label(risk_row, textvariable=self.progress_turnover_var).pack(anchor="w")
+        tk.Label(risk_row, textvariable=self.progress_reject_var).pack(anchor="w")
+        tk.Label(risk_row, textvariable=self.progress_gates_var).pack(anchor="w")
+
+        chart_frame = tk.Frame(container)
+        chart_frame.pack(fill=tk.BOTH, expand=True, pady=4)
+        latest_box = tk.LabelFrame(chart_frame, text="Latest run equity curve", padx=4, pady=4)
+        latest_box.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=4)
+        self.progress_curve_canvas = tk.Canvas(latest_box, width=420, height=180, bg="white")
+        self.progress_curve_canvas.pack(fill=tk.BOTH, expand=True)
+        self.progress_curve_ascii = tk.Label(latest_box, text="", fg="#6b7280")
+        self.progress_curve_ascii.pack(anchor="w")
+
+        cross_box = tk.LabelFrame(chart_frame, text="Equity over runs", padx=4, pady=4)
+        cross_box.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=4)
+        self.progress_runs_canvas = tk.Canvas(cross_box, width=320, height=180, bg="white")
+        self.progress_runs_canvas.pack(fill=tk.BOTH, expand=True)
+        self.progress_runs_ascii = tk.Label(cross_box, text="", fg="#6b7280")
+        self.progress_runs_ascii.pack(anchor="w")
+
+        bottom = tk.Frame(container)
+        bottom.pack(fill=tk.BOTH, expand=True, pady=4)
+        holdings_box = tk.LabelFrame(bottom, text="Holdings snapshot (SIM)", padx=4, pady=4)
+        holdings_box.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=4)
+        self.progress_holdings = ScrolledText(holdings_box, height=8, wrap=tk.WORD)
+        self.progress_holdings.pack(fill=tk.BOTH, expand=True)
+        self.progress_holdings.configure(state=tk.DISABLED)
+
+        buttons = tk.Frame(bottom)
+        buttons.pack(side=tk.RIGHT, fill=tk.Y, padx=4)
+        tk.Button(buttons, text="Refresh", command=self._refresh_progress_panel).pack(fill=tk.X, pady=2)
+        tk.Button(buttons, text="Open Latest Run", command=self._handle_open_progress_latest).pack(fill=tk.X, pady=2)
+        tk.Button(buttons, text="Open Best Run", command=self._handle_open_progress_best).pack(fill=tk.X, pady=2)
+        tk.Button(buttons, text="Open Latest Summary", command=self._handle_open_progress_summary).pack(fill=tk.X, pady=2)
+        tk.Button(buttons, text="Show Rolling Summary", command=self._handle_show_rolling_summary).pack(fill=tk.X, pady=2)
+        tk.Button(
+            buttons,
+            text="Tail TRAIN/PROMOTION/GUARD",
+            command=self._handle_tail_training_events,
+        ).pack(fill=tk.X, pady=2)
 
     def _build_events_tab(self) -> None:
         top_frame = tk.Frame(self.events_tab)
