@@ -61,6 +61,14 @@ def run_gate(script_name: str) -> GateResult:
 
 
 def main() -> int:
+    """Run all foundation gates and return a consolidated exit code.
+
+    Exit semantics:
+    - Any gate returning a failure (non-zero exit code) makes the process exit 1.
+    - DEGRADED/SKIP cases keep exit code 0 and are surfaced via the summary flag.
+    - A clean run with no failures returns 0.
+    The marker lines bound the output so downstream tools can parse the block.
+    """
     if configure_stdio_utf8:
         try:
             configure_stdio_utf8()
@@ -82,7 +90,7 @@ def main() -> int:
             print(f"--- {result.name} stderr ---")
             print(result.stderr.rstrip())
 
-    has_failures = any(r.returncode != 0 for r in results)
+    has_failures = any(r.status == "FAIL" for r in results)
     degraded = any(r.degraded for r in results)
     summary_status = "FAIL" if has_failures else "PASS"
     print(
