@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import subprocess
 import sys
-from typing import Optional
+from typing import Optional, Sequence
 
 
 def configure_stdio_utf8() -> None:
@@ -23,3 +24,21 @@ def configure_stdio_utf8() -> None:
             reconfigure(encoding="utf-8", errors="replace", newline="\n")
         except Exception:
             continue
+
+
+def run_cmd_utf8(cmd: Sequence[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+    """Run a subprocess with UTF-8 output handling.
+
+    Ensures text mode with ``encoding="utf-8"`` and ``errors="replace"`` so Windows
+    code pages do not raise decoding errors. Callers can override other
+    ``subprocess.run`` arguments via ``kwargs``.
+    """
+
+    run_kwargs = {
+        "capture_output": True,
+        "text": True,
+        "encoding": "utf-8",
+        "errors": "replace",
+    }
+    run_kwargs.update(kwargs)
+    return subprocess.run(cmd, **run_kwargs)

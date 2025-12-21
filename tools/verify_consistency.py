@@ -350,8 +350,11 @@ def _run_quick_verifiers() -> List[CheckResult]:
         if not script.exists():
             results.append(CheckResult(script.name, True, "not present (skipped)"))
             continue
+        cmd = [sys.executable, str(script)]
+        if script.name == "verify_smoke.py":
+            cmd.append("--allow-kill-switch-move")
         proc = subprocess.run(
-            [sys.executable, str(script)],
+            cmd,
             cwd=ROOT,
             capture_output=True,
             text=True,
@@ -415,7 +418,21 @@ def check_read_only_guard() -> List[CheckResult]:
     ]
     found: List[str] = []
     safe_markers = ("never", "禁止", "no ", "not ")
-    for path in ROOT.rglob("*.py"):
+    exclude_dirs = {".venv", "site-packages", "Logs", "Data", "Reports"}
+    candidates: List[Path] = []
+    for path in ROOT.rglob("*"):
+        if path.is_dir():
+            continue
+        rel_parts = path.relative_to(ROOT).parts
+        if any(part in exclude_dirs for part in rel_parts):
+            continue
+        if path.name.startswith("README") or path.name == "AGENTS.md":
+            candidates.append(path)
+            continue
+        if path.suffix in {".py", ".yaml", ".yml"}:
+            candidates.append(path)
+
+    for path in candidates:
         if path.name == "verify_consistency.py":
             continue
         for lineno, line in enumerate(_read_text(path).splitlines(), start=1):
