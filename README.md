@@ -44,6 +44,13 @@ cd $HOME\Desktop\STOCK
 .\.venv\Scripts\python.exe .\tools\ui_app.py
 ```
 
+### UI 内完成零成本 AI 问答闭环
+1. 打开 UI 后，找到 “AI Q&A” 区块。
+2. 在 Question 输入框输入问题，点击 **Generate Q&A Packet**，UI 会调用 `qa_flow` 并显示生成的 `packet` / `evidence_pack` 路径。
+3. 点击 **Copy Packet to Clipboard**，将内容粘贴到 ChatGPT（无需命令行）。
+4. 把 ChatGPT 的回答粘贴回 UI 的 Answer 文本框，必要时勾选 Strict mode（拒绝含交易建议的回答），然后点击 **Import Answer**。UI 会落盘回答并追加 `AI_ANSWER` 事件；若严格模式拦截会弹出提示让你让 ChatGPT 重写。
+5. **Open output folder** 按钮可直接打开输出目录，方便查看生成的包/回答文件。命令行仍可作为备选：`qa_flow`/`capture_ai_answer` 可独立运行。
+
 - CLI 启停：
 
 ```

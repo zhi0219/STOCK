@@ -67,6 +67,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         print("[WARN] No evidence pack path detected (missing logs?)")
     else:
         print(f"Evidence pack: {evidence_path}")
+        print(f"OUTPUT_EVIDENCE_PACK={evidence_path}")
 
     make_code, make_out, make_err, packet_path = _run_make_packet(args.question, evidence_path)
     if make_code != 0:
@@ -77,6 +78,7 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     if packet_path:
         print(f"AI packet: {packet_path}")
+        print(f"OUTPUT_PACKET={packet_path}")
     else:
         print("[WARN] AI packet path not detected")
 
