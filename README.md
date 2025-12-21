@@ -175,7 +175,27 @@ cd $HOME\Desktop\STOCK
 - `verify_smoke` 尾部打印解释器/依赖版本，并以 `PASS: smoke verified ...` 结束。
 - `verify_cooldown` 会打印 `ALERTS_START ... cooldown=300s`，随后首个 MOVE 行，最后以 `PASS: cooldown verified ...` 收尾。
 
-提示：不要把 `config.yaml` 的 YAML 片段当成 PowerShell 命令去敲；验收脚本会自动临时调整配置并在退出时还原。
+ 提示：不要把 `config.yaml` 的 YAML 片段当成 PowerShell 命令去敲；验收脚本会自动临时调整配置并在退出时还原。
+
+## How to use Progress (SIM-only)
+
+- 构建/刷新进度索引（原子写入 `Logs\\train_runs\\progress_index.json`）：
+
+  ```powershell
+  .\\.venv\\Scripts\\python.exe .\\tools\\progress_index.py
+  ```
+
+- 打开 UI 并切换到 **Progress (SIM-only)** 页签：
+
+  ```powershell
+  .\\.venv\\Scripts\\python.exe .\\tools\\ui_app.py
+  ```
+
+  页签内可点击 **Generate index** / **Refresh view**，以及直接打开 run 目录、`summary.md` 或 `equity_curve.csv`。
+
+- 产物位置：最新一条训练通常在 `Logs\\train_runs\\<日期>\\<run_id>\\`，包含 `summary.md`、`equity_curve.csv`、`orders_sim.jsonl` 等产物（UI 会用 holdings 预览和 equity 曲线渲染）。
+
+- 一键停机：创建 `config.yaml` 的 `risk_guards.kill_switch_path` 指向的文件（默认 `Data\\KILL_SWITCH`）即可停止训练/服务进程；删除后可恢复运行。
 
 ## Deterministic MOVE self-test
 Run a synthetic injection so `alerts.py` emits a MOVE alert without waiting for real market moves.
