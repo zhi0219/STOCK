@@ -44,6 +44,8 @@ cd $HOME\Desktop\STOCK
 .\.venv\Scripts\python.exe .\tools\ui_app.py
 ```
 
+- 如果提示 KILL_SWITCH present：在弹窗点 Remove & Start 即可恢复运行（或保留文件以保持紧急停机）。
+
 - 可选 Streamlit UI（更直观、只读）：
 
 ```
