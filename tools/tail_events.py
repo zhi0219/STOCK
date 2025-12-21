@@ -7,14 +7,21 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional
 
-import yaml
-
 
 ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = ROOT / "config.yaml"
 
 
+class MissingDependencyError(RuntimeError):
+    pass
+
+
 def load_config() -> Dict[str, Any]:
+    try:
+        import yaml  # type: ignore
+    except ImportError as exc:
+        raise MissingDependencyError("PyYAML is required to load config.yaml") from exc
+
     with CONFIG_PATH.open("r", encoding="utf-8") as f:
         return yaml.safe_load(f) or {}
 
@@ -73,7 +80,7 @@ def filter_events(
         yield ev
 
 
-def main() -> None:
+def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         description="Tail latest events jsonl (accepts --tail or its alias --limit)"
     )
@@ -90,14 +97,18 @@ def main() -> None:
         default=20,
         help="number of lines from the end to show (use either --tail or its alias --limit)",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
-    cfg = load_config()
+    try:
+        cfg = load_config()
+    except MissingDependencyError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
     logs_dir = get_logs_dir(cfg)
     latest = find_latest_events_file(logs_dir)
     if latest is None:
         print(f"No events file found in {logs_dir}", file=sys.stderr)
-        return
+        return 1
 
     symbol = args.symbol.upper() if args.symbol else None
     event_type = args.event_type.upper() if args.event_type else None
@@ -105,11 +116,13 @@ def main() -> None:
 
     if not events:
         print(f"No events matched filters in {latest}")
-        return
+        return 0
 
     for ev in events[-args.tail :]:
         print(json.dumps(ev, ensure_ascii=False))
 
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

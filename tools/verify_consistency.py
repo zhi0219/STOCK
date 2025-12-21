@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import json
 import re
 import subprocess
@@ -11,16 +12,34 @@ ROOT = Path(__file__).resolve().parent.parent
 TOOLS_DIR = ROOT / "tools"
 README_PATH = ROOT / "README.md"
 LOGS_DIR = ROOT / "Logs"
+OPTIONAL_DEPS = ("pandas", "yaml", "yfinance")
+
+
+def detect_missing_deps() -> list[str]:
+    missing: list[str] = []
+    for dep in OPTIONAL_DEPS:
+        try:
+            importlib.import_module(dep)
+        except Exception:
+            missing.append(dep)
+    return missing
 
 
 class CheckResult:
-    def __init__(self, name: str, ok: bool, details: str | None = None) -> None:
+    def __init__(self, name: str, status: bool | str, details: str | None = None) -> None:
         self.name = name
-        self.ok = ok
+        if isinstance(status, bool):
+            self.status = "OK" if status else "FAIL"
+        else:
+            self.status = status
         self.details = details or ""
 
+    @property
+    def ok(self) -> bool:
+        return self.status == "OK"
+
     def render(self) -> str:
-        status = "[OK]" if self.ok else "[FAIL]"
+        status = f"[{self.status}]"
         if self.details:
             return f"{status} {self.name}: {self.details}"
         return f"{status} {self.name}"
@@ -28,7 +47,7 @@ class CheckResult:
 
 def _print_header() -> None:
     print(f"Interpreter: {sys.executable}")
-    for dep in ("pandas", "yaml", "yfinance"):
+    for dep in OPTIONAL_DEPS:
         try:
             module = __import__(dep)
             version = getattr(module, "__version__", "unknown")
@@ -243,7 +262,12 @@ def _run_help(script: Path) -> tuple[int, str]:
     return result.returncode, (result.stdout or "") + ("\n" + result.stderr if result.stderr else "")
 
 
-def check_readme_cli_consistency() -> List[CheckResult]:
+def _format_dep_list(items: Iterable[str]) -> str:
+    collected = sorted(set(items))
+    return ",".join(collected) if collected else "none"
+
+
+def check_readme_cli_consistency(missing_deps: List[str]) -> List[CheckResult]:
     targets = [
         "tail_events.py",
         "replay_events.py",
@@ -270,6 +294,18 @@ def check_readme_cli_consistency() -> List[CheckResult]:
             results.append(CheckResult(f"{name} flags", True, "no README flags (skipped)"))
             continue
         code, output = _run_help(script)
+        if missing_deps:
+            stderr = output.split("\n", 1)[-1] if "\n" in output else output
+            snippet = stderr.strip() or "no stderr"
+            results.append(
+                CheckResult(
+                    f"{name} --help",
+                    "SKIP",
+                    f"missing deps: {_format_dep_list(missing_deps)}; exit={code}; stderr={snippet}",
+                )
+            )
+            continue
+
         if code != 0:
             results.append(CheckResult(f"{name} --help", False, f"exit {code}"))
             continue
@@ -339,7 +375,7 @@ def check_py_compile() -> List[CheckResult]:
     ]
 
 
-def _run_quick_verifiers() -> List[CheckResult]:
+def _run_quick_verifiers(missing_deps: List[str]) -> List[CheckResult]:
     quick = [
         TOOLS_DIR / "verify_smoke.py",
         TOOLS_DIR / "verify_e2e_qa_loop.py",
@@ -349,6 +385,15 @@ def _run_quick_verifiers() -> List[CheckResult]:
     for script in quick:
         if not script.exists():
             results.append(CheckResult(script.name, True, "not present (skipped)"))
+            continue
+        if missing_deps:
+            results.append(
+                CheckResult(
+                    script.name,
+                    "SKIP",
+                    f"missing deps: {_format_dep_list(missing_deps)}",
+                )
+            )
             continue
         cmd = [sys.executable, str(script)]
         if script.name == "verify_smoke.py":
@@ -452,39 +497,64 @@ def check_read_only_guard() -> List[CheckResult]:
 
 
 def main() -> int:
-    _print_header()
+    missing_deps = detect_missing_deps()
 
-    checks: List[Callable[[], List[CheckResult]]] = [
+    p0_checks: List[Callable[[], List[CheckResult]]] = [
         check_windows_paths,
         check_sys_executable_usage,
         check_ui_encoding,
         check_ascii_markers,
         check_sim_safety_pack_assets,
         check_sim_tournament_presence,
-        check_readme_cli_consistency,
         check_py_compile,
-        _run_quick_verifiers,
         check_events_schema,
         check_status_json,
         check_read_only_guard,
     ]
+    optional_checks: List[Callable[[], List[CheckResult]]] = [
+        lambda: check_readme_cli_consistency(missing_deps),
+        lambda: _run_quick_verifiers(missing_deps),
+    ]
 
     all_results: List[CheckResult] = []
-    for fn in checks:
+    for fn in p0_checks:
+        all_results.extend(fn())
+    for fn in optional_checks:
         all_results.extend(fn())
 
-    overall_ok = all(r.ok for r in all_results)
+    skipped_checks = [r.name for r in all_results if r.status == "SKIP"]
+    has_failures = any(r.status == "FAIL" for r in all_results)
+    degraded = bool(missing_deps or skipped_checks) and not has_failures
+
+    if has_failures:
+        summary_line = "FAIL: consistency issues detected"
+    elif degraded:
+        summary_line = (
+            "DEGRADED missing_deps="
+            f"{_format_dep_list(missing_deps)} "
+            f"skipped_checks={_format_dep_list(skipped_checks)}"
+        )
+    else:
+        summary_line = "PASS: consistency checks succeeded"
+
+    print(summary_line)
+    _print_header()
+
     for res in all_results:
         print(res.render())
 
     print()
-    if overall_ok:
-        print("PASS: consistency checks succeeded")
+    if has_failures:
+        print("FAIL: consistency issues detected")
+        print("Next step: .\\.venv\\Scripts\\python.exe tools/verify_consistency.py")
+        return 1
+
+    if degraded:
+        print("DEGRADED: optional checks skipped due to missing dependencies")
         return 0
 
-    print("FAIL: consistency issues detected")
-    print("Next step: .\\.venv\\Scripts\\python.exe tools/verify_consistency.py")
-    return 1
+    print("PASS: consistency checks succeeded")
+    return 0
 
 
 if __name__ == "__main__":

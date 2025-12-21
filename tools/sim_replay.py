@@ -13,9 +13,6 @@ from zoneinfo import ZoneInfo
 if str(Path(__file__).resolve().parent.parent) not in sys.path:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from tools.policy_registry import get_policy
-from tools.sim_autopilot import run_step
-
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_INPUT = ROOT / "Data" / "quotes.csv"
 DEFAULT_LOGS = ROOT / "Logs"
@@ -77,6 +74,16 @@ def _build_snapshot(row: Dict[str, str]) -> Dict[str, object]:
     return snapshot
 
 
+def _load_dependencies() -> Tuple[object, object]:
+    try:
+        from tools.policy_registry import get_policy
+        from tools.sim_autopilot import run_step
+    except ImportError as exc:
+        raise ReplayError("Required simulation dependencies are missing") from exc
+
+    return get_policy, run_step
+
+
 def run_replay(args: argparse.Namespace) -> int:
     input_path = Path(args.input)
     if not input_path.is_absolute():
@@ -102,6 +109,7 @@ def run_replay(args: argparse.Namespace) -> int:
     start_row = int(args.start_row) if args.start_row else None
     sleep_delay = 0.0 if args.speed <= 0 else 1.0 / float(args.speed)
 
+    get_policy, run_step = _load_dependencies()
     policy_version, policy = get_policy()
     sim_state: Dict[str, object] = {
         "cash_usd": 10_000.0,
@@ -164,7 +172,10 @@ def run_replay(args: argparse.Namespace) -> int:
 
 
 def parse_args(argv: List[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Sim replay using historical quotes", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description="Sim replay using historical quotes",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
     parser.add_argument("--input", default=str(DEFAULT_INPUT), help="Input quotes CSV path")
     parser.add_argument("--max-steps", type=int, default=500, dest="max_steps", help="Maximum steps to run")
     parser.add_argument("--symbols", help="Comma separated symbol filter", default="")
