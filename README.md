@@ -19,6 +19,16 @@
 .\.venv\Scripts\python.exe .\tools\verify_consistency.py
 ```
 
+## PowerShell 状态一眼读懂
+
+- 输出中包含 `*_SUMMARY` / `*_HEADER` 这类 marker 行，直接看这些行即可判断 PASS / DEGRADED / FAIL。
+- 推荐复制即用命令（Windows / PowerShell）：
+  ```powershell
+  .\.venv\Scripts\python.exe .\tools\verify_consistency.py
+  .\.venv\Scripts\python.exe .\tools\verify_repo_hygiene.py
+  ```
+- 不要把 `git clean -fd` 当成日常手段；训练/验收产物默认落在 `Logs/train_runs/` 等安全目录，由内置的 retention sweep 处理。
+
 ## 本机真实基线（1条命令）
 
 ```powershell

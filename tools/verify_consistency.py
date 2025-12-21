@@ -16,6 +16,23 @@ TOOLS_DIR = ROOT / "tools"
 README_PATH = ROOT / "README.md"
 LOGS_DIR = ROOT / "Logs"
 OPTIONAL_DEPS = ("pandas", "yaml", "yfinance")
+HELP_CHECKS: dict[str, tuple[str, ...]] = {
+    "tail_events.py": OPTIONAL_DEPS,
+    "replay_events.py": OPTIONAL_DEPS,
+    "select_evidence.py": OPTIONAL_DEPS,
+    "make_ai_packet.py": OPTIONAL_DEPS,
+    "qa_flow.py": OPTIONAL_DEPS,
+    "supervisor.py": OPTIONAL_DEPS,
+    "ui_app.py": OPTIONAL_DEPS,
+    "sim_replay.py": OPTIONAL_DEPS,
+    "verify_sim_replay.py": OPTIONAL_DEPS,
+    "verify_no_lookahead_sim.py": OPTIONAL_DEPS,
+    "train_daemon.py": OPTIONAL_DEPS,
+    "policy_candidate.py": OPTIONAL_DEPS,
+    "verify_policy_promotion.py": OPTIONAL_DEPS,
+    "verify_policy_lifecycle.py": OPTIONAL_DEPS,
+    "verify_train_semantic_loop.py": OPTIONAL_DEPS,
+}
 
 
 def detect_missing_deps() -> list[str]:
@@ -48,7 +65,19 @@ class CheckResult:
         return f"{status} {self.name}"
 
 
-def _print_header(env: dict[str, str | bool]) -> None:
+def _print_header(env: dict[str, str | bool], missing_deps: list[str]) -> None:
+    marker = "|".join(
+        [
+            "CONSISTENCY_HEADER",
+            f"os={platform.system()}",
+            f"in_container={int(env.get('in_container', False))}",
+            f"venv_present={int(env.get('venv_present', False))}",
+            f"using_venv={int(env.get('executable_in_venv', False))}",
+            f"can_write_logs={int(env.get('can_write_logs', False))}",
+            f"missing_deps={_format_dep_list(missing_deps)}",
+        ]
+    )
+    print(marker)
     print(f"Interpreter: {sys.executable}")
     print(
         "Environment:",
@@ -57,6 +86,7 @@ def _print_header(env: dict[str, str | bool]) -> None:
                 "os": platform.system(),
                 "in_container": env.get("in_container", False),
                 "windows_venv": env.get("windows_venv", False),
+                "posix_venv": env.get("posix_venv", False),
                 "executable_in_venv": env.get("executable_in_venv", False),
                 "can_write_logs": env.get("can_write_logs", False),
             }
@@ -80,7 +110,11 @@ def _detect_environment() -> dict[str, str | bool]:
         or Path("/.dockerinit").exists()
     )
     windows_venv = (ROOT / ".venv" / "Scripts" / "python.exe").exists()
-    executable_in_venv = ".venv" in Path(sys.executable).resolve().parts
+    posix_venv = (ROOT / ".venv" / "bin" / "python").exists()
+    executable_path = Path(sys.executable).resolve()
+    prefix_path = Path(sys.prefix).resolve()
+    executable_in_venv = ".venv" in str(executable_path) or ".venv" in prefix_path.parts
+    venv_present = windows_venv or posix_venv
 
     log_probe_error = ""
     can_write_logs = False
@@ -97,6 +131,8 @@ def _detect_environment() -> dict[str, str | bool]:
         "is_windows": is_windows,
         "in_container": in_container,
         "windows_venv": windows_venv,
+        "posix_venv": posix_venv,
+        "venv_present": venv_present,
         "executable_in_venv": executable_in_venv,
         "can_write_logs": can_write_logs,
         "log_probe_error": log_probe_error,
@@ -341,19 +377,19 @@ def check_readme_cli_consistency(missing_deps: List[str]) -> List[CheckResult]:
         if not flags:
             results.append(CheckResult(f"{name} flags", True, "no README flags (skipped)"))
             continue
-        code, output = _run_help(script)
-        if missing_deps:
-            stderr = output.split("\n", 1)[-1] if "\n" in output else output
-            snippet = stderr.strip() or "no stderr"
+        required_deps = HELP_CHECKS.get(name, ())
+        missing_for_help = sorted(set(missing_deps) & set(required_deps))
+        if missing_for_help:
             results.append(
                 CheckResult(
                     f"{name} --help",
                     "SKIP",
-                    f"missing deps: {_format_dep_list(missing_deps)}; exit={code}; stderr={snippet}",
+                    f"missing deps: {_format_dep_list(missing_for_help)}; requires: {_format_dep_list(required_deps)}",
                 )
             )
             continue
-
+        code, output = _run_help(script)
+        
         if code != 0:
             results.append(CheckResult(f"{name} --help", False, f"exit {code}"))
             continue
@@ -574,6 +610,7 @@ def check_read_only_guard() -> List[CheckResult]:
 def main() -> int:
     missing_deps = detect_missing_deps()
     env = _detect_environment()
+    _print_header(env, missing_deps)
 
     p0_checks: List[Callable[[], List[CheckResult]]] = [
         check_windows_paths,
@@ -600,43 +637,52 @@ def main() -> int:
 
     skipped_checks = [r.name for r in all_results if r.status == "SKIP"]
     has_failures = any(r.status == "FAIL" for r in all_results)
-    degraded = bool(missing_deps or skipped_checks) and not has_failures
+    not_using_venv = env.get("venv_present") and not env.get("executable_in_venv")
+    degraded_reasons = []
+    if missing_deps:
+        degraded_reasons.append(f"missing_deps={_format_dep_list(missing_deps)}")
+    if skipped_checks:
+        degraded_reasons.append(f"skipped={_format_dep_list(skipped_checks)}")
+    if not_using_venv:
+        degraded_reasons.append("not_using_venv=1")
 
     if has_failures:
         summary_line = "FAIL: consistency issues detected"
-    elif degraded:
-        summary_line = (
-            "DEGRADED missing_deps="
-            f"{_format_dep_list(missing_deps)} "
-            f"skipped_checks={_format_dep_list(skipped_checks)}"
-        )
+        status = "FAIL"
+    elif degraded_reasons:
+        summary_line = "DEGRADED " + "; ".join(degraded_reasons)
+        status = "DEGRADED"
     else:
         summary_line = "PASS: consistency checks succeeded"
+        status = "PASS"
 
     print(summary_line)
-    _print_header(env)
 
     for res in all_results:
         print(res.render())
 
     print()
+    if not_using_venv:
+        print(
+            "CONSISTENCY_HINT|reason=NOT_USING_VENV|cmd=.\\.venv\\Scripts\\python.exe .\\tools\\verify_consistency.py"
+        )
+    notes = ";".join(degraded_reasons) if degraded_reasons else "none"
+    summary_marker = "|".join(
+        [
+            "CONSISTENCY_SUMMARY",
+            f"status={status}",
+            f"failed={len([r for r in all_results if r.status == 'FAIL'])}",
+            f"skipped={len(skipped_checks)}",
+            f"missing_deps={_format_dep_list(missing_deps)}",
+            f"not_using_venv={int(bool(not_using_venv))}",
+            f"notes={notes}",
+        ]
+    )
+    print(summary_marker)
     if has_failures:
         print("FAIL: consistency issues detected")
         print("Next step: .\\.venv\\Scripts\\python.exe tools/verify_consistency.py")
-        return 1
-
-    if degraded:
-        reason_bits = []
-        if missing_deps:
-            reason_bits.append(f"missing deps: {_format_dep_list(missing_deps)}")
-        if skipped_checks:
-            reason_bits.append(f"skipped checks: {_format_dep_list(skipped_checks)}")
-        reason = "; ".join(reason_bits) if reason_bits else "partial coverage"
-        print(f"DEGRADED: {reason}")
-        return 0
-
-    print("PASS: consistency checks succeeded")
-    return 0
+    return 1 if has_failures else 0
 
 
 if __name__ == "__main__":
