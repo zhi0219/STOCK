@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import py_compile
@@ -9,6 +10,10 @@ from pathlib import Path
 from typing import Iterable
 
 ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from tools.stdio_utf8 import run_cmd_utf8
 DATA_DIR = ROOT / "Data"
 LOGS_DIR = ROOT / "Logs"
 SUMMARY = {
@@ -16,6 +21,16 @@ SUMMARY = {
     "versions": "pandas=?, yaml=?, yfinance=?",
     "passed": 0,
 }
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Lightweight smoke checks")
+    parser.add_argument(
+        "--allow-kill-switch-move",
+        action="store_true",
+        help="Temporarily move Data/KILL_SWITCH when invoked by consistency harness",
+    )
+    return parser.parse_args()
 
 
 def fail(msg: str, extra_output: str | None = None) -> None:
@@ -109,32 +124,45 @@ def _tail_lines(path: Path, count: int = 3) -> Iterable[str]:
 
 
 def run_with_kill_switch(
-    script: Path, banner: str, *, banner_log: Path | None = None
+    script: Path, banner: str, *, banner_log: Path | None = None, allow_move: bool = False
 ) -> None:
     kill_path = DATA_DIR / "KILL_SWITCH"
+    backup_path = kill_path.with_suffix(".bak")
+    restored_existing = False
+
     if kill_path.exists():
-        fail(
-            f"Kill switch already present at {kill_path}; remove it then rerun smoke test."
-        )
+        if not allow_move:
+            fail(
+                f"Kill switch already present at {kill_path}; remove it then rerun smoke test."
+            )
+        try:
+            if backup_path.exists():
+                backup_path.unlink()
+            kill_path.rename(backup_path)
+            restored_existing = True
+        except Exception as exc:
+            fail(f"Unable to move existing kill switch: {exc}")
 
     kill_path.touch()
     env = os.environ.copy()
     env.setdefault("PYTHONPATH", str(ROOT))
 
     try:
-        completed = subprocess.run(
+        completed = run_cmd_utf8(
             [sys.executable, str(script)],
             cwd=ROOT,
-            capture_output=True,
-            text=True,
             timeout=10,
             env=env,
         )
     except subprocess.TimeoutExpired as e:  # pragma: no cover - runtime guard
         kill_path.unlink(missing_ok=True)
+        if restored_existing and backup_path.exists():
+            backup_path.rename(kill_path)
         fail(f"{script.name} timed out with kill switch present", extra_output=str(e))
 
     kill_path.unlink(missing_ok=True)
+    if restored_existing and backup_path.exists():
+        backup_path.rename(kill_path)
 
     output = (completed.stdout or "") + (completed.stderr or "")
     if completed.returncode != 0:
@@ -197,11 +225,9 @@ def check_logs() -> None:
 
     tail_events_path = ROOT / "tools" / "tail_events.py"
     if tail_events_path.exists():
-        result = subprocess.run(
+        result = run_cmd_utf8(
             [sys.executable, str(tail_events_path), "--limit", "1"],
             cwd=ROOT,
-            capture_output=True,
-            text=True,
         )
         if result.returncode != 0:
             fail(
@@ -213,12 +239,19 @@ def check_logs() -> None:
 
 
 def main() -> None:
+    args = parse_args()
+
     check_imports()
     ensure_paths()
     compile_targets()
-    run_with_kill_switch(ROOT / "alerts.py", "ALERTS_START")
     run_with_kill_switch(
-        ROOT / "quotes.py", "QUOTES_START", banner_log=LOGS_DIR / "run.log"
+        ROOT / "alerts.py", "ALERTS_START", allow_move=args.allow_kill_switch_move
+    )
+    run_with_kill_switch(
+        ROOT / "quotes.py",
+        "QUOTES_START",
+        banner_log=LOGS_DIR / "run.log",
+        allow_move=args.allow_kill_switch_move,
     )
     check_logs()
 

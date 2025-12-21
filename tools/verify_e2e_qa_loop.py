@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import json
 import re
-import shutil
-import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -13,7 +11,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from tools.stdio_utf8 import configure_stdio_utf8
+from tools.stdio_utf8 import configure_stdio_utf8, run_cmd_utf8
 
 
 def _iso(dt: datetime) -> str:
@@ -27,14 +25,18 @@ def _write_synthetic_logs(logs_dir: Path) -> Tuple[Path, Path]:
     events_path = logs_dir / "events_verify_e2e.jsonl"
     events: List[dict] = [
         {
+            "schema_version": 1,
             "event_type": "MOVE",
             "symbol": "AAPL",
+            "severity": "info",
             "message": "AAPL volume spike with latency warning",
             "ts_utc": _iso(now - timedelta(minutes=5)),
         },
         {
+            "schema_version": 1,
             "event_type": "NEWS",
             "symbol": "MSFT",
+            "severity": "info",
             "message": "MSFT guidance updated",
             "ts_utc": _iso(now - timedelta(minutes=8)),
         },
@@ -55,10 +57,6 @@ def _parse_saved_path(stdout: str) -> Optional[Path]:
     if not match:
         return None
     return Path(match.group(1).strip())
-
-
-def _run_command(cmd: List[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
 
 
 def _cleanup(paths: List[Path]) -> None:
@@ -102,11 +100,13 @@ def run() -> int:
         "--since-minutes",
         "60",
     ]
-    select_result = _run_command(select_cmd)
-    select_stdout = select_result.stdout
+    select_result = run_cmd_utf8(select_cmd, cwd=ROOT)
+    select_stdout = select_result.stdout or ""
     evidence_path = _parse_saved_path(select_stdout)
     if select_result.returncode != 0:
-        errors.append(f"select_evidence exit {select_result.returncode}: {select_result.stderr}")
+        errors.append(
+            f"select_evidence exit {select_result.returncode}: {select_result.stderr or ''}"
+        )
     if not evidence_path or not evidence_path.exists():
         errors.append("evidence pack not generated")
     else:
@@ -122,10 +122,12 @@ def run() -> int:
     ]
     if evidence_path:
         make_cmd.extend(["--from-evidence-pack", str(evidence_path)])
-    make_result = _run_command(make_cmd)
-    packet_path = _parse_saved_path(make_result.stdout)
+    make_result = run_cmd_utf8(make_cmd, cwd=ROOT)
+    packet_path = _parse_saved_path(make_result.stdout or "")
     if make_result.returncode != 0:
-        errors.append(f"make_ai_packet exit {make_result.returncode}: {make_result.stderr}")
+        errors.append(
+            f"make_ai_packet exit {make_result.returncode}: {make_result.stderr or ''}"
+        )
     if not packet_path or not packet_path.exists():
         errors.append("ai packet not generated")
     else:
@@ -162,10 +164,14 @@ def run() -> int:
         "--answer-text",
         answer_text,
     ]
-    capture_result = _run_command(capture_cmd)
+    capture_result = run_cmd_utf8(capture_cmd, cwd=ROOT)
     if capture_result.returncode != 0:
-        errors.append(f"capture_ai_answer (non-strict) exit {capture_result.returncode}: {capture_result.stderr}")
-    saved_answer_match = re.search(r"Saved answer to:\s*(.+)", capture_result.stdout)
+        errors.append(
+            f"capture_ai_answer (non-strict) exit {capture_result.returncode}: {capture_result.stderr or ''}"
+        )
+    saved_answer_match = re.search(
+        r"Saved answer to:\s*(.+)", capture_result.stdout or ""
+    )
     answer_path = Path(saved_answer_match.group(1).strip()) if saved_answer_match else None
     if answer_path and answer_path.exists():
         temp_artifacts.append(answer_path)
@@ -180,10 +186,13 @@ def run() -> int:
         "--limit",
         "5",
     ]
-    replay_result = _run_command(replay_cmd)
+    replay_result = run_cmd_utf8(replay_cmd, cwd=ROOT)
     if replay_result.returncode != 0:
-        errors.append(f"replay_events exit {replay_result.returncode}: {replay_result.stderr}")
-    if "AI_ANSWER" not in replay_result.stdout:
+        errors.append(
+            f"replay_events exit {replay_result.returncode}: {replay_result.stderr or ''}"
+        )
+    replay_stdout = replay_result.stdout or ""
+    if "AI_ANSWER" not in replay_stdout:
         errors.append("AI_ANSWER not found in replay output")
 
     bad_answer_text = "买入并设定目标价，仓位 50% [evidence: synthetic#L2]"
@@ -196,10 +205,12 @@ def run() -> int:
         bad_answer_text,
         "--strict",
     ]
-    bad_result = _run_command(bad_capture_cmd)
+    bad_result = run_cmd_utf8(bad_capture_cmd, cwd=ROOT)
     if bad_result.returncode != 2:
         errors.append(f"strict capture should exit 2, got {bad_result.returncode}")
-    bad_answer_match = re.search(r"Saved answer to:\s*(.+)", bad_result.stdout)
+    bad_answer_match = re.search(
+        r"Saved answer to:\s*(.+)", bad_result.stdout or ""
+    )
     if bad_answer_match:
         temp_artifacts.append(Path(bad_answer_match.group(1)))
 
