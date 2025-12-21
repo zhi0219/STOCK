@@ -21,6 +21,7 @@ VERIFY_SCRIPTS = [
     "verify_e2e_qa_loop.py",
     "verify_ui_actions.py",
 ]
+SIM_REPLAY_SCRIPT = ROOT / "tools" / "sim_replay.py"
 
 
 def _run_command(args: List[str]) -> subprocess.CompletedProcess[str]:
@@ -48,6 +49,19 @@ def _load_events(path: Path | None) -> List[Dict[str, Any]]:
     return events
 
 
+def _load_jsonl(path: Path) -> List[Dict[str, Any]]:
+    if not path.exists():
+        return []
+    rows: List[Dict[str, Any]] = []
+    with path.open("r", encoding="utf-8") as fh:
+        for line in fh:
+            try:
+                rows.append(json.loads(line))
+            except Exception:
+                continue
+    return rows
+
+
 def _status_indicator(status: Dict[str, Any]) -> str:
     quotes = status.get("quotes_running")
     alerts = status.get("alerts_running")
@@ -60,6 +74,26 @@ def _status_indicator(status: Dict[str, Any]) -> str:
     if running is not None:
         parts.append(f"系统 {'运行中' if running else '未运行'}")
     return "，".join(parts) if parts else "状态未知"
+
+
+def _load_equity_curve(logs_dir: Path) -> List[Dict[str, Any]]:
+    return _load_jsonl(logs_dir / "equity_curve.jsonl")
+
+
+def _recent_decisions(logs_dir: Path, limit: int = 5) -> List[str]:
+    orders = _load_jsonl(logs_dir / "orders_sim.jsonl")
+    events = _load_jsonl(logs_dir / "events_sim.jsonl")
+    cards: List[str] = []
+    for order in reversed(orders[-limit:]):
+        symbol = order.get("symbol") or "?"
+        qty = order.get("qty")
+        price = order.get("price")
+        mode = order.get("sim_fill", {}).get("latency_sec")
+        cards.append(f"订单 {symbol} qty={qty} price={price} (latency={mode}s)")
+    for ev in reversed([e for e in events if e.get("event_type") in {"SIM_DECISION", "SIM_HEARTBEAT"}]):
+        msg = ev.get("message") or ev.get("decision") or "决策";
+        cards.append(f"事件 {ev.get('event_type')}: {msg}")
+    return cards[:limit]
 
 
 def _load_status() -> Dict[str, Any]:
@@ -161,5 +195,49 @@ for script in VERIFY_SCRIPTS:
     if st.button(f"运行 {script}"):
         proc = _run_command([sys.executable, str(ROOT / 'tools' / script)])
         _display_command_result(proc)
+
+st.subheader("Replay")
+replay_input = st.text_input("Input quotes CSV", value=str(ROOT / "Data" / "quotes.csv"))
+max_steps = st.number_input("Max steps", min_value=1, value=500)
+speed = st.selectbox("Speed (0=fast)", options=[0, 1, 5, 20], index=0)
+symbols = st.text_input("Symbols (comma separated)", value="")
+start_row = st.number_input("Start row (可选)", min_value=0, value=0)
+start_ts = st.text_input("Start ts_utc (可选)", value="")
+
+if st.button("Start Replay"):
+    cmd = [
+        sys.executable,
+        str(SIM_REPLAY_SCRIPT),
+        "--input",
+        replay_input,
+        "--max-steps",
+        str(int(max_steps)),
+        "--speed",
+        str(speed),
+        "--logs-dir",
+        str(LOGS_DIR),
+    ]
+    if symbols.strip():
+        cmd.extend(["--symbols", symbols.strip()])
+    if start_row > 0:
+        cmd.extend(["--start-row", str(int(start_row))])
+    if start_ts.strip():
+        cmd.extend(["--start-ts", start_ts.strip()])
+    log_file = LOGS_DIR / "sim_replay_stdout.log"
+    with log_file.open("a", encoding="utf-8") as fh:
+        subprocess.Popen(cmd, cwd=ROOT, stdout=fh, stderr=fh, text=True, encoding="utf-8")
+    st.success(f"Replay started, stdout/stderr -> {log_file}")
+
+equity_curve = _load_equity_curve(LOGS_DIR)
+if equity_curve:
+    st.subheader("净值曲线 (SIM-only)")
+    st.line_chart({"equity": [row.get("equity_usd", 0.0) for row in equity_curve]})
+    st.caption("仅基于历史回放，无任何真实交易能力。")
+
+recent_cards = _recent_decisions(LOGS_DIR)
+if recent_cards:
+    st.subheader("决策卡 (最新)")
+    for card in recent_cards:
+        st.write(f"- {card}")
 
 st.caption("提示：所有命令均使用 sys.executable，cwd 固定为仓库根目录。")

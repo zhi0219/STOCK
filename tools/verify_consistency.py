@@ -229,6 +229,9 @@ def check_readme_cli_consistency() -> List[CheckResult]:
         "qa_flow.py",
         "supervisor.py",
         "ui_app.py",
+        "sim_replay.py",
+        "verify_sim_replay.py",
+        "verify_no_lookahead_sim.py",
     ]
     results: List[CheckResult] = []
     for name in targets:
@@ -275,6 +278,9 @@ def _py_compile_targets() -> List[Path]:
         "verify_supervisor.py",
         "verify_sim_safety_pack.py",
         "sim_autopilot.py",
+        "sim_replay.py",
+        "verify_sim_replay.py",
+        "verify_no_lookahead_sim.py",
     ]:
         target = TOOLS_DIR / name
         if target.exists():

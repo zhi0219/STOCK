@@ -40,7 +40,23 @@ cd $HOME\Desktop\STOCK
 # .\.venv\Scripts\python.exe -m pip install -r requirements.txt  # 可选，网络受限环境可跳过
 .\.venv\Scripts\python.exe .\tools\verify_smoke.py
 .\.venv\Scripts\python.exe .\tools\verify_cooldown.py
+.\.venv\Scripts\python.exe -m py_compile .\tools\sim_replay.py .\tools\verify_sim_replay.py .\tools\verify_no_lookahead_sim.py
+.\.venv\Scripts\python.exe .\tools\verify_sim_replay.py
+.\.venv\Scripts\python.exe .\tools\verify_no_lookahead_sim.py
+.\.venv\Scripts\python.exe .\tools\verify_consistency.py
 ```
+
+## Replay 倍速训练场（SIM-only）
+- 使用历史 quotes 回放 SIM 自动驾驶（仅日志、无真实交易能力）：
+  ```powershell
+  .\.venv\Scripts\python.exe .\tools\sim_replay.py --input .\Data\quotes.csv --max-steps 500 --speed 0
+  ```
+- 核心验收（都会自动清理临时文件）：
+  ```powershell
+  .\.venv\Scripts\python.exe -m py_compile .\tools\sim_replay.py .\tools\verify_sim_replay.py .\tools\verify_no_lookahead_sim.py
+  .\.venv\Scripts\python.exe .\tools\verify_sim_replay.py
+  .\.venv\Scripts\python.exe .\tools\verify_no_lookahead_sim.py
+  ```
 
 ## 像应用一样一键启动
 
