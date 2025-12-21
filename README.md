@@ -66,6 +66,10 @@ cd $HOME\Desktop\STOCK
   .\.venv\Scripts\python.exe .\tools\verify_sim_replay.py
   .\.venv\Scripts\python.exe .\tools\verify_no_lookahead_sim.py
   ```
+- SIM-only 挂机训练（夜间跑满 8 小时预算，严格预算闸门+kill switch）：
+  ```powershell
+  .\.venv\Scripts\python.exe .\tools\train_daemon.py --nightly --max-runtime-seconds 28800
+  ```
 
 ## 像应用一样一键启动
 
