@@ -172,6 +172,16 @@ The injector writes to `.\Data\quotes.csv` with `source=SELF_TEST_INJECT` so the
   ```
   说明：`pip install -r requirements.txt` 依然可选，但不是验收前置条件。
 
+## 零成本问答：一条命令工作流
+- 运行：
+  ```powershell
+  .\.venv\Scripts\python.exe .\tools\qa_flow.py --question "今天最重要的事件是什么？为什么？"
+  ```
+- 一键端到端验收：
+  ```powershell
+  .\.venv\Scripts\python.exe .\tools\verify_e2e_qa_loop.py
+  ```
+
 ### Risks / Assumptions
 - 选择“最新 events 文件”依赖 `events_YYYY-MM-DD.jsonl` 的 UTC 命名模式，如果手工改名需自行注意。
 - 当 `zoneinfo` 不可用或本地时区获取失败时，`ts_local` 会回退为本地系统时间（无时区信息），不会阻断主流程。
