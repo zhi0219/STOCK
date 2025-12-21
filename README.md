@@ -52,6 +52,9 @@ cd $HOME\Desktop\STOCK
 .\.venv\Scripts\python.exe .\tools\verify_no_lookahead_sim.py
 .\.venv\Scripts\python.exe .\tools\verify_sim_tournament.py
 .\.venv\Scripts\python.exe .\tools\verify_policy_lifecycle.py
+.\.venv\Scripts\python.exe .\tools\verify_train_daemon_safety.py
+.\.venv\Scripts\python.exe .\tools\verify_train_semantic_loop.py
+.\.venv\Scripts\python.exe .\tools\train_daemon.py --help
 .\.venv\Scripts\python.exe .\tools\verify_consistency.py
 ```
 
@@ -72,6 +75,9 @@ cd $HOME\Desktop\STOCK
   ```
   - 运行产物默认落在 `Logs/train_runs/`，遵循保留/轮换策略；产物文件被 gitignore，避免污染 git。
   - 不建议用 `git clean -fd` 清理日志，推荐使用内置 retention 参数（可选 `--retention-dry-run` 查看计划）。
+  - 默认只写入 `PROMOTION_DECISION` 事件，不会自动晋升；如需自动晋升必须显式传入 `--auto-promote`，仍会经过额外闸门。
+  - 守护/候选/决策报告：`Logs/tournament_runs/tournament_report_*`、`Logs/policy_candidate.json` 与 `Logs/events_train.jsonl` 中的路径可回溯提案/候选/决策来源。
+  - 一键停机：创建 `config.yaml` 里 `risk_guards.kill_switch_path` 指向的文件（默认 `Data/KILL_SWITCH`）即可强制停机。
 
 ## 像应用一样一键启动
 

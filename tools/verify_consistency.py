@@ -279,9 +279,11 @@ def check_readme_cli_consistency(missing_deps: List[str]) -> List[CheckResult]:
         "sim_replay.py",
         "verify_sim_replay.py",
         "verify_no_lookahead_sim.py",
+        "train_daemon.py",
         "policy_candidate.py",
         "verify_policy_promotion.py",
         "verify_policy_lifecycle.py",
+        "verify_train_semantic_loop.py",
     ]
     results: List[CheckResult] = []
     for name in targets:
@@ -343,9 +345,11 @@ def _py_compile_targets() -> List[Path]:
         "sim_replay.py",
         "verify_sim_replay.py",
         "verify_no_lookahead_sim.py",
+        "train_daemon.py",
         "policy_candidate.py",
         "verify_policy_promotion.py",
         "verify_policy_lifecycle.py",
+        "verify_train_semantic_loop.py",
     ]:
         target = TOOLS_DIR / name
         if target.exists():
@@ -380,6 +384,7 @@ def _run_quick_verifiers(missing_deps: List[str]) -> List[CheckResult]:
         TOOLS_DIR / "verify_smoke.py",
         TOOLS_DIR / "verify_e2e_qa_loop.py",
         TOOLS_DIR / "verify_ui_qapacket_path.py",
+        TOOLS_DIR / "verify_train_semantic_loop.py",
     ]
     results: List[CheckResult] = []
     for script in quick:
