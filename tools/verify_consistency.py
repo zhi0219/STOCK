@@ -656,16 +656,6 @@ def main() -> int:
         summary_line = "PASS: consistency checks succeeded"
         status = "PASS"
 
-    print(summary_line)
-
-    for res in all_results:
-        print(res.render())
-
-    print()
-    if not_using_venv:
-        print(
-            "CONSISTENCY_HINT|reason=NOT_USING_VENV|cmd=.\\.venv\\Scripts\\python.exe .\\tools\\verify_consistency.py"
-        )
     notes = ";".join(degraded_reasons) if degraded_reasons else "none"
     summary_marker = "|".join(
         [
@@ -678,6 +668,20 @@ def main() -> int:
             f"notes={notes}",
         ]
     )
+
+    print("===BEGIN===")
+    print(summary_marker)
+    print(summary_line)
+
+    for res in all_results:
+        print(res.render())
+
+    print()
+    if not_using_venv:
+        print(
+            "CONSISTENCY_HINT|reason=NOT_USING_VENV|cmd=.\\.venv\\Scripts\\python.exe .\\tools\\verify_consistency.py"
+        )
+    print("===END===")
     print(summary_marker)
     if has_failures:
         print("FAIL: consistency issues detected")
