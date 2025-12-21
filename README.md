@@ -13,6 +13,12 @@
    .\.venv\Scripts\python.exe -m pip install -r requirements.txt
    ```
 
+推荐闸门（复制即用）：
+
+```
+.\.venv\Scripts\python.exe .\tools\verify_consistency.py
+```
+
 ### macOS / Linux (bash)
 1. Create and activate a venv:
    ```bash
