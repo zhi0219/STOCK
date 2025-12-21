@@ -28,6 +28,7 @@ STATE_PATH = LOGS_DIR / "supervisor_state.json"
 SUPERVISOR_SCRIPT = ROOT / "tools" / "supervisor.py"
 QA_FLOW_SCRIPT = ROOT / "tools" / "qa_flow.py"
 CAPTURE_ANSWER_SCRIPT = ROOT / "tools" / "capture_ai_answer.py"
+TRAIN_DAEMON_SCRIPT = ROOT / "tools" / "train_daemon.py"
 UI_LOG_PATH = ROOT / "Logs" / "ui_actions.log"
 CONFIG_PATH = ROOT / "config.yaml"
 
@@ -168,6 +169,62 @@ def run_verify_script(script_name: str) -> RunResult:
     return result
 
 
+def parse_training_markers(text: str) -> dict[str, str]:
+    markers: dict[str, str] = {}
+    for line in text.splitlines():
+        for key in ("RUN_DIR", "STOP_REASON", "SUMMARY_PATH"):
+            prefix = f"{key}="
+            if line.startswith(prefix):
+                markers[key] = line.split("=", 1)[1].strip()
+    return markers
+
+
+def run_training_daemon(
+    max_runtime_seconds: int, input_path: Path | None = None, runs_root: Path | None = None
+) -> tuple[RunResult, dict[str, str]]:
+    command = [
+        sys.executable,
+        str(TRAIN_DAEMON_SCRIPT),
+        "--max-runtime-seconds",
+        str(max_runtime_seconds),
+    ]
+    if input_path:
+        command.extend(["--input", str(input_path)])
+    if runs_root:
+        command.extend(["--runs-root", str(runs_root)])
+    proc = subprocess.run(
+        command,
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=_utf8_env(),
+    )
+    stdout = proc.stdout or ""
+    stderr = proc.stderr or ""
+    markers = parse_training_markers(stdout) or parse_training_markers(stderr)
+    result = RunResult(command, ROOT, proc.returncode, stdout, stderr)
+    return result, markers
+
+
+def latest_training_summary() -> tuple[Path | None, Path | None]:
+    base = LOGS_DIR / "train_runs"
+    if not base.exists():
+        return None, None
+    candidates: list[tuple[float, Path]] = []
+    for summary in base.glob("**/summary.md"):
+        try:
+            mtime = summary.stat().st_mtime
+        except OSError:
+            continue
+        candidates.append((mtime, summary))
+    if not candidates:
+        return None, None
+    latest_summary = sorted(candidates, key=lambda pair: pair[0])[-1][1]
+    return latest_summary.parent, latest_summary
+
+
 def load_state_text() -> str:
     if not STATE_PATH.exists():
         return "state file not found"
@@ -188,10 +245,13 @@ class App(tk.Tk):
         self._qa_output_queue: "queue.Queue[str]" = queue.Queue()
         self._verify_output_queue: "queue.Queue[str]" = queue.Queue()
         self._summary_queue: "queue.Queue[str]" = queue.Queue()
+        self._training_output_queue: "queue.Queue[str]" = queue.Queue()
         self._events_cache: List[dict] = []
         self._events_rows: dict[str, dict] = {}
         self.last_packet_path: Path | None = None
         self.last_answer_path: Path | None = None
+        self._latest_training_run_dir: Path | None = None
+        self._latest_training_summary_path: Path | None = None
         self._build_ui()
         self._start_auto_refresh()
 
@@ -223,6 +283,7 @@ class App(tk.Tk):
         self.after(300, self._drain_qa_output)
         self.after(400, self._drain_verify_output)
         self.after(500, self._drain_summary_queue)
+        self.after(450, self._drain_training_output)
 
     def _handle_start(self) -> None:
         kill_switch = get_kill_switch_path()
@@ -292,6 +353,99 @@ class App(tk.Tk):
                     )
                 )
         threading.Thread(target=runner, daemon=True).start()
+
+    def _handle_start_training(self) -> None:
+        try:
+            max_runtime = int(self.training_runtime_var.get())
+        except Exception:
+            max_runtime = 60
+        if max_runtime <= 0:
+            max_runtime = 60
+        self.training_status_var.set(f"Status: running (max {max_runtime}s)")
+        threading.Thread(target=self._run_training, args=(max_runtime,), daemon=True).start()
+
+    def _run_training(self, max_runtime: int) -> None:
+        result, markers = run_training_daemon(max_runtime)
+        markers_with_rc = dict(markers)
+        markers_with_rc["RETURN_CODE"] = str(result.returncode)
+        lines = [result.format_lines()]
+        if markers:
+            marker_line = ", ".join(f"{k}={v}" for k, v in markers.items())
+            lines.append(f"Markers: {marker_line}")
+        else:
+            lines.append("Markers: (none detected)")
+        log_text = "\n".join(lines)
+        self._training_output_queue.put(log_text)
+        self._append_training_markers(markers_with_rc)
+        self._log_run(log_text)
+
+    def _append_training_markers(self, markers: dict[str, str]) -> None:
+        def updater() -> None:
+            run_dir_text = markers.get("RUN_DIR") if markers else None
+            summary_text = markers.get("SUMMARY_PATH") if markers else None
+            stop_reason = markers.get("STOP_REASON") if markers else None
+            if run_dir_text:
+                self._latest_training_run_dir = Path(run_dir_text)
+                self.training_run_dir_var.set(f"RUN_DIR: {run_dir_text}")
+            if summary_text:
+                self._latest_training_summary_path = Path(summary_text)
+                self.training_summary_path_var.set(f"SUMMARY_PATH: {summary_text}")
+            return_code = markers.get("RETURN_CODE") if markers else None
+            if stop_reason:
+                self.training_status_var.set(
+                    f"Status: exit {stop_reason} (code {return_code or ''})"
+                )
+            else:
+                finished_text = "Status: finished"
+                if return_code is not None:
+                    finished_text += f" (code {return_code})"
+                self.training_status_var.set(finished_text)
+
+        self._enqueue_ui(updater)
+
+    def _handle_show_latest_training_summary(self) -> None:
+        def loader() -> None:
+            run_dir, summary_path = latest_training_summary()
+            if summary_path is None:
+                self._training_output_queue.put("No training summary found.")
+                self._enqueue_ui(
+                    lambda: self._update_training_summary_text("(no summary files found)")
+                )
+                return
+            self._latest_training_run_dir = run_dir
+            self._latest_training_summary_path = summary_path
+            try:
+                content = summary_path.read_text(encoding="utf-8")
+            except Exception as exc:  # pragma: no cover - UI feedback
+                content = f"Failed to read {summary_path}: {exc}"
+            self._enqueue_ui(lambda: self._update_training_summary_text(content))
+            marker_info = f"Latest summary: {summary_path}"
+            if run_dir:
+                marker_info += f" (run dir: {run_dir})"
+            self._training_output_queue.put(marker_info)
+
+        threading.Thread(target=loader, daemon=True).start()
+
+    def _update_training_summary_text(self, content: str) -> None:
+        self.training_summary_text.configure(state=tk.NORMAL)
+        self.training_summary_text.delete("1.0", tk.END)
+        self.training_summary_text.insert(tk.END, content)
+        self.training_summary_text.configure(state=tk.DISABLED)
+
+    def _handle_open_latest_run_folder(self) -> None:
+        run_dir, summary_path = latest_training_summary()
+        if run_dir is None:
+            messagebox.showinfo("Training", "No training runs found")
+            return
+        self._latest_training_run_dir = run_dir
+        self._latest_training_summary_path = summary_path
+        try:
+            if hasattr(os, "startfile"):
+                os.startfile(str(run_dir))  # type: ignore[attr-defined]
+            else:
+                subprocess.Popen(["xdg-open", str(run_dir)], env=_utf8_env())
+        except Exception as exc:  # pragma: no cover - UI feedback
+            messagebox.showerror("Training", f"Failed to open folder: {exc}")
 
     def _build_qa_panel(self) -> None:
         panel = tk.LabelFrame(self.qa_tab, text="AI Q&A", padx=5, pady=5)
@@ -703,6 +857,18 @@ class App(tk.Tk):
             self.verify_output.configure(state=tk.DISABLED)
         self.after(500, self._drain_verify_output)
 
+    def _drain_training_output(self) -> None:
+        while True:
+            try:
+                message = self._training_output_queue.get_nowait()
+            except queue.Empty:
+                break
+            self.training_output.configure(state=tk.NORMAL)
+            self.training_output.insert(tk.END, message + "\n\n")
+            self.training_output.see(tk.END)
+            self.training_output.configure(state=tk.DISABLED)
+        self.after(600, self._drain_training_output)
+
     def _drain_summary_queue(self) -> None:
         updated = False
         while True:
@@ -755,6 +921,58 @@ class App(tk.Tk):
         self.run_log = ScrolledText(self.run_tab, height=10, wrap=tk.WORD)
         self.run_log.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         self.run_log.configure(state=tk.DISABLED)
+
+        training_frame = tk.LabelFrame(self.run_tab, text="Training", padx=5, pady=5)
+        training_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        controls = tk.Frame(training_frame)
+        controls.pack(fill=tk.X, pady=2)
+
+        tk.Label(controls, text="Max runtime (s):").pack(side=tk.LEFT)
+        self.training_runtime_var = tk.StringVar(value="60")
+        tk.Entry(controls, textvariable=self.training_runtime_var, width=8).pack(
+            side=tk.LEFT, padx=4
+        )
+        tk.Button(
+            controls,
+            text="Start Nightly Training (SIM-only)",
+            command=self._handle_start_training,
+        ).pack(side=tk.LEFT, padx=5)
+        tk.Button(
+            controls,
+            text="Show Latest Training Summary",
+            command=self._handle_show_latest_training_summary,
+        ).pack(side=tk.LEFT, padx=5)
+        tk.Button(
+            controls,
+            text="Open Latest Run Folder",
+            command=self._handle_open_latest_run_folder,
+        ).pack(side=tk.LEFT, padx=5)
+
+        info_frame = tk.Frame(training_frame)
+        info_frame.pack(fill=tk.X, pady=2)
+        self.training_status_var = tk.StringVar(value="Status: idle")
+        self.training_run_dir_var = tk.StringVar(value="RUN_DIR: (none)")
+        self.training_summary_path_var = tk.StringVar(value="SUMMARY_PATH: (none)")
+        tk.Label(info_frame, textvariable=self.training_status_var, anchor="w").pack(
+            anchor="w"
+        )
+        tk.Label(info_frame, textvariable=self.training_run_dir_var, anchor="w").pack(
+            anchor="w"
+        )
+        tk.Label(
+            info_frame, textvariable=self.training_summary_path_var, anchor="w"
+        ).pack(anchor="w")
+
+        tk.Label(training_frame, text="Training Output:").pack(anchor="w")
+        self.training_output = ScrolledText(training_frame, height=8, wrap=tk.WORD)
+        self.training_output.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
+        self.training_output.configure(state=tk.DISABLED)
+
+        tk.Label(training_frame, text="Latest Summary:").pack(anchor="w")
+        self.training_summary_text = ScrolledText(training_frame, height=6, wrap=tk.WORD)
+        self.training_summary_text.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
+        self.training_summary_text.configure(state=tk.DISABLED)
 
     def _build_health_tab(self) -> None:
         container = tk.Frame(self.health_tab)

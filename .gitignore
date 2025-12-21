@@ -17,6 +17,15 @@ Logs/*.log
 Logs/alert_state.json
 Logs/KILL_SWITCH
 Data/KILL_SWITCH
+Logs/events*.jsonl
+Logs/status.json
+Logs/supervisor_state.json
+Logs/tournament_runs/
+Logs/train_runs/
+evidence_packs/
+qa_packets/
+qa_answers/
+Reports/
 
 # Optional: keep Data and Logs folders but ignore other runtime artifacts
 Data/*.tmp
