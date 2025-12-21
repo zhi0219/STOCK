@@ -1,0 +1,21 @@
+# Judge set configuration for PR11 (SIM-only, deterministic)
+
+# Each window represents a holdout slice of Data/quotes.csv that must never be
+# used for training. Windows can be defined by (start_row, count) to avoid
+# time-zone drift and remain deterministic.
+
+windows:
+  - name: "early_slice"
+    start_row: 1
+    count: 200
+  - name: "mid_slice"
+    start_row: 500
+    count: 200
+  - name: "late_slice"
+    start_row: 1000
+    count: 200
+
+# Optional metadata for reporting.
+meta:
+  risk_score_weight: 1.0
+  version: "pr11"

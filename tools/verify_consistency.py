@@ -435,6 +435,9 @@ def _py_compile_targets() -> List[Path]:
         "verify_ui_hud_parsing.py",
         "progress_index.py",
         "verify_progress_index.py",
+        "progress_judge.py",
+        "verify_progress_truth.py",
+        "verify_pr11_gate.py",
         "verify_ui_progress_panel.py",
     ]:
         target = TOOLS_DIR / name

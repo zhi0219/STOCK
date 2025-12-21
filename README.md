@@ -197,6 +197,18 @@ cd $HOME\Desktop\STOCK
 
 - 一键停机：创建 `config.yaml` 的 `risk_guards.kill_switch_path` 指向的文件（默认 `Data\\KILL_SWITCH`）即可停止训练/服务进程；删除后可恢复运行。
 
+## Prove Progress (SIM-only, PR11 gate)
+
+- 固定评审集（Judge set）永远不参与训练，只用于对当前策略与基线（DoNothing / Buy&Hold）做 Walk-forward 评估。
+- 一键验证（含高亮 marker，顶/尾部重复）：
+
+  ```powershell
+  .\.venv\Scripts\python.exe .\tools\verify_pr11_gate.py
+  ```
+
+- 通过标准（`PR11_GATE_SUMMARY|status=PASS|...`）：所有子验证通过；`DEGRADED` 代表缺少数据/配置但已安全降级；`FAIL` 需修复。
+- Judge 报告与 Progress Tab：Progress 记录训练轨迹与持仓预览；Judge 报告（Reports/judge/）基于固定评审集给出基线对比、风险分与“仅推荐（不自动晋升）”结果，两者需同时参考，只有 Judge 通过才算“进展有证据”。
+
 ## Deterministic MOVE self-test
 Run a synthetic injection so `alerts.py` emits a MOVE alert without waiting for real market moves.
 
