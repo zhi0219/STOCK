@@ -40,10 +40,11 @@ cd $HOME\Desktop\STOCK
 # .\.venv\Scripts\python.exe -m pip install -r requirements.txt  # 可选，网络受限环境可跳过
 .\.venv\Scripts\python.exe .\tools\verify_smoke.py
 .\.venv\Scripts\python.exe .\tools\verify_cooldown.py
-.\.venv\Scripts\python.exe -m py_compile .\tools\sim_replay.py .\tools\verify_sim_replay.py .\tools\verify_no_lookahead_sim.py .\tools\sim_tournament.py .\tools\verify_sim_tournament.py
+.\.venv\Scripts\python.exe -m py_compile .\tools\sim_replay.py .\tools\verify_sim_replay.py .\tools\verify_no_lookahead_sim.py .\tools\sim_tournament.py .\tools\verify_sim_tournament.py .\tools\policy_candidate.py .\tools\verify_policy_promotion.py .\tools\verify_policy_lifecycle.py
 .\.venv\Scripts\python.exe .\tools\verify_sim_replay.py
 .\.venv\Scripts\python.exe .\tools\verify_no_lookahead_sim.py
 .\.venv\Scripts\python.exe .\tools\verify_sim_tournament.py
+.\.venv\Scripts\python.exe .\tools\verify_policy_lifecycle.py
 .\.venv\Scripts\python.exe .\tools\verify_consistency.py
 ```
 
@@ -54,7 +55,7 @@ cd $HOME\Desktop\STOCK
   ```
 - 核心验收（都会自动清理临时文件）：
   ```powershell
-  .\.venv\Scripts\python.exe -m py_compile .\tools\sim_replay.py .\tools\verify_sim_replay.py .\tools\verify_no_lookahead_sim.py
+  .\.venv\Scripts\python.exe -m py_compile .\tools\sim_replay.py .\tools\verify_sim_replay.py .\tools\verify_no_lookahead_sim.py .\tools\policy_candidate.py .\tools\verify_policy_promotion.py .\tools\verify_policy_lifecycle.py
   .\.venv\Scripts\python.exe .\tools\verify_sim_replay.py
   .\.venv\Scripts\python.exe .\tools\verify_no_lookahead_sim.py
   ```

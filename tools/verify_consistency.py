@@ -205,7 +205,16 @@ def check_sim_tournament_presence() -> List[CheckResult]:
         return [CheckResult("sim tournament files", False, f"Missing: {', '.join(sorted(missing))}")]
 
     contents = (TOOLS_DIR / "sim_tournament.py").read_text(encoding="utf-8")
-    required_args = ["--input", "--windows", "--start-ts", "--end-ts", "--stride", "--variants", "--max-steps"]
+    required_args = [
+        "--input",
+        "--windows",
+        "--start-ts",
+        "--end-ts",
+        "--stride",
+        "--variants",
+        "--max-steps",
+        "--policy-version",
+    ]
     missing_args = [arg for arg in required_args if arg not in contents]
     if missing_args:
         return [CheckResult("sim tournament argparse", False, f"Missing args: {', '.join(sorted(missing_args))}")]
@@ -246,6 +255,9 @@ def check_readme_cli_consistency() -> List[CheckResult]:
         "sim_replay.py",
         "verify_sim_replay.py",
         "verify_no_lookahead_sim.py",
+        "policy_candidate.py",
+        "verify_policy_promotion.py",
+        "verify_policy_lifecycle.py",
     ]
     results: List[CheckResult] = []
     for name in targets:
@@ -295,6 +307,9 @@ def _py_compile_targets() -> List[Path]:
         "sim_replay.py",
         "verify_sim_replay.py",
         "verify_no_lookahead_sim.py",
+        "policy_candidate.py",
+        "verify_policy_promotion.py",
+        "verify_policy_lifecycle.py",
     ]:
         target = TOOLS_DIR / name
         if target.exists():

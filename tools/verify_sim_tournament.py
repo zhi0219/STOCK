@@ -34,8 +34,8 @@ def _run_tournament(tmpdir: Path) -> Path:
     _make_quotes(quotes_path)
     report_dir = ROOT / "Reports"
     runs_dir = ROOT / "Logs" / "tournament_runs"
-    summary_path = runs_dir / "tournament_summary.json"
-    for target in [summary_path, report_dir, runs_dir]:
+    summary_glob = runs_dir / "tournament_summary_*.json"
+    for target in [report_dir, runs_dir]:
         if target.exists():
             if target.is_file():
                 target.unlink()
@@ -57,7 +57,9 @@ def _run_tournament(tmpdir: Path) -> Path:
     result = os.spawnv(os.P_WAIT, cmd[0], cmd)
     if result != 0:
         raise AssertionError(f"sim_tournament failed with code {result}")
-    return summary_path
+    summaries = sorted(runs_dir.glob(summary_glob.name))
+    assert summaries, "Missing tournament summaries"
+    return summaries[-1]
 
 
 def _ensure_monotonic_equity(run_dir: Path) -> None:

@@ -1,0 +1,12 @@
+{
+  "current_policy_version": "baseline",
+  "policies": {
+    "baseline": {
+      "policy_version": "baseline",
+      "risk_overrides": {},
+      "created_at": "2025-01-01T00:00:00Z",
+      "source": "seed"
+    }
+  },
+  "history": []
+}

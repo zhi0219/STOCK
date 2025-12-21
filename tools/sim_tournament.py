@@ -10,6 +10,7 @@ from typing import Dict, Iterable, List, Sequence, Tuple
 if str(Path(__file__).resolve().parent.parent) not in __import__("sys").path:
     __import__("sys").path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from tools.policy_registry import get_policy
 from tools.sim_autopilot import run_step
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -206,13 +207,17 @@ def _run_single(
     window: Tuple[datetime, datetime],
     variant: str,
     max_steps: int,
+    policy_version: str,
+    policy_overrides: Dict[str, object],
 ) -> Tuple[str, Dict[str, object]]:
     start, end = window
-    run_id = f"{variant}_{start.date()}_{end.date()}"
+    run_id = f"{policy_version}_{variant}_{start.date()}_{end.date()}"
     run_dir = RUNS_DIR / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
 
     cfg = _variant_config(variant)
+    merged_overrides = dict(policy_overrides)
+    merged_overrides.update(cfg.get("risk_overrides") or {})
     sim_state: Dict[str, object] = {
         "cash_usd": 10_000.0,
         "risk_state": {
@@ -228,7 +233,11 @@ def _run_single(
     for row in quotes:
         if not _within_window(row, start, end):
             continue
-        sim_state, _ = run_step(row, sim_state, {**cfg, "logs_dir": run_dir})
+        sim_state, _ = run_step(
+            row,
+            sim_state,
+            {**cfg, "logs_dir": run_dir, "policy_version": policy_version, "risk_overrides": merged_overrides},
+        )
         risk_state = sim_state.get("risk_state", {}) or {}
         equity = float(risk_state.get("equity", sim_state.get("cash_usd", 0.0)))
         cash = float(sim_state.get("cash_usd", 0.0))
@@ -247,6 +256,7 @@ def _run_single(
                 "drawdown_pct": round(drawdown_pct, 4),
                 "mode": risk_state.get("mode", "UNKNOWN"),
                 "step": steps + 1,
+                "policy_version": policy_version,
             },
         )
         _write_portfolio(portfolio_path, sim_state, steps + 1, ts_utc.isoformat())
@@ -312,6 +322,7 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
     parser.add_argument("--stride", type=int, help="Stride in days for auto windows")
     parser.add_argument("--variants", default="baseline,conservative,aggressive", help="Comma separated variant names")
     parser.add_argument("--max-steps", type=int, default=250, dest="max_steps", help="Max steps per window")
+    parser.add_argument("--policy-version", dest="policy_version", help="Policy version override", default=None)
     return parser.parse_args(argv)
 
 
@@ -335,26 +346,35 @@ def main(argv: List[str] | None = None) -> int:
     if not variants:
         variants = ["baseline"]
 
+    policy_version, policy_cfg = get_policy(args.policy_version)
     quotes = _load_quotes(input_path)
     runs: List[Dict[str, object]] = []
     for window in windows:
         for variant in variants:
-            run_id, metrics = _run_single(quotes, window, variant, int(args.max_steps))
+            run_id, metrics = _run_single(
+                quotes,
+                window,
+                variant,
+                int(args.max_steps),
+                policy_version,
+                policy_cfg.get("risk_overrides", {}),
+            )
             metrics["steps"] = int(args.max_steps)
+            metrics["policy_version"] = policy_version
             runs.append(metrics)
 
     sorted_runs = sorted(runs, key=lambda r: r.get("score", 0.0), reverse=True)
     worst_runs = sorted_runs[-3:]
     for run in worst_runs:
         reason = "Elevated drawdown or rejects; propose tighter stale-data gate and lower max_notional."
-        _append_guard_proposal(RUNS_DIR / run["run_id"], reason, policy_version="sim-tournament-v1")
+        _append_guard_proposal(RUNS_DIR / run["run_id"], reason, policy_version=policy_version)
 
-    summary = {"generated_at": datetime.now(timezone.utc).isoformat(), "runs": runs}
-    summary_path = RUNS_DIR / "tournament_summary.json"
+    summary = {"generated_at": datetime.now(timezone.utc).isoformat(), "runs": runs, "policy_version": policy_version}
+    summary_path = RUNS_DIR / f"tournament_summary_{policy_version}.json"
     summary_path.parent.mkdir(parents=True, exist_ok=True)
     summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    report_name = f"tournament_{datetime.now().strftime('%Y%m%d')}.md"
+    report_name = f"tournament_{policy_version}_{datetime.now().strftime('%Y%m%d')}.md"
     report_path = REPORTS_DIR / report_name
     _render_report(runs, report_path)
 

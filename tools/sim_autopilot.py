@@ -201,10 +201,17 @@ class RiskEngine:
 
 
 class SimAutopilot:
-    def __init__(self, config_path: Optional[Path] = None, logs_dir: Optional[Path] = None, risk_overrides: Optional[Dict[str, object]] = None) -> None:
+    def __init__(
+        self,
+        config_path: Optional[Path] = None,
+        logs_dir: Optional[Path] = None,
+        risk_overrides: Optional[Dict[str, object]] = None,
+        policy_version: str | None = None,
+    ) -> None:
         self.root = Path(__file__).resolve().parent.parent
         self.config_path = config_path or (self.root / "config.yaml")
         cfg = self._load_config()
+        self.policy_version = policy_version or "baseline"
         self.logs_dir = (logs_dir or (self.root / "Logs")).expanduser().resolve()
         self.logs_dir.mkdir(parents=True, exist_ok=True)
         self.orders_path = self.logs_dir / "orders_sim.jsonl"
@@ -232,6 +239,7 @@ class SimAutopilot:
             "drawdown_used": round(self.state.drawdown_used, 4),
             "rejects_recent": list(self.state.rejects_recent),
             "ts_utc": _now().isoformat(),
+            "policy_version": self.policy_version,
         }
         risk_state_path = self.logs_dir / "risk_state.json"
         risk_state_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -239,6 +247,7 @@ class SimAutopilot:
     def _append_event(self, event: Dict[str, object]) -> None:
         event = dict(event)
         event.setdefault("ts_utc", _now().isoformat())
+        event.setdefault("policy_version", self.policy_version)
         with self.events_path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(event, ensure_ascii=False) + "\n")
 
@@ -255,6 +264,7 @@ class SimAutopilot:
         line_no = self._order_line_no()
         record = dict(intent)
         record.setdefault("ts_utc", now_ts.isoformat())
+        record.setdefault("policy_version", self.policy_version)
         record["sim_fill"] = dict(self.sim_fill)
         with self.orders_path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(record, ensure_ascii=False) + "\n")
@@ -375,7 +385,10 @@ def run_step(
     logs_dir = logs_dir.expanduser().resolve()
     risk_overrides = cfg.get("risk_overrides") or {}
 
-    autopilot = SimAutopilot(logs_dir=logs_dir, risk_overrides=risk_overrides)
+    policy_version = str(cfg.get("policy_version", "baseline"))
+    autopilot = SimAutopilot(
+        logs_dir=logs_dir, risk_overrides=risk_overrides, policy_version=policy_version
+    )
     autopilot.state = _risk_state_from_dict(sim_state.get("risk_state"))
     autopilot.risk_engine.state = autopilot.state
 
