@@ -35,7 +35,9 @@ from tools.sim_tournament import (
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_INPUT = ROOT / "Data" / "quotes.csv"
 RUNS_ROOT = ROOT / "Logs" / "train_runs"
-STATE_PATH = ROOT / "Logs" / "train_daemon_state.json"
+TRAIN_SERVICE_ROOT = ROOT / "Logs" / "train_service"
+STATE_PATH = TRAIN_SERVICE_ROOT / "state.json"
+LEGACY_STATE_PATH = ROOT / "Logs" / "train_daemon_state.json"
 EVENTS_PATH = ROOT / "Logs" / "events_train.jsonl"
 ARCHIVES_ROOT = ROOT / "Archives"
 EVIDENCE_CORE = [
@@ -265,6 +267,39 @@ def _append_retention_to_summary(path: Path, retention_result: RetentionResult) 
     lines = ["", "## Retention", f"- {_format_retention_summary(retention_result)}"]
     with path.open("a", encoding="utf-8") as fh:
         fh.write("\n".join(lines) + "\n")
+
+
+def _ensure_state_root() -> None:
+    TRAIN_SERVICE_ROOT.mkdir(parents=True, exist_ok=True)
+
+
+def _maybe_migrate_legacy_state() -> None:
+    if not LEGACY_STATE_PATH.exists():
+        return
+
+    _ensure_state_root()
+    if STATE_PATH.exists():
+        try:
+            STATE_PATH.write_text(
+                LEGACY_STATE_PATH.read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+            LEGACY_STATE_PATH.unlink(missing_ok=True)
+        except Exception:
+            return
+        return
+
+    try:
+        LEGACY_STATE_PATH.replace(STATE_PATH)
+    except Exception:
+        try:
+            STATE_PATH.write_text(
+                LEGACY_STATE_PATH.read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+            LEGACY_STATE_PATH.unlink(missing_ok=True)
+        except Exception:
+            return
 
 
 def _atomic_write_json(path: Path, payload: Dict[str, object]) -> None:
@@ -754,6 +789,8 @@ def _run_simulation(
 def main(argv: List[str] | None = None) -> int:
     args = parse_args(argv or sys.argv[1:])
     _apply_nightly_defaults(args)
+
+    _maybe_migrate_legacy_state()
 
     input_path = Path(args.input)
     if not input_path.is_absolute():

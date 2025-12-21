@@ -29,6 +29,21 @@
   ```
 - 不要把 `git clean -fd` 当成日常手段；训练/验收产物默认落在 `Logs/train_runs/` 等安全目录，由内置的 retention sweep 处理。
 
+## git status 出现红色未跟踪运行时文件时怎么办？
+
+1. 先跑卫生闸门获取高亮摘要：
+   ```powershell
+   .\.venv\Scripts\python.exe .\tools\verify_repo_hygiene.py
+   ```
+   顶部/底部的 `REPO_HYGIENE_SUMMARY` 行会标注缺失的 ignore 规则、未跟踪的运行时文件、以及需要人工处理的路径。
+2. 若卫生闸门提示缺少规则或有 runtime 路径未被忽略，按提示更新 `.gitignore` 或移动文件到已忽略的根（例如 `Logs/train_service/` 或 `Logs/train_runs/`）。
+3. 如需人工清理运行时产物（可选），仅在受控目录下删除，例如：
+   ```powershell
+   Remove-Item -Recurse -Force .\Logs\train_service -ErrorAction SilentlyContinue
+   Remove-Item -Recurse -Force .\Logs\train_runs -ErrorAction SilentlyContinue
+   ```
+   不建议在仓库根目录使用 `git clean`；保留期/归档策略仍按守护脚本内置逻辑执行，Reports/ 属于运行时报告默认被 gitignore（可本地留存审计、不需提交）。
+
 ## 本机真实基线（1条命令）
 
 ```powershell

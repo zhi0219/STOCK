@@ -14,7 +14,9 @@ ROOT = Path(__file__).resolve().parent.parent
 TRAIN_DAEMON = ROOT / "tools" / "train_daemon.py"
 NO_LOOKAHEAD = ROOT / "tools" / "verify_no_lookahead_sim.py"
 EVENTS_PATH = ROOT / "Logs" / "events_train.jsonl"
-STATE_PATH = ROOT / "Logs" / "train_daemon_state.json"
+TRAIN_SERVICE_ROOT = ROOT / "Logs" / "train_service"
+STATE_PATH = TRAIN_SERVICE_ROOT / "state.json"
+LEGACY_STATE_PATH = ROOT / "Logs" / "train_daemon_state.json"
 DEFAULT_KILL = ROOT / "Data" / "KILL_SWITCH"
 
 
@@ -96,9 +98,10 @@ def _assert_events() -> None:
 
 
 def _assert_state() -> None:
-    if not STATE_PATH.exists():
-        raise AssertionError("train_daemon_state.json missing")
-    payload = json.loads(STATE_PATH.read_text(encoding="utf-8"))
+    state_path = STATE_PATH if STATE_PATH.exists() else LEGACY_STATE_PATH
+    if not state_path.exists():
+        raise AssertionError("train_daemon state missing")
+    payload = json.loads(state_path.read_text(encoding="utf-8"))
     for key in ("run_id", "stage", "last_success_ts", "last_report_path", "policy_version", "degraded_flags", "stop_reason"):
         if key not in payload:
             raise AssertionError(f"state missing {key}")
@@ -181,6 +184,7 @@ def main() -> None:
             _write_quotes(quotes_path)
             EVENTS_PATH.unlink(missing_ok=True)
             STATE_PATH.unlink(missing_ok=True)
+            LEGACY_STATE_PATH.unlink(missing_ok=True)
             DEFAULT_KILL.unlink(missing_ok=True)
 
             _run_once(quotes_path, runs_root)
