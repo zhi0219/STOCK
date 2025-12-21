@@ -9,6 +9,8 @@ from typing import Any, Dict, List
 
 import streamlit as st
 
+from tools.dashboard_model import compute_risk_hud
+
 ROOT = Path(__file__).resolve().parent.parent
 LOGS_DIR = ROOT / "Logs"
 SUPERVISOR_SCRIPT = ROOT / "tools" / "supervisor.py"
@@ -93,15 +95,20 @@ if col2.button("Stop supervisor"):
     proc = _run_command([sys.executable, str(SUPERVISOR_SCRIPT), "stop"])
     _display_command_result(proc)
 
-status = _load_status()
-st.subheader("状态")
-st.write(_status_indicator(status))
-if status:
-    st.json(status)
-
-st.subheader("事件")
+risk_status = _load_status()
 events_path = _latest_events_file()
 events = _load_events(events_path)
+risk_hud = compute_risk_hud(LOGS_DIR, risk_status, events)
+
+st.subheader("风险 HUD")
+st.json(risk_hud)
+
+st.subheader("状态")
+st.write(_status_indicator(risk_status))
+if risk_status:
+    st.json(risk_status)
+
+st.subheader("事件")
 if not events:
     st.info("暂无事件文件")
 else:

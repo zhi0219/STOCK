@@ -63,6 +63,16 @@ def load_latest_status(logs_dir: Path) -> Dict[str, Any] | None:
         return None
 
 
+def load_risk_state(logs_dir: Path) -> Dict[str, Any] | None:
+    path = logs_dir / "risk_state.json"
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
 def load_recent_events(logs_dir: Path, since_minutes: int) -> List[Dict[str, Any]]:
     path = _find_latest_events_file(logs_dir)
     if not path:
@@ -276,6 +286,28 @@ def compute_health(
         evidence_lines.append(f"supervisor_state ts_utc={supervisor_state['ts_utc']}")
 
     return {"lights": lights, "cards": cards, "evidence": "\n".join(evidence_lines)}
+
+
+def compute_risk_hud(logs_dir: Path, status: Dict[str, Any] | None, events: List[Dict[str, Any]]) -> Dict[str, Any]:
+    risk_state = load_risk_state(logs_dir) or {}
+    mode = str(risk_state.get("mode") or (status or {}).get("mode") or "UNKNOWN").upper()
+    risk_budget_used = float(risk_state.get("risk_budget_used") or 0.0)
+    drawdown_used = float(risk_state.get("drawdown_used") or 0.0)
+    rejects = [str(item) for item in (risk_state.get("rejects_recent") or [])]
+
+    postmortem = _extract_last_event(events, "POSTMORTEM")
+    evidence = None
+    if postmortem:
+        evidence = postmortem.get("__evidence") or postmortem.get("evidence")
+    if evidence and evidence not in rejects:
+        rejects.insert(0, f"POSTMORTEM {evidence}")
+
+    return {
+        "mode": mode,
+        "risk_budget_used": risk_budget_used,
+        "drawdown_used": drawdown_used,
+        "rejects_recent": rejects[-10:],
+    }
 
 
 def _format_time_et(ts: Optional[datetime]) -> str:

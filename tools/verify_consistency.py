@@ -173,6 +173,31 @@ def check_ascii_markers() -> List[CheckResult]:
     return results
 
 
+def check_sim_safety_pack_assets() -> List[CheckResult]:
+    expected_files = [TOOLS_DIR / "sim_autopilot.py", TOOLS_DIR / "verify_sim_safety_pack.py"]
+    missing = [str(p.name) for p in expected_files if not p.exists()]
+    results: List[CheckResult] = []
+    if missing:
+        results.append(CheckResult("sim safety pack files", False, f"missing: {', '.join(missing)}"))
+    else:
+        results.append(CheckResult("sim safety pack files", True))
+
+    hud_keys = ["mode", "risk_budget_used", "drawdown_used", "rejects_recent"]
+    hud_text = _read_text(TOOLS_DIR / "dashboard_model.py")
+    missing_keys = [k for k in hud_keys if k not in hud_text]
+    if missing_keys:
+        results.append(
+            CheckResult(
+                "risk HUD fields",
+                False,
+                f"dashboard_model.py missing: {', '.join(sorted(missing_keys))}",
+            )
+        )
+    else:
+        results.append(CheckResult("risk HUD fields", True))
+    return results
+
+
 def _extract_readme_flags(script_name: str) -> set[str]:
     flags: set[str] = set()
     for line in _read_text(README_PATH).splitlines():
@@ -248,6 +273,8 @@ def _py_compile_targets() -> List[Path]:
         "verify_utf8_stdio.py",
         "verify_dashboard.py",
         "verify_supervisor.py",
+        "verify_sim_safety_pack.py",
+        "sim_autopilot.py",
     ]:
         target = TOOLS_DIR / name
         if target.exists():
@@ -380,6 +407,7 @@ def main() -> int:
         check_sys_executable_usage,
         check_ui_encoding,
         check_ascii_markers,
+        check_sim_safety_pack_assets,
         check_readme_cli_consistency,
         check_py_compile,
         _run_quick_verifiers,
