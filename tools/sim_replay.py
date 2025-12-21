@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 if str(Path(__file__).resolve().parent.parent) not in sys.path:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from tools.policy_registry import get_policy
 from tools.sim_autopilot import run_step
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -101,6 +102,7 @@ def run_replay(args: argparse.Namespace) -> int:
     start_row = int(args.start_row) if args.start_row else None
     sleep_delay = 0.0 if args.speed <= 0 else 1.0 / float(args.speed)
 
+    policy_version, policy = get_policy()
     sim_state: Dict[str, object] = {
         "cash_usd": 10_000.0,
         "risk_state": {"mode": "NORMAL", "equity": 10_000.0, "start_equity": 10_000.0, "peak_equity": 10_000.0},
@@ -125,6 +127,8 @@ def run_replay(args: argparse.Namespace) -> int:
                 "logs_dir": logs_dir,
                 "momentum_threshold_pct": args.threshold,
                 "verify_no_lookahead": bool(args.verify_no_lookahead),
+                "policy_version": policy_version,
+                "risk_overrides": policy.get("risk_overrides", {}),
             },
         )
         steps += 1
@@ -146,6 +150,7 @@ def run_replay(args: argparse.Namespace) -> int:
                 "drawdown_pct": round(drawdown_pct, 4),
                 "mode": risk_state.get("mode", "UNKNOWN"),
                 "step": steps,
+                "policy_version": policy_version,
             },
         )
         _write_portfolio(portfolio_path, sim_state, steps, ts_utc.isoformat())
