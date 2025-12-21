@@ -23,7 +23,31 @@
 
 ```powershell
 cd %USERPROFILE%\Desktop\STOCK
-..venv\Scripts\python.exe tools\verify_foundation.py
+.\.venv\Scripts\python.exe .\tools\verify_foundation.py
+```
+
+## PR7 Windows 复制即用门禁（PowerShell）
+合并前至少顺序跑完下列 5~6 条，预期为 `PASS`；若缺少可选依赖导致 `DEGRADED` 可接受，但 `FAIL` 必须为 0：
+
+```powershell
+.\.venv\Scripts\python.exe .\tools\verify_foundation.py
+.\.venv\Scripts\python.exe .\tools\verify_train_daemon_safety.py
+.\.venv\Scripts\python.exe .\tools\verify_train_retention.py
+.\.venv\Scripts\python.exe .\tools\verify_train_service_safety.py
+.\.venv\Scripts\python.exe .\tools\verify_train_semantic_loop.py
+# 可选：一致性闸门（推荐）
+.\.venv\Scripts\python.exe .\tools\verify_consistency.py
+```
+
+如需同时落盘日志，可选用 PowerShell tee 版本（最朴素版命令如上，复制即用）：
+
+```powershell
+.\.venv\Scripts\python.exe .\tools\verify_foundation.py *>&1 | Tee-Object -FilePath .\Logs\verify_foundation.log
+.\.venv\Scripts\python.exe .\tools\verify_train_daemon_safety.py *>&1 | Tee-Object -FilePath .\Logs\verify_train_daemon_safety.log
+.\.venv\Scripts\python.exe .\tools\verify_train_retention.py *>&1 | Tee-Object -FilePath .\Logs\verify_train_retention.log
+.\.venv\Scripts\python.exe .\tools\verify_train_service_safety.py *>&1 | Tee-Object -FilePath .\Logs\verify_train_service_safety.log
+.\.venv\Scripts\python.exe .\tools\verify_train_semantic_loop.py *>&1 | Tee-Object -FilePath .\Logs\verify_train_semantic_loop.log
+.\.venv\Scripts\python.exe .\tools\verify_consistency.py *>&1 | Tee-Object -FilePath .\Logs\verify_consistency.log
 ```
 
 ### macOS / Linux (bash)
