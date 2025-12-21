@@ -198,6 +198,20 @@ def check_sim_safety_pack_assets() -> List[CheckResult]:
     return results
 
 
+def check_sim_tournament_presence() -> List[CheckResult]:
+    expected = [TOOLS_DIR / "sim_tournament.py", TOOLS_DIR / "verify_sim_tournament.py"]
+    missing = [p.name for p in expected if not p.exists()]
+    if missing:
+        return [CheckResult("sim tournament files", False, f"Missing: {', '.join(sorted(missing))}")]
+
+    contents = (TOOLS_DIR / "sim_tournament.py").read_text(encoding="utf-8")
+    required_args = ["--input", "--windows", "--start-ts", "--end-ts", "--stride", "--variants", "--max-steps"]
+    missing_args = [arg for arg in required_args if arg not in contents]
+    if missing_args:
+        return [CheckResult("sim tournament argparse", False, f"Missing args: {', '.join(sorted(missing_args))}")]
+    return [CheckResult("sim tournament checks", True)]
+
+
 def _extract_readme_flags(script_name: str) -> set[str]:
     flags: set[str] = set()
     for line in _read_text(README_PATH).splitlines():
@@ -414,6 +428,7 @@ def main() -> int:
         check_ui_encoding,
         check_ascii_markers,
         check_sim_safety_pack_assets,
+        check_sim_tournament_presence,
         check_readme_cli_consistency,
         check_py_compile,
         _run_quick_verifiers,
