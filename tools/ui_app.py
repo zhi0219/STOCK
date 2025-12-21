@@ -56,6 +56,7 @@ try:
         find_latest_summary_md,
         parse_summary_key_fields,
     )
+    from tools.train_service_hud import TrainingHudSnapshot, compute_training_hud
 except Exception:
     explain_now = None
     compute_event_rows = None  # type: ignore[assignment]
@@ -68,6 +69,8 @@ except Exception:
     find_latest_run_dir = None  # type: ignore[assignment]
     find_latest_summary_md = None  # type: ignore[assignment]
     parse_summary_key_fields = None  # type: ignore[assignment]
+    TrainingHudSnapshot = None  # type: ignore[assignment]
+    compute_training_hud = None  # type: ignore[assignment]
 
 
 def _utf8_env(extra: dict[str, str] | None = None) -> dict[str, str]:
@@ -301,8 +304,24 @@ class App(tk.Tk):
         self.last_answer_path: Path | None = None
         self._latest_training_run_dir: Path | None = None
         self._latest_training_summary_path: Path | None = None
+        self._hud_last_summary_rendered: Path | None = None
         self._latest_wakeup_run_dir: Path | None = None
         self._latest_wakeup_summary_path: Path | None = None
+        self.hud_mode_detail_var = tk.StringVar(value="Status: unknown")
+        self.hud_kill_switch_var = tk.StringVar(value="Kill switch: unknown")
+        self.hud_data_health_var = tk.StringVar(value="Data health: unknown")
+        self.hud_stage_var = tk.StringVar(value="Stage: -")
+        self.hud_run_id_var = tk.StringVar(value="Run: (none)")
+        self.hud_elapsed_var = tk.StringVar(value="Elapsed: -")
+        self.hud_next_iter_var = tk.StringVar(value="Next iteration: -")
+        self.hud_budget_iter_var = tk.StringVar(value="Episodes/day: -")
+        self.hud_budget_hour_var = tk.StringVar(value="Episodes/hour: -")
+        self.hud_budget_disk_var = tk.StringVar(value="Disk budget MB: -")
+        self.hud_max_dd_var = tk.StringVar(value="Max drawdown: -")
+        self.hud_turnover_var = tk.StringVar(value="Turnover: -")
+        self.hud_rejects_var = tk.StringVar(value="Rejects: -")
+        self.hud_gates_var = tk.StringVar(value="Gates triggered: -")
+        self.hud_equity_var = tk.StringVar(value="Equity delta: -")
         self.service_status_var = tk.StringVar(value="Service: unknown")
         self.service_run_dir_var = tk.StringVar(value="Last run: (none)")
         self.service_summary_var = tk.StringVar(value="Last summary: (none)")
@@ -636,6 +655,17 @@ class App(tk.Tk):
         self.wakeup_summary_preview.insert(tk.END, content)
         self.wakeup_summary_preview.configure(state=tk.DISABLED)
 
+    def _handle_tail_events(self) -> None:
+        path = latest_events_file()
+        if not path:
+            message = "(no events file found)"
+        else:
+            message = f"Recent events tail ({path}):\n{read_text_tail(path, lines=30)}"
+        self.training_output.configure(state=tk.NORMAL)
+        self.training_output.insert(tk.END, message + "\n\n")
+        self.training_output.see(tk.END)
+        self.training_output.configure(state=tk.DISABLED)
+
     def _handle_open_latest_run_folder(self) -> None:
         run_dir, summary_path = latest_training_summary()
         if run_dir is None:
@@ -799,10 +829,65 @@ class App(tk.Tk):
         if state.get("last_summary_path"):
             self._latest_training_summary_path = Path(str(state.get("last_summary_path")))
 
+    def _refresh_training_hud(self) -> None:
+        if not compute_training_hud:
+            return
+        snapshot = compute_training_hud()
+        lamp_colors = {
+            "RUNNING": "#228B22",
+            "OBSERVE": "#DAA520",
+            "SAFE": "#FF8C00",
+            "STOPPED": "#8B0000",
+        }
+        color = lamp_colors.get(snapshot.mode, "#555")
+        self.hud_mode_lamp.configure(text=snapshot.mode, bg=color)
+        self.hud_mode_detail_var.set(f"Status: {snapshot.mode_detail}")
+        kill_paths = ", ".join(snapshot.kill_switch_paths) or "(none)"
+        self.hud_kill_switch_var.set(f"Kill switch: {snapshot.kill_switch} | {kill_paths}")
+        data_text = f"Data health: {snapshot.data_health}"
+        if snapshot.data_health_detail:
+            data_text += f" ({snapshot.data_health_detail})"
+        self.hud_data_health_var.set(data_text)
+        if snapshot.data_health == "OK":
+            health_color = "#228B22"
+        elif snapshot.data_health == "WARN":
+            health_color = "#DAA520"
+        elif snapshot.data_health == "UNKNOWN":
+            health_color = "#708090"
+        else:
+            health_color = "#8B0000"
+        self.hud_data_health_label.configure(bg=health_color, fg="white")
+        self.hud_stage_var.set(f"Stage: {snapshot.stage}")
+        self.hud_run_id_var.set(f"Run: {snapshot.run_id}")
+        self.hud_elapsed_var.set(f"Elapsed: {snapshot.elapsed}")
+        self.hud_next_iter_var.set(f"Next iteration: {snapshot.next_iteration}")
+        budgets = snapshot.budgets
+        self.hud_budget_iter_var.set(
+            f"Episodes/day: {budgets.get('episodes_completed', '?')}/{budgets.get('max_per_day', '?')}"
+        )
+        self.hud_budget_hour_var.set(
+            f"Episodes/hour: {budgets.get('episodes_completed', '?')}/{budgets.get('max_per_hour', '?')}"
+        )
+        self.hud_budget_disk_var.set(f"Disk budget MB: {budgets.get('disk_budget_mb', '?')}")
+        self.hud_max_dd_var.set(f"Max drawdown: {snapshot.risk.get('max_drawdown', MISSING_FIELD_TEXT)}")
+        self.hud_turnover_var.set(f"Turnover: {snapshot.risk.get('turnover', MISSING_FIELD_TEXT)}")
+        self.hud_rejects_var.set(f"Rejects: {snapshot.risk.get('reject_count', MISSING_FIELD_TEXT)} | {snapshot.risk.get('rejects', '')}")
+        self.hud_gates_var.set(f"Gates triggered: {snapshot.risk.get('gates_triggered', MISSING_FIELD_TEXT)}")
+        self.hud_equity_var.set(f"Equity delta: {snapshot.equity}")
+        if snapshot.run_dir:
+            self._latest_training_run_dir = snapshot.run_dir
+        if snapshot.summary_path:
+            self._latest_training_summary_path = snapshot.summary_path
+            if parse_summary_key_fields and snapshot.summary_path != self._hud_last_summary_rendered:
+                summary_fields = parse_summary_key_fields(snapshot.summary_path)
+                self._update_training_summary_text(summary_fields.raw_preview)
+                self._hud_last_summary_rendered = snapshot.summary_path
+
     def _refresh(self) -> None:
         self._load_dashboard()
         self._refresh_wakeup_dashboard()
         self._refresh_service_state()
+        self._refresh_training_hud()
 
     def _load_dashboard(self) -> None:
         if not compute_health or not compute_event_rows:
@@ -1225,6 +1310,46 @@ class App(tk.Tk):
         training_frame = tk.LabelFrame(self.run_tab, text="Training", padx=5, pady=5)
         training_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
+        hud_frame = tk.LabelFrame(training_frame, text="24/7 SIM HUD", padx=6, pady=6)
+        hud_frame.pack(fill=tk.X, expand=False, padx=2, pady=4)
+
+        hud_row = tk.Frame(hud_frame)
+        hud_row.pack(fill=tk.X)
+
+        self.hud_mode_lamp = tk.Label(
+            hud_row, text="STOPPED", width=10, relief=tk.SOLID, fg="white", bg="#555"
+        )
+        self.hud_mode_lamp.pack(side=tk.LEFT, padx=4, pady=2)
+
+        status_col = tk.Frame(hud_row)
+        status_col.pack(side=tk.LEFT, padx=6)
+        tk.Label(status_col, textvariable=self.hud_mode_detail_var, anchor="w").pack(anchor="w")
+        tk.Label(status_col, textvariable=self.hud_kill_switch_var, anchor="w").pack(anchor="w")
+        self.hud_data_health_label = tk.Label(status_col, textvariable=self.hud_data_health_var, anchor="w")
+        self.hud_data_health_label.pack(anchor="w")
+
+        timing_col = tk.Frame(hud_row)
+        timing_col.pack(side=tk.LEFT, padx=8)
+        tk.Label(timing_col, textvariable=self.hud_stage_var, anchor="w").pack(anchor="w")
+        tk.Label(timing_col, textvariable=self.hud_run_id_var, anchor="w").pack(anchor="w")
+        tk.Label(timing_col, textvariable=self.hud_elapsed_var, anchor="w").pack(anchor="w")
+        tk.Label(timing_col, textvariable=self.hud_next_iter_var, anchor="w").pack(anchor="w")
+
+        budget_col = tk.Frame(hud_row)
+        budget_col.pack(side=tk.LEFT, padx=8)
+        tk.Label(budget_col, textvariable=self.hud_budget_iter_var, anchor="w").pack(anchor="w")
+        tk.Label(budget_col, textvariable=self.hud_budget_hour_var, anchor="w").pack(anchor="w")
+        tk.Label(budget_col, textvariable=self.hud_budget_disk_var, anchor="w").pack(anchor="w")
+
+        risk_frame = tk.Frame(hud_frame)
+        risk_frame.pack(fill=tk.X, pady=4)
+        tk.Label(risk_frame, text="Risk-first KPIs", font=("Arial", 10, "bold"), fg="#8B0000").pack(anchor="w")
+        tk.Label(risk_frame, textvariable=self.hud_max_dd_var, font=("Arial", 12, "bold"), fg="#8B0000").pack(anchor="w")
+        tk.Label(risk_frame, textvariable=self.hud_turnover_var, font=("Arial", 11)).pack(anchor="w")
+        tk.Label(risk_frame, textvariable=self.hud_rejects_var, font=("Arial", 11)).pack(anchor="w")
+        tk.Label(risk_frame, textvariable=self.hud_gates_var, font=("Arial", 11)).pack(anchor="w")
+        tk.Label(risk_frame, textvariable=self.hud_equity_var, font=("Arial", 11), fg="#005f73").pack(anchor="w")
+
         controls = tk.Frame(training_frame)
         controls.pack(fill=tk.X, pady=2)
 
@@ -1252,6 +1377,11 @@ class App(tk.Tk):
             controls,
             text="Open Latest Run Folder",
             command=self._handle_open_latest_run_folder,
+        ).pack(side=tk.LEFT, padx=5)
+        tk.Button(
+            controls,
+            text="Tail Recent Events",
+            command=self._handle_tail_events,
         ).pack(side=tk.LEFT, padx=5)
 
         info_frame = tk.Frame(training_frame)

@@ -94,10 +94,13 @@ def _sleep_with_heartbeat(
     seconds: float, episodes_completed: int, last_run_dir: str | None, state: Dict[str, object]
 ) -> None:
     deadline = time.monotonic() + max(seconds, 0)
+    state["next_iteration_eta"] = (_now() + timedelta(seconds=max(seconds, 0))).isoformat()
+    _write_state(state)
     while time.monotonic() < deadline:
         remaining = deadline - time.monotonic()
         time.sleep(min(remaining, 5))
         state["last_heartbeat_ts"] = _now().isoformat()
+        state["next_iteration_eta"] = (_now() + timedelta(seconds=max(remaining, 0))).isoformat()
         _write_state(state)
         print(
             f"SERVICE_HEARTBEAT|episodes_completed={episodes_completed}|last_run_dir={last_run_dir or ''}",
@@ -147,6 +150,9 @@ def _run_episode(
 ) -> Tuple[str | None, str | None, str]:
     planned_seconds = int(args.episode_seconds)
     print(f"EPISODE_START|i={idx}|planned_seconds={planned_seconds}", flush=True)
+    state["last_episode_start_ts"] = _now().isoformat()
+    state["last_planned_seconds"] = planned_seconds
+    _write_state(state)
     cmd = [
         sys.executable,
         str(TRAIN_DAEMON),
@@ -242,6 +248,7 @@ def main(argv: List[str] | None = None) -> int:
     service_state: Dict[str, object] = {
         "service_start_ts": _now().isoformat(),
         "last_episode_end_ts": None,
+        "last_episode_start_ts": None,
         "episodes_completed": 0,
         "last_error": None,
         "last_run_dir": None,
@@ -249,6 +256,16 @@ def main(argv: List[str] | None = None) -> int:
         "service_pid": os.getpid(),
         "last_heartbeat_ts": _now().isoformat(),
         "stop_reason": None,
+        "config": {
+            "episode_seconds": args.episode_seconds,
+            "cooldown_seconds_between_episodes": args.cooldown_seconds_between_episodes,
+            "max_episodes_per_hour": args.max_episodes_per_hour,
+            "max_episodes_per_day": args.max_episodes_per_day,
+            "max_total_train_runs_mb": args.max_total_train_runs_mb,
+            "retain_days": args.retain_days,
+            "retain_latest_n": args.retain_latest_n,
+            "runs_root": str(args.runs_root),
+        },
     }
     _write_state(service_state)
     print("SERVICE_START", flush=True)
@@ -274,6 +291,8 @@ def main(argv: List[str] | None = None) -> int:
             print("SERVICE_STOP|reason=max_episodes_per_day", flush=True)
             return 0
         if wait_time > 0:
+            service_state["next_iteration_eta"] = (_now() + timedelta(seconds=wait_time)).isoformat()
+            _write_state(service_state)
             print(
                 f"SERVICE_HEARTBEAT|episodes_completed={service_state['episodes_completed']}|last_run_dir={service_state.get('last_run_dir') or ''}",
                 flush=True,
@@ -316,6 +335,8 @@ def main(argv: List[str] | None = None) -> int:
         episode_idx += 1
 
         try:
+            service_state["next_iteration_eta"] = (_now() + timedelta(seconds=float(args.cooldown_seconds_between_episodes))).isoformat()
+            _write_state(service_state)
             _sleep_with_heartbeat(
                 float(args.cooldown_seconds_between_episodes),
                 int(service_state["episodes_completed"]),
