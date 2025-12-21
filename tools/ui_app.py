@@ -102,6 +102,8 @@ def run_supervisor_command(commands: Sequence[str]) -> subprocess.CompletedProce
         cwd=ROOT,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         env=_utf8_env(),
     )
 
@@ -149,7 +151,15 @@ def run_verify_script(script_name: str) -> RunResult:
             note = f"KILL_SWITCH present and could not be removed: {exc}"
 
     command = [sys.executable, str(script_path)]
-    proc = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, env=_utf8_env())
+    proc = subprocess.run(
+        command,
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=_utf8_env(),
+    )
     stdout = proc.stdout or ""
     if note:
         stdout = f"{note}\n{stdout}" if stdout else note
@@ -514,7 +524,11 @@ class App(tk.Tk):
         packet_path: Path | None = None
         evidence_path: Path | None = None
         for line in stdout.splitlines():
-            if line.startswith("OUTPUT_PACKET="):
+            if line.startswith("PACKET_PATH="):
+                packet_path = Path(line.split("PACKET_PATH=", 1)[1].strip())
+            elif line.startswith("EVIDENCE_PACK_PATH="):
+                evidence_path = Path(line.split("EVIDENCE_PACK_PATH=", 1)[1].strip())
+            elif line.startswith("OUTPUT_PACKET="):
                 packet_path = Path(line.split("OUTPUT_PACKET=", 1)[1].strip())
             elif line.startswith("OUTPUT_EVIDENCE_PACK="):
                 evidence_path = Path(line.split("OUTPUT_EVIDENCE_PACK=", 1)[1].strip())
@@ -532,7 +546,15 @@ class App(tk.Tk):
 
     def _run_generate_packet(self, question: str) -> None:
         cmd = [sys.executable, str(QA_FLOW_SCRIPT), "--question", question]
-        proc = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, env=_utf8_env())
+        proc = subprocess.run(
+            cmd,
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=_utf8_env(),
+        )
         output = proc.stdout or ""
         error_output = proc.stderr or ""
         self._qa_output_queue.put(output)
@@ -584,7 +606,15 @@ class App(tk.Tk):
         ]
         if strict:
             cmd.append("--strict")
-        proc = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, env=_utf8_env())
+        proc = subprocess.run(
+            cmd,
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=_utf8_env(),
+        )
         output = proc.stdout or ""
         error_output = proc.stderr or ""
         if output:

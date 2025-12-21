@@ -34,7 +34,14 @@ def _run_select(question: str) -> Tuple[int, str, str, Optional[Path]]:
         "--max-chars",
         "12000",
     ]
-    result = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
+    result = subprocess.run(
+        cmd,
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
     evidence_path = _parse_saved_path(result.stdout)
     return result.returncode, result.stdout, result.stderr, evidence_path
 
@@ -48,7 +55,14 @@ def _run_make_packet(question: str, evidence_path: Optional[Path]) -> Tuple[int,
     ]
     if evidence_path:
         cmd.extend(["--from-evidence-pack", str(evidence_path)])
-    result = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
+    result = subprocess.run(
+        cmd,
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
     packet_path = _parse_saved_path(result.stdout)
     return result.returncode, result.stdout, result.stderr, packet_path
 
@@ -73,6 +87,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     else:
         print(f"Evidence pack: {evidence_path}")
         print(f"OUTPUT_EVIDENCE_PACK={evidence_path}")
+        print(f"EVIDENCE_PACK_PATH={evidence_path}")
 
     make_code, make_out, make_err, packet_path = _run_make_packet(args.question, evidence_path)
     if make_code != 0:
@@ -84,6 +99,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     if packet_path:
         print(f"AI packet: {packet_path}")
         print(f"OUTPUT_PACKET={packet_path}")
+        print(f"PACKET_PATH={packet_path}")
     else:
         print("[WARN] AI packet path not detected")
 

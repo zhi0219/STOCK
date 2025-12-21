@@ -316,6 +316,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     packet_path = write_packet(markdown, args.question)
     print(markdown)
     print(f"\nSaved to: {packet_path}")
+    print(f"PACKET_PATH={packet_path}")
 
     if args.require_evidence and (status_data is None or not events):
         print("[WARN] Evidence missing: status and/or events not found", file=sys.stderr)
