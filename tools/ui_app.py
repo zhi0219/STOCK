@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import json
 import queue
 import subprocess
 import sys
@@ -20,7 +21,8 @@ except Exception:
     sys.exit(2)
 
 ROOT = Path(__file__).resolve().parent.parent
-STATE_PATH = ROOT / "Logs" / "supervisor_state.json"
+LOGS_DIR = ROOT / "Logs"
+STATE_PATH = LOGS_DIR / "supervisor_state.json"
 SUPERVISOR_SCRIPT = ROOT / "tools" / "supervisor.py"
 QA_FLOW_SCRIPT = ROOT / "tools" / "qa_flow.py"
 CAPTURE_ANSWER_SCRIPT = ROOT / "tools" / "capture_ai_answer.py"
@@ -32,8 +34,22 @@ if str(ROOT) not in sys.path:
 
 try:
     from tools import explain_now
+    from tools.dashboard_model import (
+        compute_event_rows,
+        compute_health,
+        compute_move_leaderboard,
+        load_latest_status,
+        load_recent_events,
+    )
+    from tools.stdio_utf8 import configure_stdio_utf8
 except Exception:
     explain_now = None
+    compute_event_rows = None  # type: ignore[assignment]
+    compute_health = None  # type: ignore[assignment]
+    compute_move_leaderboard = None  # type: ignore[assignment]
+    load_latest_status = None  # type: ignore[assignment]
+    load_recent_events = None  # type: ignore[assignment]
+    configure_stdio_utf8 = None  # type: ignore[assignment]
 
 
 def _utf8_env(extra: dict[str, str] | None = None) -> dict[str, str]:
@@ -142,6 +158,8 @@ class App(tk.Tk):
         self._qa_output_queue: "queue.Queue[str]" = queue.Queue()
         self._verify_output_queue: "queue.Queue[str]" = queue.Queue()
         self._summary_queue: "queue.Queue[str]" = queue.Queue()
+        self._events_cache: List[dict] = []
+        self._events_rows: dict[str, dict] = {}
         self.last_packet_path: Path | None = None
         self.last_answer_path: Path | None = None
         self._build_ui()
@@ -159,7 +177,7 @@ class App(tk.Tk):
         self.verify_tab = tk.Frame(notebook)
 
         notebook.add(self.run_tab, text="Run")
-        notebook.add(self.health_tab, text="Health")
+        notebook.add(self.health_tab, text="Dashboard")
         notebook.add(self.events_tab, text="Events")
         notebook.add(self.summary_tab, text="摘要")
         notebook.add(self.qa_tab, text="AI Q&A")
@@ -269,18 +287,153 @@ class App(tk.Tk):
         self.after(0, func)
 
     def _refresh(self) -> None:
-        state_text = load_state_text()
-        events_file = latest_events_file()
-        events_text = read_text_tail(events_file) if events_file else "(no events file)"
-        self.status_text.configure(state=tk.NORMAL)
-        self.status_text.delete("1.0", tk.END)
-        self.status_text.insert(tk.END, state_text)
-        self.status_text.configure(state=tk.DISABLED)
+        self._load_dashboard()
 
-        self.events_text.configure(state=tk.NORMAL)
-        self.events_text.delete("1.0", tk.END)
-        self.events_text.insert(tk.END, events_text)
-        self.events_text.configure(state=tk.DISABLED)
+    def _load_dashboard(self) -> None:
+        if not compute_health or not compute_event_rows:
+            return
+        try:
+            minutes = int(self.filter_minutes_var.get()) if hasattr(self, "filter_minutes_var") else 60
+        except Exception:
+            minutes = 60
+
+        status = load_latest_status(LOGS_DIR) if load_latest_status else None
+        supervisor_state = {}
+        if STATE_PATH.exists():
+            try:
+                supervisor_state = json.loads(STATE_PATH.read_text(encoding="utf-8"))
+            except Exception:
+                supervisor_state = {}
+        events = load_recent_events(LOGS_DIR, since_minutes=minutes) if load_recent_events else []
+        self._events_cache = events
+
+        health = compute_health(status, events, supervisor_state) if compute_health else {}
+        self._render_health(health)
+        self._apply_event_filters(refresh_only=True)
+    
+    def _render_health(self, health: dict) -> None:
+        lights = health.get("lights", {}) if isinstance(health, dict) else {}
+        color_map = {"green": "#16a34a", "yellow": "#eab308", "red": "#ef4444", "unknown": "#9ca3af"}
+        for key, widgets in getattr(self, "light_widgets", {}).items():
+            data = lights.get(key) or {}
+            status = data.get("status", "unknown")
+            widgets["color"].configure(bg=color_map.get(status, "#9ca3af"))
+            widgets["text"].configure(text=f"{widgets['text'].cget('text').split(':')[0]}: {data.get('value', '?')}")
+            widgets["threshold"].configure(text=f"Threshold: {data.get('threshold', '')}\nEvidence: {data.get('evidence', '')}")
+
+        cards = health.get("cards", []) if isinstance(health, dict) else []
+        for idx, widget in enumerate(self.card_widgets):
+            if idx < len(cards):
+                card = cards[idx]
+                widget["label"].configure(text=card.get("label", "-"))
+                widget["value"].configure(text=str(card.get("value", "-")))
+                widget["source"].configure(text=str(card.get("source", "")))
+            else:
+                widget["label"].configure(text="-")
+                widget["value"].configure(text="-")
+                widget["source"].configure(text="")
+
+        evidence_text = health.get("evidence", "") if isinstance(health, dict) else ""
+        self.evidence_text.configure(state=tk.NORMAL)
+        self.evidence_text.delete("1.0", tk.END)
+        self.evidence_text.insert(tk.END, evidence_text or "No evidence available")
+        self.evidence_text.configure(state=tk.DISABLED)
+
+    def _apply_event_filters(self, refresh_only: bool = False) -> None:
+        if not compute_event_rows:
+            return
+        events = list(self._events_cache)
+        try:
+            minutes = int(self.filter_minutes_var.get()) if hasattr(self, "filter_minutes_var") else 60
+        except Exception:
+            minutes = 60
+
+        type_filter = self.filter_type_var.get() if hasattr(self, "filter_type_var") else "ALL"
+        severity_filter = self.filter_severity_var.get() if hasattr(self, "filter_severity_var") else "ALL"
+        symbol_filter = (self.filter_symbol_var.get() or "").upper() if hasattr(self, "filter_symbol_var") else ""
+        text_filter = (self.filter_text_var.get() or "").lower() if hasattr(self, "filter_text_var") else ""
+
+        filtered = []
+        for ev in events:
+            if minutes and ev.get("__ts"):
+                delta = time.time() - ev.get("__ts").timestamp()
+                if delta > minutes * 60:
+                    continue
+            if type_filter != "ALL" and str(ev.get("event_type") or "") != type_filter:
+                continue
+            if severity_filter != "ALL" and str(ev.get("severity") or "").lower() != severity_filter.lower():
+                continue
+            if symbol_filter and str(ev.get("symbol") or "").upper() != symbol_filter:
+                continue
+            if text_filter:
+                text_blob = json.dumps(ev, ensure_ascii=False).lower()
+                if text_filter not in text_blob:
+                    continue
+            filtered.append(ev)
+
+        rows = compute_event_rows(filtered)
+        self.events_tree.delete(*self.events_tree.get_children())
+        self._events_rows.clear()
+        for row in rows:
+            item_id = self.events_tree.insert(
+                "", tk.END, values=(row.get("ts_et"), row.get("event_type"), row.get("symbol"), row.get("severity"), row.get("key_metric"), row.get("message"))
+            )
+            self._events_rows[item_id] = row
+
+        leaderboard_rows = compute_move_leaderboard(events) if compute_move_leaderboard else []
+        self.leaderboard.delete(*self.leaderboard.get_children())
+        for lb in leaderboard_rows:
+            self.leaderboard.insert(
+                "",
+                tk.END,
+                values=(lb.get("symbol"), lb.get("last_move_pct"), lb.get("move_count_60m"), lb.get("max_abs_move_60m")),
+            )
+
+        if not refresh_only and not rows:
+            messagebox.showinfo("Events", "No events match the filters")
+
+    def _on_leaderboard_select(self, _event=None) -> None:
+        selection = self.leaderboard.selection()
+        if not selection:
+            return
+        values = self.leaderboard.item(selection[0]).get("values") or []
+        if values:
+            self.filter_symbol_var.set(str(values[0]))
+            self._apply_event_filters()
+
+    def _show_event_details(self, _event=None) -> None:
+        selection = self.events_tree.selection()
+        if not selection:
+            return
+        row = self._events_rows.get(selection[0])
+        if not row:
+            return
+        raw = row.get("raw") or {}
+        pretty = json.dumps(raw, ensure_ascii=False, indent=2)
+        explanation = row.get("key_metric") or ""
+        text = pretty
+        if explanation:
+            text += f"\n\nMetrics: {explanation}"
+        self.event_details.configure(state=tk.NORMAL)
+        self.event_details.delete("1.0", tk.END)
+        self.event_details.insert(tk.END, text)
+        self.event_details.configure(state=tk.DISABLED)
+
+    def _copy_event_evidence(self) -> None:
+        selection = self.events_tree.selection()
+        if not selection:
+            messagebox.showinfo("Copy", "Select an event first")
+            return
+        row = self._events_rows.get(selection[0])
+        if not row:
+            messagebox.showinfo("Copy", "No event selected")
+            return
+        evidence = row.get("evidence") or ""
+        raw = row.get("raw") or {}
+        payload = f"Evidence: {evidence}\n{json.dumps(raw, ensure_ascii=False, indent=2)}"
+        self.clipboard_clear()
+        self.clipboard_append(payload)
+        messagebox.showinfo("Copy", "Evidence copied")
 
     def _handle_generate_packet(self) -> None:
         question = self.question_var.get().strip()
@@ -523,14 +676,125 @@ class App(tk.Tk):
         self.run_log.configure(state=tk.DISABLED)
 
     def _build_health_tab(self) -> None:
-        self.status_text = ScrolledText(self.health_tab, wrap=tk.WORD)
-        self.status_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        self.status_text.configure(state=tk.DISABLED)
+        container = tk.Frame(self.health_tab)
+        container.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        lights_frame = tk.LabelFrame(container, text="Health Lights", padx=5, pady=5)
+        lights_frame.pack(fill=tk.X)
+        self.light_widgets = {}
+        for key, label in [
+            ("data_fresh", "Data Fresh"),
+            ("data_flat", "Data Flat"),
+            ("system_alive", "System Alive"),
+        ]:
+            frame = tk.Frame(lights_frame, padx=5, pady=3)
+            frame.pack(side=tk.LEFT, padx=5)
+            color = tk.Label(frame, text="  ", width=2, relief=tk.RIDGE)
+            color.pack(side=tk.LEFT)
+            text = tk.Label(frame, text=f"{label}: ?")
+            text.pack(side=tk.LEFT, padx=3)
+            threshold = tk.Label(frame, text="")
+            threshold.pack(anchor="w")
+            self.light_widgets[key] = {"color": color, "text": text, "threshold": threshold}
+
+        cards_frame = tk.LabelFrame(container, text="Key Numbers", padx=5, pady=5)
+        cards_frame.pack(fill=tk.BOTH, expand=True, pady=5)
+        self.card_widgets: List[dict[str, tk.Label]] = []
+        for _ in range(6):
+            holder = tk.Frame(cards_frame, padx=5, pady=5, relief=tk.GROOVE, borderwidth=1)
+            holder.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=3, pady=3)
+            label = tk.Label(holder, text="Label", font=("Arial", 10, "bold"))
+            label.pack(anchor="w")
+            value = tk.Label(holder, text="-", font=("Arial", 14))
+            value.pack(anchor="w")
+            source = tk.Label(holder, text="source", fg="gray")
+            source.pack(anchor="w")
+            self.card_widgets.append({"label": label, "value": value, "source": source})
+
+        evidence_frame = tk.LabelFrame(container, text="Evidence", padx=5, pady=5)
+        evidence_frame.pack(fill=tk.BOTH, expand=True)
+        self.evidence_text = ScrolledText(evidence_frame, height=6, wrap=tk.WORD)
+        self.evidence_text.pack(fill=tk.BOTH, expand=True)
+        self.evidence_text.configure(state=tk.DISABLED)
 
     def _build_events_tab(self) -> None:
-        self.events_text = ScrolledText(self.events_tab, wrap=tk.WORD)
-        self.events_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        self.events_text.configure(state=tk.DISABLED)
+        top_frame = tk.Frame(self.events_tab)
+        top_frame.pack(fill=tk.X, padx=5, pady=5)
+
+        filter_frame = tk.LabelFrame(top_frame, text="Filters", padx=5, pady=5)
+        filter_frame.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+
+        tk.Label(filter_frame, text="Last N minutes").grid(row=0, column=0, sticky="w")
+        self.filter_minutes_var = tk.StringVar(value="60")
+        tk.Entry(filter_frame, textvariable=self.filter_minutes_var, width=8).grid(row=0, column=1, padx=4)
+
+        tk.Label(filter_frame, text="Symbol").grid(row=0, column=2, sticky="w")
+        self.filter_symbol_var = tk.StringVar()
+        tk.Entry(filter_frame, textvariable=self.filter_symbol_var, width=10).grid(row=0, column=3, padx=4)
+
+        tk.Label(filter_frame, text="Type").grid(row=1, column=0, sticky="w")
+        self.filter_type_var = tk.StringVar(value="ALL")
+        type_options = ["ALL", "MOVE", "DATA_STALE", "DATA_MISSING", "DATA_FLAT", "AI_ANSWER", "ALERTS_START"]
+        ttk.Combobox(filter_frame, textvariable=self.filter_type_var, values=type_options, width=12, state="readonly").grid(row=1, column=1, padx=4)
+
+        tk.Label(filter_frame, text="Severity").grid(row=1, column=2, sticky="w")
+        self.filter_severity_var = tk.StringVar(value="ALL")
+        severity_options = ["ALL", "low", "medium", "high"]
+        ttk.Combobox(
+            filter_frame, textvariable=self.filter_severity_var, values=severity_options, width=12, state="readonly"
+        ).grid(row=1, column=3, padx=4)
+
+        tk.Label(filter_frame, text="Text contains").grid(row=2, column=0, sticky="w")
+        self.filter_text_var = tk.StringVar()
+        tk.Entry(filter_frame, textvariable=self.filter_text_var, width=20).grid(row=2, column=1, columnspan=2, sticky="we")
+
+        tk.Button(filter_frame, text="Apply", command=self._apply_event_filters).grid(row=2, column=3, padx=4)
+
+        radar_frame = tk.LabelFrame(top_frame, text="MOVE Leaderboard (60m)", padx=5, pady=5)
+        radar_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=5)
+        columns = ("symbol", "last_move_pct", "move_count", "max_abs")
+        self.leaderboard = ttk.Treeview(radar_frame, columns=columns, show="headings", height=5)
+        for col, width, text in [
+            ("symbol", 80, "Symbol"),
+            ("last_move_pct", 120, "Last move %"),
+            ("move_count", 120, "Count 60m"),
+            ("max_abs", 150, "Max |move| 60m"),
+        ]:
+            self.leaderboard.heading(col, text=text)
+            self.leaderboard.column(col, width=width, anchor="center")
+        self.leaderboard.pack(fill=tk.BOTH, expand=True)
+        self.leaderboard.bind("<<TreeviewSelect>>", self._on_leaderboard_select)
+
+        table_frame = tk.Frame(self.events_tab)
+        table_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        columns = ("ts", "event_type", "symbol", "severity", "key_metric", "message")
+        self.events_tree = ttk.Treeview(table_frame, columns=columns, show="headings")
+        for col, width in [
+            ("ts", 90),
+            ("event_type", 100),
+            ("symbol", 80),
+            ("severity", 80),
+            ("key_metric", 160),
+            ("message", 320),
+        ]:
+            self.events_tree.heading(col, text=col)
+            self.events_tree.column(col, width=width, anchor="w")
+        vsb = ttk.Scrollbar(table_frame, orient="vertical", command=self.events_tree.yview)
+        self.events_tree.configure(yscrollcommand=vsb.set)
+        self.events_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        vsb.pack(side=tk.RIGHT, fill=tk.Y)
+        self.events_tree.bind("<Double-1>", self._show_event_details)
+
+        details_frame = tk.LabelFrame(self.events_tab, text="Details", padx=5, pady=5)
+        details_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        self.event_details = ScrolledText(details_frame, height=8, wrap=tk.WORD)
+        self.event_details.pack(fill=tk.BOTH, expand=True)
+        self.event_details.configure(state=tk.DISABLED)
+        btn_frame = tk.Frame(details_frame)
+        btn_frame.pack(fill=tk.X, pady=3)
+        tk.Button(btn_frame, text="Details", command=self._show_event_details).pack(side=tk.LEFT, padx=5)
+        tk.Button(btn_frame, text="Copy Evidence", command=self._copy_event_evidence).pack(side=tk.LEFT, padx=5)
 
     def _build_summary_tab(self) -> None:
         summary_frame = tk.Frame(self.summary_tab)
@@ -569,6 +833,11 @@ class App(tk.Tk):
 
 
 def main() -> int:
+    if configure_stdio_utf8:
+        try:
+            configure_stdio_utf8()
+        except Exception:
+            pass
     app = App()
     app.mainloop()
     return 0

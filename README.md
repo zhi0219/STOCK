@@ -156,6 +156,16 @@ The injector writes to `.\Data\quotes.csv` with `source=SELF_TEST_INJECT` so the
   .\.venv\Scripts\python.exe .\tools\verify_brief.py
   ```
 
+## Dashboard（图形化）
+- 启动 UI（含 Dashboard/Events 表格）：
+  ```powershell
+  .\.venv\Scripts\python.exe .\tools\ui_app.py
+  ```
+- 一键验收 dashboard 模型：
+  ```powershell
+  .\.venv\Scripts\python.exe .\tools\verify_dashboard.py
+  ```
+
 ## 零成本 AI 问答（复制即用）
 - 生成证据包：
   ```powershell
