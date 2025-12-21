@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import argparse
+import importlib
+import importlib.util
 import json
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-import yaml
+_yaml_spec = importlib.util.find_spec("yaml")
+yaml = importlib.import_module("yaml") if _yaml_spec else None
 
 ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = ROOT / "config.yaml"
@@ -16,6 +19,9 @@ DEFAULT_SINCE_MINUTES = 1440
 
 
 def load_config() -> Dict[str, Any]:
+    if yaml is None:
+        print("[WARN] PyYAML not available; using empty config", file=sys.stderr)
+        return {}
     if not CONFIG_PATH.exists():
         return {}
     with CONFIG_PATH.open("r", encoding="utf-8") as f:
@@ -148,6 +154,7 @@ def build_markdown(
     reports_text: Optional[str],
     limit: int,
     since_minutes: float,
+    evidence_pack_text: Optional[str] = None,
 ) -> str:
     lines: List[str] = []
     now = datetime.now(timezone.utc).astimezone()
@@ -176,6 +183,11 @@ def build_markdown(
     else:
         lines.append("(No events found in the requested window.)")
     lines.append("")
+
+    if evidence_pack_text:
+        lines.append("### Embedded evidence pack")
+        lines.append(evidence_pack_text.strip())
+        lines.append("")
 
     if reports_text:
         lines.append("### Latest run report")
@@ -248,6 +260,11 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         action="store_true",
         help="Exit non-zero if status or events are missing",
     )
+    parser.add_argument(
+        "--from-evidence-pack",
+        type=Path,
+        help="Optional path to an existing evidence pack to embed into the AI packet",
+    )
     return parser.parse_args(argv)
 
 
@@ -272,6 +289,13 @@ def main(argv: Optional[List[str]] = None) -> int:
         report_path, report_content = report_pair
         reports_text = f"Source: {report_path.name}\n\n" + report_content
 
+    evidence_pack_text = None
+    if args.from_evidence_pack:
+        try:
+            evidence_pack_text = args.from_evidence_pack.read_text(encoding="utf-8")
+        except Exception as exc:
+            print(f"[WARN] failed to read evidence pack {args.from_evidence_pack}: {exc}", file=sys.stderr)
+
     markdown = build_markdown(
         question=args.question,
         status_path=status_path,
@@ -281,6 +305,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         reports_text=reports_text,
         limit=args.limit,
         since_minutes=args.since_minutes,
+        evidence_pack_text=evidence_pack_text,
     )
 
     packet_path = write_packet(markdown, args.question)

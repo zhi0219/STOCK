@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import importlib
+import importlib.util
 import json
 import re
 import sys
@@ -8,7 +10,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import yaml
+_yaml_spec = importlib.util.find_spec("yaml")
+yaml = importlib.import_module("yaml") if _yaml_spec else None
 
 ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = ROOT / "config.yaml"
@@ -23,6 +26,9 @@ except Exception:  # pragma: no cover - fallback
 
 
 def load_config() -> Dict[str, Any]:
+    if yaml is None:
+        print("[WARN] PyYAML not available; using empty config", file=sys.stderr)
+        return {}
     if not CONFIG_PATH.exists():
         return {}
     with CONFIG_PATH.open("r", encoding="utf-8") as f:
