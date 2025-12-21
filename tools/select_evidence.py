@@ -15,6 +15,10 @@ except Exception:  # pragma: no cover - fallback when dependency missing
     yaml = None
 
 ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from tools.stdio_utf8 import configure_stdio_utf8
 CONFIG_PATH = ROOT / "config.yaml"
 DEFAULT_LIMIT = 30
 DEFAULT_SINCE_MINUTES = 1440.0
@@ -383,6 +387,7 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    configure_stdio_utf8()
     args = parse_args(argv)
     question_tokens = tokenize(args.question)
 

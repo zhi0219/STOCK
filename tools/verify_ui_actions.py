@@ -9,6 +9,11 @@ from pathlib import Path
 from typing import List, Tuple
 
 ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from tools.stdio_utf8 import configure_stdio_utf8
 
 
 def _iso(dt: datetime) -> str:
@@ -69,6 +74,7 @@ def _cleanup(paths: List[Path]) -> None:
 
 
 def run() -> int:
+    configure_stdio_utf8()
     logs_dir = ROOT / "Logs"
     events_path = _write_synthetic_logs(logs_dir)
     artifacts: List[Path] = [events_path]

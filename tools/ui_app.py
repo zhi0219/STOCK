@@ -27,10 +27,22 @@ CAPTURE_ANSWER_SCRIPT = ROOT / "tools" / "capture_ai_answer.py"
 UI_LOG_PATH = ROOT / "Logs" / "ui_actions.log"
 KILL_SWITCH = ROOT / "Data" / "KILL_SWITCH"
 
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 try:
     from tools import explain_now
 except Exception:
     explain_now = None
+
+
+def _utf8_env(extra: dict[str, str] | None = None) -> dict[str, str]:
+    env = os.environ.copy()
+    env.setdefault("PYTHONUTF8", "1")
+    env.setdefault("PYTHONIOENCODING", "utf-8")
+    if extra:
+        env.update(extra)
+    return env
 
 
 def read_text_tail(path: Path, lines: int = 20) -> str:
@@ -55,6 +67,7 @@ def run_supervisor_command(command: str) -> subprocess.CompletedProcess:
         cwd=ROOT,
         capture_output=True,
         text=True,
+        env=_utf8_env(),
     )
 
 
@@ -100,7 +113,7 @@ def run_verify_script(script_name: str) -> RunResult:
             note = f"KILL_SWITCH present and could not be removed: {exc}"
 
     command = [sys.executable, str(script_path)]
-    proc = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
+    proc = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, env=_utf8_env())
     stdout = proc.stdout or ""
     if note:
         stdout = f"{note}\n{stdout}" if stdout else note
@@ -315,7 +328,7 @@ class App(tk.Tk):
 
     def _run_generate_packet(self, question: str) -> None:
         cmd = [sys.executable, str(QA_FLOW_SCRIPT), "--question", question]
-        proc = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
+        proc = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, env=_utf8_env())
         output = proc.stdout or ""
         error_output = proc.stderr or ""
         self._qa_output_queue.put(output)
@@ -367,7 +380,7 @@ class App(tk.Tk):
         ]
         if strict:
             cmd.append("--strict")
-        proc = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
+        proc = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, env=_utf8_env())
         output = proc.stdout or ""
         error_output = proc.stderr or ""
         if output:
@@ -431,7 +444,7 @@ class App(tk.Tk):
             if hasattr(os, "startfile"):
                 os.startfile(str(target))  # type: ignore[attr-defined]
             else:
-                subprocess.Popen(["xdg-open", str(target)])
+                subprocess.Popen(["xdg-open", str(target)], env=_utf8_env())
         except Exception as exc:  # pragma: no cover - UI feedback
             messagebox.showerror("AI Q&A", f"Failed to open folder: {exc}")
 

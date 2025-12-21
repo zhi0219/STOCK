@@ -8,6 +8,10 @@ from pathlib import Path
 from typing import Optional, Tuple
 
 ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from tools.stdio_utf8 import configure_stdio_utf8
 
 
 def _parse_saved_path(output: str) -> Optional[Path]:
@@ -56,6 +60,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
 
 
 def main(argv: Optional[list[str]] = None) -> int:
+    configure_stdio_utf8()
     args = parse_args(argv)
 
     select_code, select_out, select_err, evidence_path = _run_select(args.question)
