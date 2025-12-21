@@ -13,6 +13,10 @@ _yaml_spec = importlib.util.find_spec("yaml")
 yaml = importlib.import_module("yaml") if _yaml_spec else None
 
 ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from tools.stdio_utf8 import configure_stdio_utf8
 CONFIG_PATH = ROOT / "config.yaml"
 DEFAULT_LIMIT = 80
 DEFAULT_SINCE_MINUTES = 1440
@@ -269,6 +273,7 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    configure_stdio_utf8()
     args = parse_args(argv)
 
     cfg = load_config()
