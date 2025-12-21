@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -12,6 +13,7 @@ TRAIN_DAEMON = ROOT / "tools" / "train_daemon.py"
 NO_LOOKAHEAD = ROOT / "tools" / "verify_no_lookahead_sim.py"
 DATA_DIR = ROOT / "Data"
 KILL_SWITCH = DATA_DIR / "KILL_SWITCH"
+RUNS_ROOT = ROOT / "Logs" / "train_runs"
 
 
 def _write_minimal_quotes(path: Path) -> None:
@@ -102,7 +104,7 @@ def _assert_kill_switch_trip(runs_root: Path, quotes_path: Path) -> None:
 def main() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         base = Path(tmpdir)
-        runs_root = base / "runs"
+        runs_root = RUNS_ROOT / "_safety_runs"
         quotes_path = base / "quotes.csv"
         _write_minimal_quotes(quotes_path)
 
@@ -128,6 +130,8 @@ def main() -> None:
             print(proc.stdout)
             print(proc.stderr)
             raise SystemExit(proc.returncode)
+
+    shutil.rmtree(runs_root, ignore_errors=True)
 
     print("PASS: train daemon safety verified")
 

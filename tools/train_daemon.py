@@ -4,12 +4,15 @@ import argparse
 import csv
 import json
 import random
+import shutil
 import sys
 import time
 from collections import Counter
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Dict, Iterable, List
+from typing import Dict, Iterable, List, Sequence, Tuple
+from zipfile import ZIP_DEFLATED, ZipFile
 
 import yaml
 
@@ -24,6 +27,22 @@ from tools.sim_tournament import _load_quotes
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_INPUT = ROOT / "Data" / "quotes.csv"
 RUNS_ROOT = ROOT / "Logs" / "train_runs"
+ARCHIVES_ROOT = ROOT / "Archives"
+EVIDENCE_CORE = [
+    ROOT / "evidence_packs",
+    ROOT / "qa_packets",
+    ROOT / "qa_answers",
+    ROOT / "Logs",
+    ROOT / "Reports",
+]
+
+
+@dataclass
+class RetentionResult:
+    deleted_paths: List[Path]
+    freed_mb: float
+    kept: int
+    total_mb: float
 
 
 def _now() -> datetime:
@@ -46,6 +65,32 @@ def _calc_drawdown(equities: List[float]) -> float:
     return max_dd
 
 
+def _validate_runs_root(runs_root: Path) -> Path:
+    allowed_root = RUNS_ROOT.resolve()
+    candidate = runs_root.expanduser().resolve()
+    try:
+        candidate.relative_to(allowed_root)
+    except ValueError:
+        if candidate != allowed_root:
+            raise ValueError(
+                f"runs_root must be within {allowed_root}; got {candidate}"
+            )
+    if not candidate.is_dir():
+        candidate.mkdir(parents=True, exist_ok=True)
+    return candidate
+
+
+def _list_run_dirs(runs_root: Path) -> List[Path]:
+    run_dirs: List[Path] = []
+    for day_dir in runs_root.iterdir():
+        if not day_dir.is_dir():
+            continue
+        for run_dir in day_dir.iterdir():
+            if run_dir.is_dir():
+                run_dirs.append(run_dir)
+    return run_dirs
+
+
 def _write_equity_csv(path: Path, rows: List[Dict[str, object]]) -> None:
     if not rows:
         return
@@ -66,6 +111,83 @@ def _log_size_mb(root: Path) -> float:
         if item.is_file():
             total += item.stat().st_size
     return total / (1024 * 1024)
+
+
+def _format_retention_summary(result: RetentionResult) -> str:
+    return (
+        f"deleted={len(result.deleted_paths)} | "
+        f"freed_mb={result.freed_mb:.2f} | "
+        f"kept={result.kept} | total_mb={result.total_mb:.2f}"
+    )
+
+
+def _retention_sweep(
+    runs_root: Path,
+    retain_days: int,
+    retain_latest_n: int,
+    max_total_train_runs_mb: int,
+    dry_run: bool = False,
+) -> RetentionResult:
+    allowed_root = RUNS_ROOT.resolve()
+    runs_root = _validate_runs_root(runs_root)
+    if not runs_root.is_dir():
+        return RetentionResult([], 0.0, 0, 0.0)
+
+    run_dirs = _list_run_dirs(runs_root)
+    now = _now()
+    cutoff = now - timedelta(days=max(retain_days, 0))
+    entries: List[Tuple[Path, datetime, float]] = []
+    for run_dir in run_dirs:
+        stat = run_dir.stat()
+        mtime = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
+        size_mb = _log_size_mb(run_dir)
+        entries.append((run_dir, mtime, size_mb))
+
+    entries.sort(key=lambda item: item[1])
+    deleted: List[Path] = []
+    freed_mb = 0.0
+
+    def _should_stop(active: Sequence[Tuple[Path, datetime, float]]) -> bool:
+        if not active:
+            return True
+        oldest_mtime = active[0][1]
+        active_total = sum(item[2] for item in active)
+        if len(active) > retain_latest_n:
+            return False
+        if oldest_mtime < cutoff:
+            return False
+        if active_total > max_total_train_runs_mb:
+            return False
+        return True
+
+    active_entries = list(entries)
+    print("RETENTION_START")
+    while active_entries and not _should_stop(active_entries):
+        victim, _, victim_size = active_entries.pop(0)
+        victim_resolved = victim.resolve()
+        try:
+            victim_resolved.relative_to(allowed_root)
+        except ValueError:
+            raise ValueError(f"Unsafe deletion target detected: {victim_resolved}")
+
+        print(f"RETENTION_DELETE|path={victim_resolved}|mb={victim_size:.2f}")
+        deleted.append(victim_resolved)
+        freed_mb += victim_size
+        if not dry_run:
+            shutil.rmtree(victim_resolved)
+    remaining_total = sum(item[2] for item in active_entries)
+    result = RetentionResult(
+        deleted_paths=deleted,
+        freed_mb=freed_mb,
+        kept=len(active_entries),
+        total_mb=remaining_total,
+    )
+    print(
+        "RETENTION_SUMMARY|"
+        f"deleted={len(deleted)}|freed_mb={freed_mb:.2f}|"
+        f"kept={len(active_entries)}|total_mb={remaining_total:.2f}"
+    )
+    return result
 
 
 def _summary_md(
@@ -121,6 +243,12 @@ def _summary_md(
     return "\n".join(lines)
 
 
+def _append_retention_to_summary(path: Path, retention_result: RetentionResult) -> None:
+    lines = ["", "## Retention", f"- {_format_retention_summary(retention_result)}"]
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write("\n".join(lines) + "\n")
+
+
 def parse_args(argv: List[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="SIM-only overnight training daemon",
@@ -132,6 +260,39 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
     parser.add_argument("--max-steps", type=int, default=5000, dest="max_steps")
     parser.add_argument("--max-trades", type=int, default=500, dest="max_trades")
     parser.add_argument("--max-log-mb", type=float, default=128.0, dest="max_log_mb")
+    parser.add_argument("--retain-days", type=int, default=7, dest="retain_days")
+    parser.add_argument("--retain-latest-n", type=int, default=50, dest="retain_latest_n")
+    parser.add_argument(
+        "--max-total-train-runs-mb",
+        type=int,
+        default=5000,
+        dest="max_total_train_runs_mb",
+    )
+    parser.add_argument(
+        "--retention-dry-run",
+        action="store_true",
+        dest="retention_dry_run",
+        help="Only print the deletion plan without executing",
+    )
+    parser.add_argument(
+        "--archive-evidence-days",
+        type=int,
+        default=0,
+        dest="archive_evidence_days",
+        help="Archive Evidence Core older than N days (0 disables)",
+    )
+    parser.add_argument(
+        "--archive-delete-source",
+        action="store_true",
+        dest="archive_delete_source",
+        help="Delete Evidence Core files after archiving (requires --i-know-what-im-doing)",
+    )
+    parser.add_argument(
+        "--i-know-what-im-doing",
+        action="store_true",
+        dest="archive_force",
+        help="Explicit confirmation needed for destructive archive deletes",
+    )
     parser.add_argument("--policy-version", dest="policy_version", help="Policy version override")
     parser.add_argument("--momentum-threshold", type=float, default=0.5, dest="momentum_threshold")
     parser.add_argument("--nightly", action="store_true", help="Preset for overnight runs (8h budget)")
@@ -145,6 +306,73 @@ def _apply_nightly_defaults(args: argparse.Namespace) -> None:
         args.max_steps = max(args.max_steps, 50_000)
         args.max_trades = max(args.max_trades, 10_000)
         args.max_log_mb = max(args.max_log_mb, 512.0)
+
+
+def _archive_evidence_core(
+    archive_days: int, delete_source: bool, force_delete: bool
+) -> Tuple[Path | None, List[Path]]:
+    if archive_days <= 0:
+        return None, []
+    cutoff = _now() - timedelta(days=archive_days)
+    candidates: List[Path] = []
+    for root in EVIDENCE_CORE:
+        if not root.exists():
+            continue
+        if root.name == "Logs":
+            for candidate in root.glob("events*.jsonl"):
+                if candidate.is_file() and datetime.fromtimestamp(
+                    candidate.stat().st_mtime, tz=timezone.utc
+                ) < cutoff:
+                    candidates.append(candidate)
+            continue
+        if root.is_dir():
+            for candidate in root.rglob("*"):
+                if candidate.is_file() and datetime.fromtimestamp(
+                    candidate.stat().st_mtime, tz=timezone.utc
+                ) < cutoff:
+                    candidates.append(candidate)
+
+    if not candidates:
+        return None, []
+
+    archive_root = ARCHIVES_ROOT.expanduser().resolve()
+    archive_root.mkdir(parents=True, exist_ok=True)
+    archive_name = f"{_now().strftime('%Y%m%d')}_evidence.zip"
+    archive_path = archive_root / archive_name
+    suffix = 1
+    while archive_path.exists():
+        archive_path = archive_root / f"{_now().strftime('%Y%m%d')}_evidence_{suffix}.zip"
+        suffix += 1
+
+    archived_rel: List[str] = []
+    with ZipFile(archive_path, "w", ZIP_DEFLATED) as zf:
+        for path in candidates:
+            rel = path.resolve().relative_to(ROOT)
+            zf.write(path, rel)
+            archived_rel.append(str(rel))
+
+    index_payload = {
+        "created": _now().isoformat(),
+        "cutoff_days": archive_days,
+        "files": archived_rel,
+        "delete_source": bool(delete_source),
+    }
+    (archive_root / "index.json").write_text(
+        json.dumps(index_payload, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+    deleted: List[Path] = []
+    if delete_source:
+        if not force_delete:
+            raise ValueError("--archive-delete-source requires --i-know-what-im-doing")
+        for path in candidates:
+            rel = path.resolve().relative_to(ROOT)
+            if rel.parts and rel.parts[0] not in {p.name for p in EVIDENCE_CORE}:
+                raise ValueError(f"Unsafe archive deletion target: {path}")
+            path.unlink()
+            deleted.append(path)
+
+    return archive_path, deleted
 
 
 def main(argv: List[str] | None = None) -> int:
@@ -162,8 +390,29 @@ def main(argv: List[str] | None = None) -> int:
     runs_root = Path(args.runs_root)
     if not runs_root.is_absolute():
         runs_root = ROOT / runs_root
-    runs_root = runs_root.expanduser().resolve()
-    runs_root.mkdir(parents=True, exist_ok=True)
+    try:
+        runs_root = _validate_runs_root(runs_root)
+    except ValueError as exc:
+        print(f"ERROR: {exc}")
+        return 1
+
+    archive_path, archived_deleted = _archive_evidence_core(
+        archive_days=int(args.archive_evidence_days),
+        delete_source=bool(args.archive_delete_source),
+        force_delete=bool(args.archive_force),
+    )
+    if archive_path:
+        print(f"EVIDENCE_ARCHIVE={archive_path}")
+    if archived_deleted:
+        print(f"EVIDENCE_ARCHIVE_DELETIONS={len(archived_deleted)}")
+
+    _ = _retention_sweep(
+        runs_root,
+        retain_days=int(args.retain_days),
+        retain_latest_n=int(args.retain_latest_n),
+        max_total_train_runs_mb=int(args.max_total_train_runs_mb),
+        dry_run=bool(args.retention_dry_run),
+    )
 
     policy_version, policy_cfg = get_policy(args.policy_version)
     quotes = _load_quotes(input_path)
@@ -316,6 +565,15 @@ def main(argv: List[str] | None = None) -> int:
         outputs={k: v.name for k, v in outputs.items()},
     )
     outputs["summary.md"].write_text(summary_body, encoding="utf-8")
+
+    end_retention = _retention_sweep(
+        runs_root,
+        retain_days=int(args.retain_days),
+        retain_latest_n=int(args.retain_latest_n),
+        max_total_train_runs_mb=int(args.max_total_train_runs_mb),
+        dry_run=bool(args.retention_dry_run),
+    )
+    _append_retention_to_summary(outputs["summary.md"], end_retention)
 
     print(f"RUN_DIR={run_dir}")
     print(f"STOP_REASON={stop_reason}")
