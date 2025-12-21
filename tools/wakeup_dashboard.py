@@ -21,6 +21,9 @@ class SummaryParseResult:
     reject_reasons_top3: List[str]
     raw_preview: str
     warning: str | None = None
+    turnover: str = MISSING_FIELD_TEXT
+    reject_count: str = MISSING_FIELD_TEXT
+    gates_triggered: str = MISSING_FIELD_TEXT
 
 
 def find_latest_run_dir(runs_root: Path | str = TRAIN_RUNS_ROOT) -> Path | None:
@@ -65,6 +68,14 @@ def _extract_line_value(lines: List[str], prefix: str) -> str:
     return MISSING_FIELD_TEXT
 
 
+def _extract_optional_field(lines: List[str], keys: List[str]) -> str:
+    for key in keys:
+        value = _extract_line_value(lines, key)
+        if value != MISSING_FIELD_TEXT:
+            return value
+    return MISSING_FIELD_TEXT
+
+
 def _extract_rejection_reasons(lines: List[str]) -> List[str]:
     reasons: List[str] = []
     header = "## Rejection reasons"
@@ -100,6 +111,11 @@ def parse_summary_key_fields(summary_path: Path, preview_lines: int = 24) -> Sum
     max_drawdown = _extract_line_value(lines, "Max drawdown: ") if lines else MISSING_FIELD_TEXT
     trades_count = _extract_line_value(lines, "Trades executed: ") if lines else MISSING_FIELD_TEXT
     reject_reasons_top3 = _extract_rejection_reasons(lines) if lines else [MISSING_FIELD_TEXT]
+    turnover = (
+        _extract_optional_field(lines, ["Turnover: ", "Portfolio turnover: "]) if lines else MISSING_FIELD_TEXT
+    )
+    reject_count = _extract_optional_field(lines, ["Reject count: "]) if lines else MISSING_FIELD_TEXT
+    gates_triggered = _extract_optional_field(lines, ["Gates triggered: "]) if lines else MISSING_FIELD_TEXT
 
     return SummaryParseResult(
         latest_run_dir=summary_path.parent,
@@ -111,5 +127,8 @@ def parse_summary_key_fields(summary_path: Path, preview_lines: int = 24) -> Sum
         reject_reasons_top3=reject_reasons_top3,
         raw_preview=raw_preview,
         warning=warning,
+        turnover=turnover,
+        reject_count=reject_count,
+        gates_triggered=gates_triggered,
     )
 

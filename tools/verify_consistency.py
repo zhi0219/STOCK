@@ -432,6 +432,7 @@ def _py_compile_targets() -> List[Path]:
         "verify_policy_promotion.py",
         "verify_policy_lifecycle.py",
         "verify_train_semantic_loop.py",
+        "verify_ui_hud_parsing.py",
     ]:
         target = TOOLS_DIR / name
         if target.exists():
