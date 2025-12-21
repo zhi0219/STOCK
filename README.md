@@ -36,6 +36,27 @@ cd $HOME\Desktop\STOCK
 .\.venv\Scripts\python.exe .\tools\verify_cooldown.py
 ```
 
+## 像应用一样一键启动
+
+- 打开 UI：
+
+```
+.\.venv\Scripts\python.exe .\tools\ui_app.py
+```
+
+- CLI 启停：
+
+```
+.\.venv\Scripts\python.exe .\tools\supervisor.py start
+.\.venv\Scripts\python.exe .\tools\supervisor.py stop
+```
+
+- 一键验收：
+
+```
+.\.venv\Scripts\python.exe .\tools\verify_supervisor.py
+```
+
 预期输出：
 - `verify_smoke` 尾部打印解释器/依赖版本，并以 `PASS: smoke verified ...` 结束。
 - `verify_cooldown` 会打印 `ALERTS_START ... cooldown=300s`，随后首个 MOVE 行，最后以 `PASS: cooldown verified ...` 收尾。
