@@ -907,6 +907,11 @@ class App(tk.Tk):
             text="verify_ui_actions",
             command=lambda: self._run_tool("verify_ui_actions.py"),
         ).pack(side=tk.LEFT, padx=5)
+        tk.Button(
+            button_frame,
+            text="Foundation Gates",
+            command=lambda: self._run_tool("verify_foundation.py"),
+        ).pack(side=tk.LEFT, padx=5)
 
         self.verify_output = ScrolledText(self.verify_tab, wrap=tk.WORD)
         self.verify_output.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
