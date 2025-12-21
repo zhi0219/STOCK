@@ -66,10 +66,12 @@ cd $HOME\Desktop\STOCK
   .\.venv\Scripts\python.exe .\tools\verify_sim_replay.py
   .\.venv\Scripts\python.exe .\tools\verify_no_lookahead_sim.py
   ```
-- SIM-only 挂机训练（夜间跑满 8 小时预算，严格预算闸门+kill switch）：
+- SIM-only 挂机训练（夜间跑满 8 小时预算，严格预算闸门+kill switch，带产物保留策略）：
   ```powershell
-  .\.venv\Scripts\python.exe .\tools\train_daemon.py --nightly --max-runtime-seconds 28800
+  .\.venv\Scripts\python.exe .\tools\train_daemon.py --nightly --max-runtime-seconds 28800 --retain-days 7 --retain-latest-n 50 --max-total-train-runs-mb 5000
   ```
+  - 运行产物默认落在 `Logs/train_runs/`，遵循保留/轮换策略；产物文件被 gitignore，避免污染 git。
+  - 不建议用 `git clean -fd` 清理日志，推荐使用内置 retention 参数（可选 `--retention-dry-run` 查看计划）。
 
 ## 像应用一样一键启动
 
