@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import importlib
 import json
+import os
+import platform
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Callable, Iterable, List, Tuple
 
@@ -45,8 +48,20 @@ class CheckResult:
         return f"{status} {self.name}"
 
 
-def _print_header() -> None:
+def _print_header(env: dict[str, str | bool]) -> None:
     print(f"Interpreter: {sys.executable}")
+    print(
+        "Environment:",
+        json.dumps(
+            {
+                "os": platform.system(),
+                "in_container": env.get("in_container", False),
+                "windows_venv": env.get("windows_venv", False),
+                "executable_in_venv": env.get("executable_in_venv", False),
+                "can_write_logs": env.get("can_write_logs", False),
+            }
+        ),
+    )
     for dep in OPTIONAL_DEPS:
         try:
             module = __import__(dep)
@@ -55,6 +70,37 @@ def _print_header() -> None:
         except Exception:
             print(f"{dep} not installed (ok)")
     print()
+
+
+def _detect_environment() -> dict[str, str | bool]:
+    is_windows = platform.system() == "Windows"
+    in_container = bool(
+        os.environ.get("RUNNING_IN_CONTAINER")
+        or Path("/.dockerenv").exists()
+        or Path("/.dockerinit").exists()
+    )
+    windows_venv = (ROOT / ".venv" / "Scripts" / "python.exe").exists()
+    executable_in_venv = ".venv" in Path(sys.executable).resolve().parts
+
+    log_probe_error = ""
+    can_write_logs = False
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        with tempfile.NamedTemporaryFile(dir=LOGS_DIR, delete=True) as fh:
+            fh.write(b"ok")
+            fh.flush()
+        can_write_logs = True
+    except Exception as exc:  # pragma: no cover - best effort probe
+        log_probe_error = str(exc)
+
+    return {
+        "is_windows": is_windows,
+        "in_container": in_container,
+        "windows_venv": windows_venv,
+        "executable_in_venv": executable_in_venv,
+        "can_write_logs": can_write_logs,
+        "log_probe_error": log_probe_error,
+    }
 
 
 def _read_text(path: Path) -> str:
@@ -379,7 +425,21 @@ def check_py_compile() -> List[CheckResult]:
     ]
 
 
-def _run_quick_verifiers(missing_deps: List[str]) -> List[CheckResult]:
+def _training_blockers(env: dict[str, str | bool]) -> List[str]:
+    reasons: List[str] = []
+    if not env.get("is_windows"):
+        reasons.append("non-Windows OS")
+    if env.get("in_container"):
+        reasons.append("running inside container")
+    if not env.get("windows_venv"):
+        reasons.append("missing .venv/\\Scripts/python.exe")
+    if not env.get("can_write_logs"):
+        detail = env.get("log_probe_error") or "log directory not writable"
+        reasons.append(f"Logs not writable ({detail})")
+    return reasons
+
+
+def _run_quick_verifiers(missing_deps: List[str], env: dict[str, str | bool]) -> List[CheckResult]:
     quick = [
         TOOLS_DIR / "verify_smoke.py",
         TOOLS_DIR / "verify_e2e_qa_loop.py",
@@ -397,6 +457,16 @@ def _run_quick_verifiers(missing_deps: List[str]) -> List[CheckResult]:
                     script.name,
                     "SKIP",
                     f"missing deps: {_format_dep_list(missing_deps)}",
+                )
+            )
+            continue
+        training_blockers = _training_blockers(env)
+        if script.name.startswith("verify_train_") and training_blockers:
+            results.append(
+                CheckResult(
+                    script.name,
+                    "SKIP",
+                    " ; ".join(training_blockers),
                 )
             )
             continue
@@ -503,6 +573,7 @@ def check_read_only_guard() -> List[CheckResult]:
 
 def main() -> int:
     missing_deps = detect_missing_deps()
+    env = _detect_environment()
 
     p0_checks: List[Callable[[], List[CheckResult]]] = [
         check_windows_paths,
@@ -518,7 +589,7 @@ def main() -> int:
     ]
     optional_checks: List[Callable[[], List[CheckResult]]] = [
         lambda: check_readme_cli_consistency(missing_deps),
-        lambda: _run_quick_verifiers(missing_deps),
+        lambda: _run_quick_verifiers(missing_deps, env),
     ]
 
     all_results: List[CheckResult] = []
@@ -543,7 +614,7 @@ def main() -> int:
         summary_line = "PASS: consistency checks succeeded"
 
     print(summary_line)
-    _print_header()
+    _print_header(env)
 
     for res in all_results:
         print(res.render())
@@ -555,7 +626,13 @@ def main() -> int:
         return 1
 
     if degraded:
-        print("DEGRADED: optional checks skipped due to missing dependencies")
+        reason_bits = []
+        if missing_deps:
+            reason_bits.append(f"missing deps: {_format_dep_list(missing_deps)}")
+        if skipped_checks:
+            reason_bits.append(f"skipped checks: {_format_dep_list(skipped_checks)}")
+        reason = "; ".join(reason_bits) if reason_bits else "partial coverage"
+        print(f"DEGRADED: {reason}")
         return 0
 
     print("PASS: consistency checks succeeded")
