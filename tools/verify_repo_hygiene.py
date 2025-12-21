@@ -14,6 +14,8 @@ REQUIRED_RULES = [
     "logs/status.json",
     "Logs/policy_registry.json",
     "logs/policy_registry.json",
+    "Logs/train_daemon_state.json",
+    "logs/train_daemon_state.json",
     "Logs/train_runs/",
     "logs/train_runs/",
     "Logs/train_service/",
@@ -26,24 +28,20 @@ REQUIRED_RULES = [
     "Reports/",
 ]
 
-SUSPECT_PREFIXES = [
-    "Logs/events",
-    "logs/events",
-    "Logs/status.json",
-    "logs/status.json",
-    "Logs/policy_registry.json",
-    "logs/policy_registry.json",
-    "Logs/train_runs/",
-    "logs/train_runs/",
-    "Logs/train_service/",
-    "logs/train_service/",
-    "Logs/tournament_runs/",
-    "logs/tournament_runs/",
+RUNTIME_ROOTS = [
+    "Logs/",
+    "logs/",
+    "Reports/",
+    "reports/",
     "evidence_packs/",
     "qa_packets/",
     "qa_answers/",
-    "Reports/",
 ]
+
+HIGHLIGHT_PATHS = {
+    "Logs/train_daemon_state.json",
+    "logs/train_daemon_state.json",
+}
 
 
 def _read_gitignore() -> str:
@@ -74,42 +72,73 @@ def _collect_git_status() -> list[str]:
     return [line.strip() for line in result.stdout.splitlines() if line.strip()]
 
 
-def _find_untracked_matches(status_lines: list[str]) -> list[str]:
-    matches: list[str] = []
-    for line in status_lines:
-        if not line.startswith("?? "):
-            continue
-        path = line[3:]
-        for prefix in SUSPECT_PREFIXES:
-            if path.startswith(prefix):
-                matches.append(path)
-                break
-    return matches
+def _collect_untracked(status_lines: list[str]) -> list[str]:
+    return [line[3:] for line in status_lines if line.startswith("?? ")]
+
+
+def _runtime_untracked(untracked: list[str]) -> list[str]:
+    return [p for p in untracked if any(p.startswith(prefix) for prefix in RUNTIME_ROOTS)]
+
+
+def _unsafe_untracked(untracked: list[str]) -> list[str]:
+    return [p for p in untracked if not any(p.startswith(prefix) for prefix in RUNTIME_ROOTS)]
+
+
+def _highlighted(untracked: list[str]) -> list[str]:
+    return [p for p in untracked if p in HIGHLIGHT_PATHS]
+
+
+def _format_list(items: list[str]) -> str:
+    return ",".join(items) if items else "none"
 
 
 def main() -> int:
     content = _read_gitignore()
     missing = _missing_rules(content)
     status_lines = _collect_git_status()
-    untracked_matches = _find_untracked_matches(status_lines)
+    untracked = _collect_untracked(status_lines)
+    runtime_untracked = _runtime_untracked(untracked)
+    unsafe_untracked = _unsafe_untracked(untracked)
+    highlighted = _highlighted(runtime_untracked)
 
-    status = "PASS" if not missing and not untracked_matches else "FAIL"
-    if missing:
-        print(f"Missing .gitignore rules: {', '.join(missing)}")
-    if untracked_matches:
-        print(
-            "Untracked runtime artifacts detected: "
-            + ", ".join(sorted(set(untracked_matches)))
-        )
+    status = "PASS" if not missing and not runtime_untracked and not unsafe_untracked else "FAIL"
 
     summary = "|".join(
         [
             "REPO_HYGIENE_SUMMARY",
             f"status={status}",
-            f"missing_rules={','.join(missing) if missing else 'none'}",
-            f"untracked_matches={','.join(untracked_matches) if untracked_matches else 'none'}",
+            f"missing_rules={_format_list(missing)}",
+            f"runtime_untracked={_format_list(runtime_untracked)}",
+            f"unsafe_untracked={_format_list(unsafe_untracked)}",
+            f"highlights={_format_list(highlighted)}",
         ]
     )
+
+    print("REPO_HYGIENE_START")
+    print(summary)
+
+    if missing:
+        print(f"Missing .gitignore rules: {', '.join(missing)}")
+
+    if runtime_untracked:
+        print(
+            "Untracked runtime artifacts detected: "
+            + ", ".join(sorted(set(runtime_untracked)))
+        )
+
+    if highlighted:
+        print(
+            "Highlight (known runtime patterns): "
+            + ", ".join(sorted(set(highlighted)))
+        )
+
+    if unsafe_untracked:
+        print(
+            "Unsafe to delete automatically (manual review required): "
+            + ", ".join(sorted(set(unsafe_untracked)))
+        )
+
+    print("REPO_HYGIENE_END")
     print(summary)
     return 0 if status == "PASS" else 1
 

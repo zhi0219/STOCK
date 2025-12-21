@@ -17,6 +17,8 @@ Logs/*.log
 Logs/alert_state.json
 Logs/KILL_SWITCH
 Data/KILL_SWITCH
+Logs/train_daemon_state.json
+logs/train_daemon_state.json
 Logs/events*.jsonl
 logs/events*.jsonl
 Logs/status.json
