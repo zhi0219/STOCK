@@ -436,6 +436,9 @@ def _py_compile_targets() -> List[Path]:
         "progress_index.py",
         "verify_progress_index.py",
         "verify_ui_progress_panel.py",
+        "progress_judge.py",
+        "verify_progress_truth.py",
+        "verify_pr11_gate.py",
     ]:
         target = TOOLS_DIR / name
         if target.exists():

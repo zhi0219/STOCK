@@ -19,6 +19,14 @@
 .\.venv\Scripts\python.exe .\tools\verify_consistency.py
 ```
 
+PR11 gate（PowerShell 复制即用）：
+
+```
+.\.venv\Scripts\python.exe .\tools\verify_pr11_gate.py
+# 可选：单独审核既有训练产物（SIM-only，默认扫描 Logs/train_runs）
+.\.venv\Scripts\python.exe .\tools\progress_judge.py --runs-root .\Logs\train_runs
+```
+
 ## PowerShell 状态一眼读懂
 
 - 输出中包含 `*_SUMMARY` / `*_HEADER` 这类 marker 行，直接看这些行即可判断 PASS / DEGRADED / FAIL。
