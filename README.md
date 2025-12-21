@@ -26,6 +26,11 @@ cd %USERPROFILE%\Desktop\STOCK
 .\.venv\Scripts\python.exe .\tools\verify_foundation.py
 ```
 
+运行后关注 `FOUNDATION_SUMMARY` 行：
+
+- 缺少可选依赖或受限环境跳过部分检查时，预期 `FOUNDATION_SUMMARY|status=PASS|degraded=1|failed=0`（退出码 0，会附带缺失项或跳过原因）。
+- 依赖齐全且全部通过时，预期 `FOUNDATION_SUMMARY|status=PASS|degraded=0|failed=0`。
+
 ## PR7 Windows 复制即用门禁（PowerShell）
 合并前至少顺序跑完下列 5~6 条，预期为 `PASS`；若缺少可选依赖导致 `DEGRADED` 可接受，但 `FAIL` 必须为 0：
 

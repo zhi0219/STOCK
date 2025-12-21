@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Iterable
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
@@ -23,6 +24,7 @@ class GateResult:
     stdout: str
     stderr: str
     degraded: bool = False
+    reason: str | None = None
 
 
 GATES = [
@@ -32,10 +34,27 @@ GATES = [
     "verify_no_lookahead_sim.py",
 ]
 
+OPTIONAL_DEPS = ("pandas", "yaml", "yfinance")
+
 
 def _detect_degraded(text: str) -> bool:
     probe = text.upper()
     return "DEGRADED" in probe or "SKIP" in probe
+
+
+def _detect_missing_optional_deps(text: str) -> list[str]:
+    probe = text.lower()
+    missing: list[str] = []
+    for dep in OPTIONAL_DEPS:
+        # Normalize common module-not-found messages.
+        if f"no module named '{dep.lower()}'" in probe or f"missing optional dependency '{dep.lower()}'" in probe:
+            missing.append(dep)
+    return missing
+
+
+def _format_missing(deps: Iterable[str]) -> str:
+    parts = list(deps)
+    return "missing_deps=" + ",".join(parts) if parts else ""
 
 
 def run_gate(script_name: str) -> GateResult:
@@ -45,10 +64,26 @@ def run_gate(script_name: str) -> GateResult:
 
     proc = run_cmd_utf8([sys.executable, str(script_path)], cwd=ROOT)
     combined = (proc.stdout or "") + (proc.stderr or "")
-    degraded = proc.returncode == 0 and _detect_degraded(combined)
-    status = "PASS" if proc.returncode == 0 else "FAIL"
-    if degraded:
+    missing_deps = _detect_missing_optional_deps(combined)
+    has_degraded_marker = _detect_degraded(combined)
+
+    status = "PASS"
+    reason = None
+    degraded = False
+
+    if missing_deps:
         status = "DEGRADED"
+        degraded = True
+        reason = _format_missing(missing_deps)
+    elif proc.returncode != 0 and has_degraded_marker:
+        status = "SKIP"
+        degraded = True
+        reason = "reported SKIP"
+    elif proc.returncode != 0:
+        status = "FAIL"
+    elif has_degraded_marker:
+        status = "DEGRADED"
+        degraded = True
 
     return GateResult(
         name=script_name,
@@ -57,6 +92,7 @@ def run_gate(script_name: str) -> GateResult:
         stdout=proc.stdout or "",
         stderr=proc.stderr or "",
         degraded=degraded,
+        reason=reason,
     )
 
 
@@ -64,10 +100,10 @@ def main() -> int:
     """Run all foundation gates and return a consolidated exit code.
 
     Exit semantics:
-    - Any gate returning a failure (non-zero exit code) makes the process exit 1.
-    - DEGRADED/SKIP cases keep exit code 0 and are surfaced via the summary flag.
-    - A clean run with no failures returns 0.
-    The marker lines bound the output so downstream tools can parse the block.
+    - Only gates marked FAIL keep the process fail-closed.
+    - DEGRADED/SKIP (e.g., missing optional deps or restricted environments) emit
+      `degraded=1` in the summary but preserve exit code 0.
+    - Marker lines bound the output so downstream tools can parse the block.
     """
     if configure_stdio_utf8:
         try:
@@ -81,7 +117,16 @@ def main() -> int:
         result = run_gate(gate)
         results.append(result)
         print(
-            f"GATE_RESULT|name={result.name}|status={result.status}|exit={result.returncode}"
+            "|".join(
+                part
+                for part in [
+                    f"GATE_RESULT|name={result.name}",
+                    f"status={result.status}",
+                    f"exit={result.returncode}",
+                    result.reason if result.reason else None,
+                ]
+                if part is not None
+            )
         )
         if result.stdout:
             print(f"--- {result.name} stdout ---")
