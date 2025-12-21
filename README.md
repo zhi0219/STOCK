@@ -19,6 +19,13 @@
 .\.venv\Scripts\python.exe .\tools\verify_consistency.py
 ```
 
+## 本机真实基线（1条命令）
+
+```powershell
+cd %USERPROFILE%\Desktop\STOCK
+..venv\Scripts\python.exe tools\verify_foundation.py
+```
+
 ### macOS / Linux (bash)
 1. Create and activate a venv:
    ```bash
