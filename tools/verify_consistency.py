@@ -1,0 +1,410 @@
+from __future__ import annotations
+
+import json
+import re
+import subprocess
+import sys
+from pathlib import Path
+from typing import Callable, Iterable, List, Tuple
+
+ROOT = Path(__file__).resolve().parent.parent
+TOOLS_DIR = ROOT / "tools"
+README_PATH = ROOT / "README.md"
+LOGS_DIR = ROOT / "Logs"
+
+
+class CheckResult:
+    def __init__(self, name: str, ok: bool, details: str | None = None) -> None:
+        self.name = name
+        self.ok = ok
+        self.details = details or ""
+
+    def render(self) -> str:
+        status = "[OK]" if self.ok else "[FAIL]"
+        if self.details:
+            return f"{status} {self.name}: {self.details}"
+        return f"{status} {self.name}"
+
+
+def _print_header() -> None:
+    print(f"Interpreter: {sys.executable}")
+    for dep in ("pandas", "yaml", "yfinance"):
+        try:
+            module = __import__(dep)
+            version = getattr(module, "__version__", "unknown")
+            print(f"{dep} version: {version}")
+        except Exception:
+            print(f"{dep} not installed (ok)")
+    print()
+
+
+def _read_text(path: Path) -> str:
+    return path.read_text(encoding="utf-8") if path.exists() else ""
+
+
+def check_windows_paths() -> List[CheckResult]:
+    results: List[CheckResult] = []
+    content = _read_text(README_PATH)
+    bad_patterns = ["./.venv/bin/python", ".venv/bin/python"]
+    found_bad = [p for p in bad_patterns if p in content]
+    if found_bad:
+        results.append(
+            CheckResult(
+                "README linux paths",
+                False,
+                f"Disallowed python path(s) found: {', '.join(found_bad)}",
+            )
+        )
+    else:
+        results.append(CheckResult("README linux paths", True))
+
+    if ".\\.venv\\Scripts\\python.exe" not in content:
+        results.append(
+            CheckResult(
+                "README Windows path",
+                False,
+                "Expected example '.\\.venv\\Scripts\\python.exe' not found",
+            )
+        )
+    else:
+        results.append(CheckResult("README Windows path", True))
+
+    for tool_path in TOOLS_DIR.glob("*.py"):
+        if tool_path.name == "verify_consistency.py":
+            continue
+        text = _read_text(tool_path)
+        if "./.venv/bin/python" in text or ".venv/bin/python" in text:
+            results.append(
+                CheckResult(
+                    f"Tool path in {tool_path.name}",
+                    False,
+                    "Found linux-style virtualenv python path",
+                )
+            )
+    if not any(r.name.startswith("Tool path") for r in results):
+        results.append(CheckResult("Tool paths", True))
+    return results
+
+
+def _iter_subprocess_blocks(path: Path) -> Iterable[Tuple[int, str]]:
+    text = _read_text(path)
+    lines = text.splitlines()
+    for idx, line in enumerate(lines, start=1):
+        if "subprocess.run" in line or "subprocess.Popen" in line:
+            block = [line]
+            # include next few lines to capture parameters
+            for extra in lines[idx: idx + 6]:
+                block.append(extra)
+            yield idx, "\n".join(block)
+
+
+def check_sys_executable_usage() -> List[CheckResult]:
+    failures: List[CheckResult] = []
+    pattern = re.compile(r"['\"]python(3)?(\.exe)?['\"]")
+    for path in TOOLS_DIR.glob("*.py"):
+        for lineno, block in _iter_subprocess_blocks(path):
+            if "sys.executable" in block:
+                continue
+            if pattern.search(block):
+                failures.append(
+                    CheckResult(
+                        f"sys.executable in {path.name}",
+                        False,
+                        f"Line {lineno} uses hard-coded python reference",
+                    )
+                )
+    if not failures:
+        return [CheckResult("Subprocess uses sys.executable", True)]
+    return failures
+
+
+def check_ui_encoding() -> List[CheckResult]:
+    path = TOOLS_DIR / "ui_app.py"
+    text = _read_text(path)
+    if not text:
+        return [CheckResult("ui_app encoding", True, "ui_app.py not present (skipped)")]
+
+    failures: List[CheckResult] = []
+    for lineno, block in _iter_subprocess_blocks(path):
+        if "capture_output=True" not in block:
+            continue
+        if "encoding=\"utf-8\"" not in block or "errors=\"replace\"" not in block:
+            failures.append(
+                CheckResult(
+                    "ui_app encoding",
+                    False,
+                    f"Line {lineno} missing encoding='utf-8' or errors='replace'",
+                )
+            )
+    if failures:
+        return failures
+    return [CheckResult("ui_app encoding", True)]
+
+
+def check_ascii_markers() -> List[CheckResult]:
+    qa_flow_markers = {"OUTPUT_PACKET", "PACKET_PATH", "OUTPUT_EVIDENCE_PACK", "EVIDENCE_PACK_PATH"}
+    path = TOOLS_DIR / "qa_flow.py"
+    text = _read_text(path)
+    missing = [m for m in qa_flow_markers if m not in text]
+    results: List[CheckResult] = []
+    if missing:
+        results.append(
+            CheckResult(
+                "qa_flow markers",
+                False,
+                f"Missing markers: {', '.join(sorted(missing))}",
+            )
+        )
+    else:
+        results.append(CheckResult("qa_flow markers", True))
+
+    ui_text = _read_text(TOOLS_DIR / "ui_app.py")
+    ui_missing = [m for m in qa_flow_markers if m and m not in ui_text]
+    if ui_missing:
+        results.append(
+            CheckResult(
+                "ui_app marker parsing",
+                False,
+                f"UI missing marker parsing for: {', '.join(sorted(ui_missing))}",
+            )
+        )
+    else:
+        results.append(CheckResult("ui_app marker parsing", True))
+    return results
+
+
+def _extract_readme_flags(script_name: str) -> set[str]:
+    flags: set[str] = set()
+    for line in _read_text(README_PATH).splitlines():
+        if script_name in line:
+            for token in line.split():
+                if token.startswith("--"):
+                    flags.add(token)
+    return flags
+
+
+def _run_help(script: Path) -> tuple[int, str]:
+    result = subprocess.run(
+        [sys.executable, str(script), "--help"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    return result.returncode, (result.stdout or "") + ("\n" + result.stderr if result.stderr else "")
+
+
+def check_readme_cli_consistency() -> List[CheckResult]:
+    targets = [
+        "tail_events.py",
+        "replay_events.py",
+        "select_evidence.py",
+        "make_ai_packet.py",
+        "qa_flow.py",
+        "supervisor.py",
+        "ui_app.py",
+    ]
+    results: List[CheckResult] = []
+    for name in targets:
+        script = TOOLS_DIR / name
+        if not script.exists():
+            results.append(CheckResult(f"{name} --help", True, "not present (skipped)"))
+            continue
+        flags = _extract_readme_flags(name)
+        if not flags:
+            results.append(CheckResult(f"{name} flags", True, "no README flags (skipped)"))
+            continue
+        code, output = _run_help(script)
+        if code != 0:
+            results.append(CheckResult(f"{name} --help", False, f"exit {code}"))
+            continue
+        missing = [flag for flag in sorted(flags) if flag not in output]
+        if missing:
+            results.append(
+                CheckResult(
+                    f"{name} flags",
+                    False,
+                    f"README mentions flags not in --help: {', '.join(missing)}",
+                )
+            )
+        else:
+            results.append(CheckResult(f"{name} flags", True))
+    return results
+
+
+def _py_compile_targets() -> List[Path]:
+    targets = [
+        ROOT / "main.py",
+        ROOT / "alerts.py",
+        ROOT / "quotes.py",
+    ]
+    for name in [
+        "verify_smoke.py",
+        "verify_cooldown.py",
+        "verify_e2e_qa_loop.py",
+        "verify_ui_actions.py",
+        "verify_ui_qapacket_path.py",
+        "verify_utf8_stdio.py",
+        "verify_dashboard.py",
+        "verify_supervisor.py",
+    ]:
+        target = TOOLS_DIR / name
+        if target.exists():
+            targets.append(target)
+    return targets
+
+
+def check_py_compile() -> List[CheckResult]:
+    targets = _py_compile_targets()
+    args = [str(p) for p in targets]
+    result = subprocess.run(
+        [sys.executable, "-m", "py_compile", *args],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if result.returncode == 0:
+        return [CheckResult("py_compile", True)]
+    return [
+        CheckResult(
+            "py_compile",
+            False,
+            (result.stdout or "") + ("\n" + result.stderr if result.stderr else ""),
+        )
+    ]
+
+
+def _run_quick_verifiers() -> List[CheckResult]:
+    quick = [
+        TOOLS_DIR / "verify_smoke.py",
+        TOOLS_DIR / "verify_e2e_qa_loop.py",
+        TOOLS_DIR / "verify_ui_qapacket_path.py",
+    ]
+    results: List[CheckResult] = []
+    for script in quick:
+        if not script.exists():
+            results.append(CheckResult(script.name, True, "not present (skipped)"))
+            continue
+        proc = subprocess.run(
+            [sys.executable, str(script)],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        if proc.returncode == 0:
+            results.append(CheckResult(script.name, True))
+        else:
+            snippet = (proc.stdout or "") + ("\n" + proc.stderr if proc.stderr else "")
+            results.append(CheckResult(script.name, False, snippet.strip()))
+    return results
+
+
+def check_events_schema() -> List[CheckResult]:
+    required_keys = {"schema_version", "ts_utc", "event_type", "symbol", "severity", "message"}
+    events_files = sorted(LOGS_DIR.glob("events_*.jsonl"))
+    if not events_files:
+        return [CheckResult("events schema", True, "no events files (skipped)")]
+
+    failures: List[str] = []
+    for path in events_files:
+        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            try:
+                obj = json.loads(line)
+            except Exception:
+                failures.append(f"{path.name}: line {lineno} not valid JSON")
+                continue
+            missing = [k for k in sorted(required_keys) if k not in obj]
+            if missing:
+                failures.append(
+                    f"{path.name}: line {lineno} missing keys {', '.join(missing)}"
+                )
+    if failures:
+        return [CheckResult("events schema", False, "; ".join(failures))]
+    return [CheckResult("events schema", True)]
+
+
+def check_status_json() -> List[CheckResult]:
+    status_path = LOGS_DIR / "status.json"
+    if not status_path.exists():
+        return [CheckResult("status.json", True, "status.json not found (skipped)")]
+    try:
+        payload = json.loads(status_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return [CheckResult("status.json", False, f"parse failed: {exc}")]
+    missing = [k for k in ("ts_utc",) if k not in payload]
+    if missing:
+        return [CheckResult("status.json", False, f"missing keys: {', '.join(missing)}")]
+    return [CheckResult("status.json", True)]
+
+
+def check_read_only_guard() -> List[CheckResult]:
+    keywords = [
+        "place order",
+        "submit order",
+        "broker login",
+        "alpaca",
+        "ibkr",
+        "2fa",
+    ]
+    found: List[str] = []
+    safe_markers = ("never", "禁止", "no ", "not ")
+    for path in ROOT.rglob("*.py"):
+        if path.name == "verify_consistency.py":
+            continue
+        for lineno, line in enumerate(_read_text(path).splitlines(), start=1):
+            lower = line.lower()
+            if any(marker in lower for marker in safe_markers):
+                continue
+            for word in keywords:
+                if word in lower:
+                    found.append(
+                        f"{path.relative_to(ROOT)}:{lineno} contains '{word}'"
+                    )
+    if found:
+        return [
+            CheckResult("READ_ONLY guard", False, "; ".join(sorted(set(found))))
+        ]
+    return [CheckResult("READ_ONLY guard", True)]
+
+
+def main() -> int:
+    _print_header()
+
+    checks: List[Callable[[], List[CheckResult]]] = [
+        check_windows_paths,
+        check_sys_executable_usage,
+        check_ui_encoding,
+        check_ascii_markers,
+        check_readme_cli_consistency,
+        check_py_compile,
+        _run_quick_verifiers,
+        check_events_schema,
+        check_status_json,
+        check_read_only_guard,
+    ]
+
+    all_results: List[CheckResult] = []
+    for fn in checks:
+        all_results.extend(fn())
+
+    overall_ok = all(r.ok for r in all_results)
+    for res in all_results:
+        print(res.render())
+
+    print()
+    if overall_ok:
+        print("PASS: consistency checks succeeded")
+        return 0
+
+    print("FAIL: consistency issues detected")
+    print("Next step: .\\.venv\\Scripts\\python.exe tools/verify_consistency.py")
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
