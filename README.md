@@ -44,6 +44,13 @@ cd $HOME\Desktop\STOCK
 .\.venv\Scripts\python.exe .\tools\ui_app.py
 ```
 
+- 可选 Streamlit UI（更直观、只读）：
+
+```
+.\.venv\Scripts\python.exe -m pip install -r requirements-ui.txt
+.\.venv\Scripts\python.exe -m streamlit run .\tools\ui_streamlit.py
+```
+
 ### UI 内完成零成本 AI 问答闭环
 1. 打开 UI 后，找到 “AI Q&A” 区块。
 2. 在 Question 输入框输入问题，点击 **Generate Q&A Packet**，UI 会调用 `qa_flow` 并显示生成的 `packet` / `evidence_pack` 路径。
