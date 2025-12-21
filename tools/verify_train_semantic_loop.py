@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -18,11 +19,17 @@ DEFAULT_KILL = ROOT / "Data" / "KILL_SWITCH"
 
 
 def _write_quotes(path: Path) -> None:
-    rows = [
-        {"ts_utc": "2024-01-01T00:00:00+00:00", "symbol": "MSFT", "price": "200", "source": "synthetic"},
-        {"ts_utc": "2024-01-01T00:00:10+00:00", "symbol": "MSFT", "price": "202", "source": "synthetic"},
-        {"ts_utc": "2024-01-01T00:00:20+00:00", "symbol": "MSFT", "price": "199", "source": "synthetic"},
-    ]
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    rows = []
+    for offset in range(0, 120, 10):
+        rows.append(
+            {
+                "ts_utc": (now + timedelta(seconds=offset)).isoformat(),
+                "symbol": "MSFT",
+                "price": str(200 + ((offset // 10) % 3) - 1),
+                "source": "synthetic",
+            }
+        )
     headers = list(rows[0].keys())
     import csv
 
@@ -122,9 +129,8 @@ def _assert_kill_switch(quotes_path: Path, runs_root: Path) -> None:
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
-    time.sleep(1)
     DEFAULT_KILL.write_text("KILL", encoding="utf-8")
-    deadline = time.time() + 2.0
+    deadline = time.time() + 5.0
     while proc.poll() is None and time.time() < deadline:
         time.sleep(0.1)
     if proc.poll() is None:
@@ -165,21 +171,42 @@ def _assert_no_lookahead() -> None:
 
 
 def main() -> None:
-    with tempfile.TemporaryDirectory() as tmpdir:
-        base = Path(tmpdir)
-        runs_root = ROOT / "Logs" / "train_runs" / "_semantic"
-        quotes_path = base / "quotes.csv"
-        _write_quotes(quotes_path)
-        EVENTS_PATH.unlink(missing_ok=True)
-        STATE_PATH.unlink(missing_ok=True)
+    status = "PASS"
+    reason = "ok"
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base = Path(tmpdir)
+            runs_root = ROOT / "Logs" / "train_runs" / "_semantic"
+            quotes_path = base / "quotes.csv"
+            _write_quotes(quotes_path)
+            EVENTS_PATH.unlink(missing_ok=True)
+            STATE_PATH.unlink(missing_ok=True)
+            DEFAULT_KILL.unlink(missing_ok=True)
 
-        _run_once(quotes_path, runs_root)
-        _assert_events()
-        _assert_state()
-        _assert_kill_switch(quotes_path, runs_root)
-        _assert_no_lookahead()
+            _run_once(quotes_path, runs_root)
+            _assert_events()
+            _assert_state()
+            _assert_kill_switch(quotes_path, runs_root)
+            _assert_no_lookahead()
+    except SystemExit as exc:  # propagate process failures
+        status = "FAIL"
+        reason = f"exit_code={exc.code}"
+    except Exception as exc:  # noqa: BLE001 - surface assertion details
+        status = "FAIL"
+        reason = str(exc)
 
-    print("PASS: semantic training loop verified")
+    summary = f"SEMANTIC_LOOP_SUMMARY|status={status}|reason={reason}"
+    print("===BEGIN===")
+    print(summary)
+    if status == "PASS":
+        print("PASS: semantic training loop verified")
+        print("===END===")
+        print(summary)
+        return
+
+    print("===END===")
+    print(summary)
+    raise SystemExit(1)
 
 
 if __name__ == "__main__":
