@@ -45,6 +45,12 @@ try:
         load_recent_events,
     )
     from tools.stdio_utf8 import configure_stdio_utf8
+    from tools.wakeup_dashboard import (
+        MISSING_FIELD_TEXT,
+        find_latest_run_dir,
+        find_latest_summary_md,
+        parse_summary_key_fields,
+    )
 except Exception:
     explain_now = None
     compute_event_rows = None  # type: ignore[assignment]
@@ -53,6 +59,10 @@ except Exception:
     load_latest_status = None  # type: ignore[assignment]
     load_recent_events = None  # type: ignore[assignment]
     configure_stdio_utf8 = None  # type: ignore[assignment]
+    MISSING_FIELD_TEXT = "字段缺失/版本差异"  # type: ignore[assignment]
+    find_latest_run_dir = None  # type: ignore[assignment]
+    find_latest_summary_md = None  # type: ignore[assignment]
+    parse_summary_key_fields = None  # type: ignore[assignment]
 
 
 def _utf8_env(extra: dict[str, str] | None = None) -> dict[str, str]:
@@ -180,7 +190,13 @@ def parse_training_markers(text: str) -> dict[str, str]:
 
 
 def run_training_daemon(
-    max_runtime_seconds: int, input_path: Path | None = None, runs_root: Path | None = None
+    max_runtime_seconds: int,
+    input_path: Path | None = None,
+    runs_root: Path | None = None,
+    retain_days: int | None = None,
+    retain_latest_n: int | None = None,
+    max_total_train_runs_mb: int | None = None,
+    nightly: bool = False,
 ) -> tuple[RunResult, dict[str, str]]:
     command = [
         sys.executable,
@@ -188,10 +204,18 @@ def run_training_daemon(
         "--max-runtime-seconds",
         str(max_runtime_seconds),
     ]
+    if nightly:
+        command.append("--nightly")
     if input_path:
         command.extend(["--input", str(input_path)])
     if runs_root:
         command.extend(["--runs-root", str(runs_root)])
+    if retain_days is not None:
+        command.extend(["--retain-days", str(retain_days)])
+    if retain_latest_n is not None:
+        command.extend(["--retain-latest-n", str(retain_latest_n)])
+    if max_total_train_runs_mb is not None:
+        command.extend(["--max-total-train-runs-mb", str(max_total_train_runs_mb)])
     proc = subprocess.run(
         command,
         cwd=ROOT,
@@ -252,6 +276,8 @@ class App(tk.Tk):
         self.last_answer_path: Path | None = None
         self._latest_training_run_dir: Path | None = None
         self._latest_training_summary_path: Path | None = None
+        self._latest_wakeup_run_dir: Path | None = None
+        self._latest_wakeup_summary_path: Path | None = None
         self._build_ui()
         self._start_auto_refresh()
 
@@ -361,11 +387,45 @@ class App(tk.Tk):
             max_runtime = 60
         if max_runtime <= 0:
             max_runtime = 60
+        retention = self._parse_retention_settings()
         self.training_status_var.set(f"Status: running (max {max_runtime}s)")
-        threading.Thread(target=self._run_training, args=(max_runtime,), daemon=True).start()
+        threading.Thread(
+            target=self._run_training,
+            args=(max_runtime, retention, False),
+            daemon=True,
+        ).start()
 
-    def _run_training(self, max_runtime: int) -> None:
-        result, markers = run_training_daemon(max_runtime)
+    def _handle_start_nightly(self) -> None:
+        retention = self._parse_retention_settings()
+        self.training_status_var.set("Status: running nightly preset (max 28800s)")
+        threading.Thread(
+            target=self._run_training,
+            args=(28800, retention, True),
+            daemon=True,
+        ).start()
+
+    def _parse_retention_settings(self) -> dict[str, int]:
+        def _parse_int(var: tk.StringVar, default: int) -> int:
+            try:
+                value = int(var.get())
+                return max(value, 0)
+            except Exception:
+                return default
+
+        return {
+            "retain_days": _parse_int(self.retain_days_var, 7),
+            "retain_latest_n": _parse_int(self.retain_latest_n_var, 50),
+            "max_total_train_runs_mb": _parse_int(self.retain_total_mb_var, 5000),
+        }
+
+    def _run_training(self, max_runtime: int, retention: dict[str, int], nightly: bool) -> None:
+        result, markers = run_training_daemon(
+            max_runtime,
+            retain_days=retention.get("retain_days"),
+            retain_latest_n=retention.get("retain_latest_n"),
+            max_total_train_runs_mb=retention.get("max_total_train_runs_mb"),
+            nightly=nightly,
+        )
         markers_with_rc = dict(markers)
         markers_with_rc["RETURN_CODE"] = str(result.returncode)
         lines = [result.format_lines()]
@@ -378,6 +438,7 @@ class App(tk.Tk):
         self._training_output_queue.put(log_text)
         self._append_training_markers(markers_with_rc)
         self._log_run(log_text)
+        self._enqueue_ui(self._refresh_wakeup_dashboard)
 
     def _append_training_markers(self, markers: dict[str, str]) -> None:
         def updater() -> None:
@@ -432,6 +493,12 @@ class App(tk.Tk):
         self.training_summary_text.insert(tk.END, content)
         self.training_summary_text.configure(state=tk.DISABLED)
 
+    def _update_wakeup_preview(self, content: str) -> None:
+        self.wakeup_summary_preview.configure(state=tk.NORMAL)
+        self.wakeup_summary_preview.delete("1.0", tk.END)
+        self.wakeup_summary_preview.insert(tk.END, content)
+        self.wakeup_summary_preview.configure(state=tk.DISABLED)
+
     def _handle_open_latest_run_folder(self) -> None:
         run_dir, summary_path = latest_training_summary()
         if run_dir is None:
@@ -446,6 +513,82 @@ class App(tk.Tk):
                 subprocess.Popen(["xdg-open", str(run_dir)], env=_utf8_env())
         except Exception as exc:  # pragma: no cover - UI feedback
             messagebox.showerror("Training", f"Failed to open folder: {exc}")
+
+    def _refresh_wakeup_dashboard(self) -> None:
+        runs_root = LOGS_DIR / "train_runs"
+        if not find_latest_run_dir or not find_latest_summary_md or not parse_summary_key_fields:
+            self.wakeup_warning_var.set("Wake-up helper未加载")
+            return
+        latest_run_only = find_latest_run_dir(runs_root)
+        run_dir, summary_path = find_latest_summary_md(runs_root)
+
+        warning = ""
+        if not runs_root.exists():
+            warning = "尚未生成训练记录"
+        elif summary_path is None:
+            warning = "本次 run 尚未写 summary（可能仍在运行）"
+        self._latest_wakeup_run_dir = run_dir or latest_run_only
+        self._latest_wakeup_summary_path = summary_path
+
+        if summary_path and summary_path.exists():
+            fields = parse_summary_key_fields(summary_path)
+            preview = fields.raw_preview
+            self.wakeup_stop_reason_var.set(f"stop_reason: {fields.stop_reason}")
+            self.wakeup_net_change_var.set(f"net_change: {fields.net_change}")
+            self.wakeup_max_drawdown_var.set(f"max_drawdown: {fields.max_drawdown}")
+            self.wakeup_trades_var.set(f"trades_count: {fields.trades_count}")
+            reject_text = ", ".join(fields.reject_reasons_top3)
+            self.wakeup_rejects_var.set(f"reject_reasons_top3: {reject_text}")
+            if fields.warning:
+                warning = fields.warning
+        else:
+            preview = warning or ""
+            self.wakeup_stop_reason_var.set(f"stop_reason: {MISSING_FIELD_TEXT}")
+            self.wakeup_net_change_var.set(f"net_change: {MISSING_FIELD_TEXT}")
+            self.wakeup_max_drawdown_var.set(f"max_drawdown: {MISSING_FIELD_TEXT}")
+            self.wakeup_trades_var.set(f"trades_count: {MISSING_FIELD_TEXT}")
+            self.wakeup_rejects_var.set(f"reject_reasons_top3: {MISSING_FIELD_TEXT}")
+
+        run_dir_display = str(self._latest_wakeup_run_dir) if self._latest_wakeup_run_dir else "(none)"
+        summary_display = str(summary_path) if summary_path else "(none)"
+        self.wakeup_run_dir_var.set(f"latest_run_dir: {run_dir_display}")
+        self.wakeup_summary_path_var.set(f"summary_path: {summary_display}")
+        self.wakeup_warning_var.set(warning)
+        self._update_wakeup_preview(preview)
+
+    def _handle_open_latest_wakeup_run(self) -> None:
+        if not self._latest_wakeup_run_dir:
+            self._refresh_wakeup_dashboard()
+        run_dir = self._latest_wakeup_run_dir
+        if run_dir is None:
+            messagebox.showinfo("Wake-up Dashboard", "No training runs found")
+            return
+        try:
+            if hasattr(os, "startfile"):
+                os.startfile(str(run_dir))  # type: ignore[attr-defined]
+            else:
+                subprocess.Popen(["xdg-open", str(run_dir)], env=_utf8_env())
+        except Exception as exc:  # pragma: no cover - UI feedback
+            messagebox.showerror("Wake-up Dashboard", f"Failed to open folder: {exc}")
+
+    def _handle_open_latest_wakeup_summary(self) -> None:
+        if not self._latest_wakeup_summary_path:
+            self._refresh_wakeup_dashboard()
+        summary_path = self._latest_wakeup_summary_path
+        if summary_path is None:
+            messagebox.showinfo("Wake-up Dashboard", "No summary found")
+            return
+        if hasattr(os, "startfile"):
+            try:
+                os.startfile(str(summary_path))  # type: ignore[attr-defined]
+                return
+            except Exception:
+                pass
+        try:
+            content = summary_path.read_text(encoding="utf-8")
+            self._update_wakeup_preview(content)
+        except Exception as exc:  # pragma: no cover - UI feedback
+            messagebox.showerror("Wake-up Dashboard", f"Failed to open summary: {exc}")
 
     def _build_qa_panel(self) -> None:
         panel = tk.LabelFrame(self.qa_tab, text="AI Q&A", padx=5, pady=5)
@@ -503,6 +646,7 @@ class App(tk.Tk):
 
     def _refresh(self) -> None:
         self._load_dashboard()
+        self._refresh_wakeup_dashboard()
 
     def _load_dashboard(self) -> None:
         if not compute_health or not compute_event_rows:
@@ -940,6 +1084,11 @@ class App(tk.Tk):
         ).pack(side=tk.LEFT, padx=5)
         tk.Button(
             controls,
+            text="Nightly (8h) Preset",
+            command=self._handle_start_nightly,
+        ).pack(side=tk.LEFT, padx=5)
+        tk.Button(
+            controls,
             text="Show Latest Training Summary",
             command=self._handle_show_latest_training_summary,
         ).pack(side=tk.LEFT, padx=5)
@@ -964,6 +1113,27 @@ class App(tk.Tk):
             info_frame, textvariable=self.training_summary_path_var, anchor="w"
         ).pack(anchor="w")
 
+        retention_frame = tk.Frame(training_frame)
+        retention_frame.pack(fill=tk.X, pady=2)
+        self.retain_days_var = tk.StringVar(value="7")
+        self.retain_latest_n_var = tk.StringVar(value="50")
+        self.retain_total_mb_var = tk.StringVar(value="5000")
+        tk.Label(retention_frame, text="retain-days").pack(side=tk.LEFT)
+        tk.Entry(retention_frame, textvariable=self.retain_days_var, width=6).pack(
+            side=tk.LEFT, padx=3
+        )
+        tk.Label(retention_frame, text="retain-latest-n").pack(side=tk.LEFT)
+        tk.Entry(retention_frame, textvariable=self.retain_latest_n_var, width=8).pack(
+            side=tk.LEFT, padx=3
+        )
+        tk.Label(retention_frame, text="max-total-train-runs-mb").pack(side=tk.LEFT)
+        tk.Entry(retention_frame, textvariable=self.retain_total_mb_var, width=10).pack(
+            side=tk.LEFT, padx=3
+        )
+        tk.Label(retention_frame, text="(Nightly preset会强制携带保留参数)", fg="gray").pack(
+            side=tk.LEFT, padx=6
+        )
+
         tk.Label(training_frame, text="Training Output:").pack(anchor="w")
         self.training_output = ScrolledText(training_frame, height=8, wrap=tk.WORD)
         self.training_output.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
@@ -973,6 +1143,52 @@ class App(tk.Tk):
         self.training_summary_text = ScrolledText(training_frame, height=6, wrap=tk.WORD)
         self.training_summary_text.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
         self.training_summary_text.configure(state=tk.DISABLED)
+
+        wakeup_frame = tk.LabelFrame(training_frame, text="Wake-up Dashboard", padx=5, pady=5)
+        wakeup_frame.pack(fill=tk.BOTH, expand=True, padx=2, pady=4)
+
+        wakeup_top = tk.Frame(wakeup_frame)
+        wakeup_top.pack(fill=tk.X, pady=2)
+        tk.Button(wakeup_top, text="Refresh", command=self._refresh_wakeup_dashboard).pack(
+            side=tk.LEFT, padx=4
+        )
+        tk.Button(
+            wakeup_top,
+            text="Open Latest Run Folder",
+            command=self._handle_open_latest_wakeup_run,
+        ).pack(side=tk.LEFT, padx=4)
+        tk.Button(
+            wakeup_top,
+            text="Open Latest Summary",
+            command=self._handle_open_latest_wakeup_summary,
+        ).pack(side=tk.LEFT, padx=4)
+
+        self.wakeup_run_dir_var = tk.StringVar(value="latest_run_dir: (none)")
+        self.wakeup_summary_path_var = tk.StringVar(value="summary_path: (none)")
+        self.wakeup_stop_reason_var = tk.StringVar(value="stop_reason: (unknown)")
+        self.wakeup_net_change_var = tk.StringVar(value="net_change: (unknown)")
+        self.wakeup_max_drawdown_var = tk.StringVar(value="max_drawdown: (unknown)")
+        self.wakeup_trades_var = tk.StringVar(value="trades_count: (unknown)")
+        self.wakeup_rejects_var = tk.StringVar(value="reject_reasons_top3: (unknown)")
+        self.wakeup_warning_var = tk.StringVar(value="")
+
+        for var in [
+            self.wakeup_run_dir_var,
+            self.wakeup_summary_path_var,
+            self.wakeup_stop_reason_var,
+            self.wakeup_net_change_var,
+            self.wakeup_max_drawdown_var,
+            self.wakeup_trades_var,
+            self.wakeup_rejects_var,
+            self.wakeup_warning_var,
+        ]:
+            tk.Label(wakeup_frame, textvariable=var, anchor="w").pack(anchor="w")
+
+        tk.Label(wakeup_frame, text="Summary preview:").pack(anchor="w")
+        self.wakeup_summary_preview = ScrolledText(wakeup_frame, height=8, wrap=tk.WORD)
+        self.wakeup_summary_preview.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
+        self.wakeup_summary_preview.configure(state=tk.DISABLED)
+        self._refresh_wakeup_dashboard()
 
     def _build_health_tab(self) -> None:
         container = tk.Frame(self.health_tab)
