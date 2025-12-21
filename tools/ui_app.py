@@ -7,6 +7,7 @@ import subprocess
 import sys
 import threading
 import time
+from datetime import datetime
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Sequence
@@ -29,8 +30,12 @@ SUPERVISOR_SCRIPT = ROOT / "tools" / "supervisor.py"
 QA_FLOW_SCRIPT = ROOT / "tools" / "qa_flow.py"
 CAPTURE_ANSWER_SCRIPT = ROOT / "tools" / "capture_ai_answer.py"
 TRAIN_DAEMON_SCRIPT = ROOT / "tools" / "train_daemon.py"
+TRAIN_SERVICE_SCRIPT = ROOT / "tools" / "train_service.py"
 UI_LOG_PATH = ROOT / "Logs" / "ui_actions.log"
 CONFIG_PATH = ROOT / "config.yaml"
+SERVICE_STATE_PATH = ROOT / "Logs" / "train_service" / "state.json"
+SERVICE_KILL_SWITCH = ROOT / "Logs" / "train_service" / "KILL_SWITCH"
+SERVICE_ROLLING_SUMMARY = ROOT / "Logs" / "train_service" / "rolling_summary.md"
 
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -258,6 +263,26 @@ def load_state_text() -> str:
         return f"error reading state: {exc}"
 
 
+def load_service_state() -> dict:
+    if not SERVICE_STATE_PATH.exists():
+        return {}
+    try:
+        return json.loads(SERVICE_STATE_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _service_running(state: dict) -> bool:
+    hb = state.get("last_heartbeat_ts")
+    try:
+        if hb:
+            ts = datetime.fromisoformat(str(hb))
+            return (datetime.now(ts.tzinfo or datetime.utcnow().astimezone().tzinfo) - ts).total_seconds() < 120 and not state.get("stop_reason")
+    except Exception:
+        return False
+    return False
+
+
 class App(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
@@ -278,6 +303,13 @@ class App(tk.Tk):
         self._latest_training_summary_path: Path | None = None
         self._latest_wakeup_run_dir: Path | None = None
         self._latest_wakeup_summary_path: Path | None = None
+        self.service_status_var = tk.StringVar(value="Service: unknown")
+        self.service_run_dir_var = tk.StringVar(value="Last run: (none)")
+        self.service_summary_var = tk.StringVar(value="Last summary: (none)")
+        self.service_episode_seconds_var = tk.StringVar(value="300")
+        self.service_max_hour_var = tk.StringVar(value="12")
+        self.service_max_day_var = tk.StringVar(value="200")
+        self.service_cooldown_var = tk.StringVar(value="10")
         self._build_ui()
         self._start_auto_refresh()
 
@@ -403,6 +435,111 @@ class App(tk.Tk):
             args=(28800, retention, True),
             daemon=True,
         ).start()
+
+    def _handle_start_service(self) -> None:
+        def _parse_int(var: tk.StringVar, default: int) -> int:
+            try:
+                return max(int(var.get()), 0)
+            except Exception:
+                return default
+
+        retention = self._parse_retention_settings()
+        episode_seconds = _parse_int(self.service_episode_seconds_var, 300)
+        max_hour = _parse_int(self.service_max_hour_var, 12)
+        max_day = _parse_int(self.service_max_day_var, 200)
+        cooldown = _parse_int(self.service_cooldown_var, 10)
+
+        def runner() -> None:
+            cmd = [
+                sys.executable,
+                str(TRAIN_SERVICE_SCRIPT),
+                "--episode-seconds",
+                str(episode_seconds),
+                "--max-episodes-per-hour",
+                str(max_hour),
+                "--max-episodes-per-day",
+                str(max_day),
+                "--cooldown-seconds-between-episodes",
+                str(cooldown),
+                "--retain-days",
+                str(retention.get("retain_days", 7)),
+                "--retain-latest-n",
+                str(retention.get("retain_latest_n", 50)),
+                "--max-total-train-runs-mb",
+                str(retention.get("max_total_train_runs_mb", 5000)),
+            ]
+            proc = subprocess.Popen(
+                cmd,
+                cwd=ROOT,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                env=_utf8_env(),
+            )
+            self._training_output_queue.put(f"Started 24/7 service (pid {proc.pid})")
+
+        threading.Thread(target=runner, daemon=True).start()
+
+    def _handle_stop_service(self) -> None:
+        try:
+            SERVICE_KILL_SWITCH.parent.mkdir(parents=True, exist_ok=True)
+            SERVICE_KILL_SWITCH.write_text("STOP", encoding="utf-8")
+            self._training_output_queue.put("Kill switch written for train_service")
+        except Exception as exc:  # pragma: no cover - UI feedback
+            messagebox.showerror("Service", f"Failed to write kill switch: {exc}")
+
+    def _handle_show_rolling_summary(self) -> None:
+        def loader() -> None:
+            if SERVICE_ROLLING_SUMMARY.exists():
+                try:
+                    content = SERVICE_ROLLING_SUMMARY.read_text(encoding="utf-8")
+                except Exception as exc:  # pragma: no cover - UI feedback
+                    content = f"Failed to read rolling summary: {exc}"
+            else:
+                run_dir, summary_path = latest_training_summary()
+                if summary_path and summary_path.exists():
+                    content = summary_path.read_text(encoding="utf-8")
+                else:
+                    content = "No rolling summary found"
+                if run_dir:
+                    self._latest_training_run_dir = run_dir
+                if summary_path:
+                    self._latest_training_summary_path = summary_path
+            self._enqueue_ui(lambda: self._update_training_summary_text(content))
+            self._training_output_queue.put("Loaded rolling summary into preview")
+
+        threading.Thread(target=loader, daemon=True).start()
+
+    def _handle_open_latest_service_run(self) -> None:
+        state = load_service_state()
+        run_dir = Path(str(state.get("last_run_dir"))) if state.get("last_run_dir") else None
+        if not run_dir:
+            messagebox.showinfo("Training", "No service runs found")
+            return
+        self._latest_training_run_dir = run_dir
+        try:
+            if hasattr(os, "startfile"):
+                os.startfile(str(run_dir))  # type: ignore[attr-defined]
+            else:
+                subprocess.Popen(["xdg-open", str(run_dir)], env=_utf8_env())
+        except Exception as exc:  # pragma: no cover - UI feedback
+            messagebox.showerror("Training", f"Failed to open folder: {exc}")
+
+    def _handle_open_latest_service_summary(self) -> None:
+        state = load_service_state()
+        summary_path = (
+            Path(str(state.get("last_summary_path"))) if state.get("last_summary_path") else None
+        )
+        if not summary_path or not summary_path.exists():
+            messagebox.showinfo("Training", "No service summary found")
+            return
+        self._latest_training_summary_path = summary_path
+        try:
+            if hasattr(os, "startfile"):
+                os.startfile(str(summary_path))  # type: ignore[attr-defined]
+            else:
+                subprocess.Popen(["xdg-open", str(summary_path)], env=_utf8_env())
+        except Exception as exc:  # pragma: no cover - UI feedback
+            messagebox.showerror("Training", f"Failed to open summary: {exc}")
 
     def _parse_retention_settings(self) -> dict[str, int]:
         def _parse_int(var: tk.StringVar, default: int) -> int:
@@ -644,9 +781,28 @@ class App(tk.Tk):
     def _enqueue_ui(self, func) -> None:
         self.after(0, func)
 
+    def _refresh_service_state(self) -> None:
+        state = load_service_state()
+        running = _service_running(state)
+        status_text = "Service: running" if running else "Service: stopped"
+        if state.get("stop_reason"):
+            status_text += f" ({state.get('stop_reason')})"
+        self.service_status_var.set(status_text)
+
+        run_dir_text = state.get("last_run_dir") or "(none)"
+        summary_text = state.get("last_summary_path") or "(none)"
+        self.service_run_dir_var.set(f"Last run: {run_dir_text}")
+        self.service_summary_var.set(f"Last summary: {summary_text}")
+
+        if state.get("last_run_dir"):
+            self._latest_training_run_dir = Path(str(state.get("last_run_dir")))
+        if state.get("last_summary_path"):
+            self._latest_training_summary_path = Path(str(state.get("last_summary_path")))
+
     def _refresh(self) -> None:
         self._load_dashboard()
         self._refresh_wakeup_dashboard()
+        self._refresh_service_state()
 
     def _load_dashboard(self) -> None:
         if not compute_health or not compute_event_rows:
@@ -1132,6 +1288,64 @@ class App(tk.Tk):
         )
         tk.Label(retention_frame, text="(Nightly preset会强制携带保留参数)", fg="gray").pack(
             side=tk.LEFT, padx=6
+        )
+
+        service_frame = tk.LabelFrame(training_frame, text="24/7 Service", padx=4, pady=4)
+        service_frame.pack(fill=tk.X, expand=False, padx=2, pady=4)
+
+        service_controls = tk.Frame(service_frame)
+        service_controls.pack(fill=tk.X, pady=2)
+        tk.Button(service_controls, text="Start 24/7 Service", command=self._handle_start_service).pack(
+            side=tk.LEFT, padx=4
+        )
+        tk.Button(service_controls, text="Stop Service", command=self._handle_stop_service).pack(
+            side=tk.LEFT, padx=4
+        )
+        tk.Button(
+            service_controls,
+            text="Show Rolling Summary",
+            command=self._handle_show_rolling_summary,
+        ).pack(side=tk.LEFT, padx=4)
+        tk.Button(
+            service_controls,
+            text="Open Latest Run Folder",
+            command=self._handle_open_latest_service_run,
+        ).pack(side=tk.LEFT, padx=4)
+        tk.Button(
+            service_controls,
+            text="Open Latest Summary",
+            command=self._handle_open_latest_service_summary,
+        ).pack(side=tk.LEFT, padx=4)
+
+        service_limits = tk.Frame(service_frame)
+        service_limits.pack(fill=tk.X, pady=2)
+        tk.Label(service_limits, text="episode-seconds").pack(side=tk.LEFT)
+        tk.Entry(service_limits, textvariable=self.service_episode_seconds_var, width=6).pack(
+            side=tk.LEFT, padx=3
+        )
+        tk.Label(service_limits, text="max-episodes-per-hour").pack(side=tk.LEFT)
+        tk.Entry(service_limits, textvariable=self.service_max_hour_var, width=6).pack(
+            side=tk.LEFT, padx=3
+        )
+        tk.Label(service_limits, text="max-episodes-per-day").pack(side=tk.LEFT)
+        tk.Entry(service_limits, textvariable=self.service_max_day_var, width=6).pack(
+            side=tk.LEFT, padx=3
+        )
+        tk.Label(service_limits, text="cooldown-seconds-between-episodes").pack(side=tk.LEFT)
+        tk.Entry(service_limits, textvariable=self.service_cooldown_var, width=6).pack(
+            side=tk.LEFT, padx=3
+        )
+
+        service_status_frame = tk.Frame(service_frame)
+        service_status_frame.pack(fill=tk.X, pady=2)
+        tk.Label(service_status_frame, textvariable=self.service_status_var, anchor="w").pack(
+            anchor="w"
+        )
+        tk.Label(service_status_frame, textvariable=self.service_run_dir_var, anchor="w").pack(
+            anchor="w"
+        )
+        tk.Label(service_status_frame, textvariable=self.service_summary_var, anchor="w").pack(
+            anchor="w"
         )
 
         tk.Label(training_frame, text="Training Output:").pack(anchor="w")
