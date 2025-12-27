@@ -11,6 +11,7 @@ if str(Path(__file__).resolve().parent.parent) not in __import__("sys").path:
     __import__("sys").path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from tools.policy_registry import get_policy
+from tools.promotion_gate_v2 import GateConfig, evaluate_safety
 from tools.sim_autopilot import run_step
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -101,6 +102,198 @@ def _score_run(metrics: Dict[str, float | int]) -> float:
         - orders * 0.1
         + final_equity / 100.0
     )
+
+
+BASELINE_CANDIDATES = [
+    {
+        "candidate_id": "baseline_do_nothing",
+        "family": "baseline",
+        "name": "DoNothing",
+        "params": {},
+        "risk_profile_tags": ["baseline"],
+        "guard_defaults": {},
+    },
+    {
+        "candidate_id": "baseline_buy_hold",
+        "family": "baseline",
+        "name": "BuyHold",
+        "params": {},
+        "risk_profile_tags": ["baseline"],
+        "guard_defaults": {},
+    },
+]
+
+
+def _mean(values: Sequence[float]) -> float:
+    return sum(values) / len(values) if values else 0.0
+
+
+def _stdev(values: Sequence[float]) -> float:
+    if len(values) < 2:
+        return 0.0
+    mean = _mean(values)
+    var = sum((v - mean) ** 2 for v in values) / (len(values) - 1)
+    return var**0.5
+
+
+def _signal_momentum(history: Sequence[float], params: Dict[str, object]) -> int:
+    lookback = int(params.get("lookback") or 1)
+    threshold_pct = float(params.get("threshold_pct") or 0.0)
+    if len(history) <= lookback:
+        return 0
+    past = history[-lookback - 1]
+    latest = history[-1]
+    if past <= 0:
+        return 0
+    change_pct = (latest - past) / past * 100.0
+    return 1 if change_pct >= threshold_pct else 0
+
+
+def _signal_ma_crossover(history: Sequence[float], params: Dict[str, object]) -> int:
+    fast = int(params.get("fast") or 1)
+    slow = int(params.get("slow") or fast + 1)
+    if len(history) < slow:
+        return 0
+    fast_avg = _mean(history[-fast:])
+    slow_avg = _mean(history[-slow:])
+    return 1 if fast_avg > slow_avg else 0
+
+
+def _signal_mean_reversion(history: Sequence[float], params: Dict[str, object]) -> int:
+    window = int(params.get("window") or 1)
+    zscore = float(params.get("zscore") or 0.0)
+    if len(history) < window:
+        return 0
+    window_values = history[-window:]
+    mean = _mean(window_values)
+    std = _stdev(window_values)
+    if std <= 0:
+        return 0
+    current = history[-1]
+    z = (current - mean) / std
+    return 1 if z <= -abs(zscore) else 0
+
+
+def _signal_breakout(history: Sequence[float], params: Dict[str, object]) -> int:
+    window = int(params.get("window") or 1)
+    if len(history) < window:
+        return 0
+    window_values = history[-window:]
+    current = history[-1]
+    if current >= max(window_values):
+        return 1
+    if current <= min(window_values):
+        return 0
+    return 0
+
+
+def _strategy_signal(history: Sequence[float], candidate: Dict[str, object]) -> int:
+    family = str(candidate.get("family") or "")
+    params = candidate.get("params") if isinstance(candidate.get("params"), dict) else {}
+    if family == "momentum":
+        return _signal_momentum(history, params)
+    if family == "ma_crossover":
+        return _signal_ma_crossover(history, params)
+    if family == "mean_reversion":
+        return _signal_mean_reversion(history, params)
+    if family == "breakout":
+        return _signal_breakout(history, params)
+    if candidate.get("candidate_id") == "baseline_buy_hold":
+        return 1
+    return 0
+
+
+def _score_candidate(metrics: Dict[str, object]) -> float:
+    equity = float(metrics.get("final_equity_usd") or 0.0)
+    drawdown = float(metrics.get("max_drawdown_pct") or 0.0)
+    turnover = int(metrics.get("turnover") or 0)
+    rejects = int(metrics.get("num_rejects") or 0)
+    return (equity - 10_000.0) / 100.0 - drawdown * 25.0 - turnover * 0.5 - rejects * 2.0
+
+
+def _simulate_candidate(
+    prices: Sequence[float],
+    candidate: Dict[str, object],
+    max_steps: int,
+) -> Dict[str, object]:
+    equity = 10_000.0
+    peak = equity
+    position = 0
+    turnover = 0
+    rejects = 0
+    history: List[float] = []
+    guard = candidate.get("guard_defaults") if isinstance(candidate.get("guard_defaults"), dict) else {}
+    max_drawdown = float(guard.get("max_drawdown_pct") or 0.0)
+    max_turnover = int(guard.get("max_turnover") or 0)
+
+    steps = min(max_steps, len(prices))
+    for idx in range(1, steps):
+        history.append(prices[idx - 1])
+        desired = _strategy_signal(history, candidate)
+        drawdown_pct = (peak - equity) / peak * 100.0 if peak else 0.0
+        blocked = False
+        if max_drawdown and drawdown_pct > max_drawdown:
+            blocked = True
+        if max_turnover and turnover >= max_turnover:
+            blocked = True
+        if desired != position:
+            if blocked:
+                rejects += 1
+            else:
+                position = desired
+                turnover += 1
+        pnl = position * (prices[idx] - prices[idx - 1])
+        equity += pnl
+        peak = max(peak, equity)
+
+    drawdown_pct = (peak - equity) / peak * 100.0 if peak else 0.0
+    reject_rate = rejects / max(1, steps - 1)
+    metrics = {
+        "final_equity_usd": round(equity, 2),
+        "pnl_proxy": round(equity - 10_000.0, 2),
+        "max_drawdown_pct": round(drawdown_pct, 4),
+        "turnover": turnover,
+        "num_rejects": rejects,
+        "reject_rate": round(reject_rate, 4),
+        "steps": steps,
+    }
+    metrics["score"] = round(_score_candidate(metrics), 4)
+    return metrics
+
+
+def run_strategy_tournament(
+    quotes: Sequence[Dict[str, object]],
+    candidates: Sequence[Dict[str, object]],
+    max_steps: int,
+    seed: int,
+    gate_config: GateConfig | None = None,
+) -> Dict[str, object]:
+    prices = [float(row.get("price") or 0.0) for row in quotes if row.get("price") is not None]
+    gate_config = gate_config or GateConfig()
+    entries: List[Dict[str, object]] = []
+    for candidate in list(BASELINE_CANDIDATES) + list(candidates):
+        metrics = _simulate_candidate(prices, candidate, max_steps)
+        safety_pass, safety_failures = evaluate_safety(metrics, gate_config)
+        entries.append(
+            {
+                "candidate_id": candidate.get("candidate_id"),
+                "family": candidate.get("family"),
+                "params": candidate.get("params", {}),
+                "risk_profile_tags": candidate.get("risk_profile_tags", []),
+                "guard_defaults": candidate.get("guard_defaults", {}),
+                "metrics": metrics,
+                "score": metrics.get("score"),
+                "safety_pass": safety_pass,
+                "safety_failures": safety_failures,
+                "is_baseline": bool(candidate.get("family") == "baseline"),
+            }
+        )
+    return {
+        "schema_version": 1,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "seed": seed,
+        "entries": entries,
+    }
 
 
 def _variant_config(name: str) -> Dict[str, object]:

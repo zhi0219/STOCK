@@ -23,14 +23,18 @@ if str(Path(__file__).resolve().parent.parent) not in sys.path:
 
 from tools.policy_registry import get_policy
 from tools.policy_registry import promote_policy as _promote_policy
+from tools.promotion_gate_v2 import GateConfig, evaluate_promotion_gate
 from tools.sim_autopilot import _kill_switch_enabled, _kill_switch_path, run_step
 from tools.sim_tournament import (
+    BASELINE_CANDIDATES,
     RUNS_DIR as TOURNAMENT_RUNS,
     _load_quotes,
     _render_report,
     _run_single,
     _score_run,
+    run_strategy_tournament,
 )
+from tools.strategy_pool import select_candidates, write_strategy_pool_manifest
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_INPUT = ROOT / "Data" / "quotes.csv"
@@ -535,25 +539,35 @@ def _maybe_generate_candidate(events_path: Path | None = None) -> Tuple[str | No
     return marker, events
 
 
-def _promotion_decision(candidate_version: str | None, auto_promote: bool, evidence_path: Path | None, gate_summary: Dict[str, object]) -> None:
-    decision = "not_applicable"
-    if candidate_version:
-        decision = "not_recommended"
-        if auto_promote and gate_summary.get("pass", False):
-            _promote_policy(candidate_version, evidence=str(evidence_path) if evidence_path else "")
-            decision = "promoted"
-            _write_event(
-                "POLICY_PROMOTED",
-                "Policy promoted via auto gate",
-                candidate_version=candidate_version,
-                evidence=str(evidence_path) if evidence_path else None,
-            )
+def _promotion_decision(
+    decision_payload: Dict[str, object],
+    candidate_version: str | None,
+    auto_promote: bool,
+    evidence_path: Path | None,
+) -> None:
+    auto_eligible = bool(decision_payload.get("auto_promote_eligible"))
+    decision = str(decision_payload.get("decision") or "REJECT")
+    promoted = False
+    if candidate_version and auto_promote and auto_eligible and decision == "APPROVE":
+        _promote_policy(candidate_version, evidence=str(evidence_path) if evidence_path else "")
+        promoted = True
+        _write_event(
+            "POLICY_PROMOTED",
+            "Policy promoted via auto gate",
+            candidate_version=candidate_version,
+            evidence=str(evidence_path) if evidence_path else None,
+        )
     _write_event(
         "PROMOTION_DECISION",
         "Promotion gate evaluated",
-        candidate_version=candidate_version,
+        candidate_id=decision_payload.get("candidate_id"),
         decision=decision,
-        gate_metrics=gate_summary,
+        promoted=promoted,
+        reasons=decision_payload.get("reasons"),
+        required_next_steps=decision_payload.get("required_next_steps"),
+        evidence_run_ids=decision_payload.get("evidence_run_ids"),
+        auto_promote_enabled=auto_promote,
+        auto_promote_eligible=auto_eligible,
     )
 
 
@@ -978,6 +992,63 @@ def main(argv: List[str] | None = None) -> int:
     }
     _atomic_write_json(run_dir / "holdings.json", holdings_payload)
 
+    strategy_pool_path = RUNS_ROOT / "strategy_pool.json"
+    strategy_pool = write_strategy_pool_manifest(strategy_pool_path)
+    selected_candidates = select_candidates(strategy_pool, count=6, seed=seed)
+    candidates_payload = {
+        "schema_version": 1,
+        "generated_at": _now().isoformat(),
+        "run_id": run_id,
+        "seed": seed,
+        "pool_manifest": str(strategy_pool_path),
+        "baselines": BASELINE_CANDIDATES,
+        "candidates": selected_candidates,
+    }
+    _atomic_write_json(run_dir / "candidates.json", candidates_payload)
+
+    gate_config = GateConfig()
+    tournament_payload = run_strategy_tournament(
+        quotes,
+        selected_candidates,
+        max_steps=min(200, args.max_steps),
+        seed=seed,
+        gate_config=gate_config,
+    )
+    _atomic_write_json(run_dir / "tournament.json", tournament_payload)
+
+    entries = tournament_payload.get("entries", [])
+    entries = entries if isinstance(entries, list) else []
+
+    def _flatten(entry: Dict[str, object]) -> Dict[str, object]:
+        metrics = entry.get("metrics") if isinstance(entry.get("metrics"), dict) else {}
+        flat = {
+            "candidate_id": entry.get("candidate_id"),
+            "score": entry.get("score"),
+            "safety_pass": entry.get("safety_pass"),
+        }
+        flat.update(metrics)
+        return flat
+
+    baseline_entries = [_flatten(entry) for entry in entries if entry.get("is_baseline")]
+    candidate_entries = [_flatten(entry) for entry in entries if not entry.get("is_baseline")]
+    best_candidate = max(candidate_entries, key=lambda item: item.get("score", -1e9), default=None)
+    if best_candidate and not best_candidate.get("safety_pass"):
+        best_candidate = None
+
+    recommendation = {
+        "schema_version": 1,
+        "generated_at": _now().isoformat(),
+        "run_id": run_id,
+        "candidate_id": best_candidate.get("candidate_id") if best_candidate else None,
+        "recommendation": "APPROVE" if best_candidate else "REJECT",
+        "reasons": ["top_scoring_candidate"] if best_candidate else ["no_safe_candidate_available"],
+        "metrics": best_candidate or {},
+    }
+    _atomic_write_json(run_dir / "promotion_recommendation.json", recommendation)
+
+    decision_payload = evaluate_promotion_gate(best_candidate, baseline_entries, run_id, gate_config)
+    _atomic_write_json(run_dir / "promotion_decision.json", decision_payload)
+
     runs, report_md = _tournament_report(quotes, policy_version, max_steps=min(200, args.max_steps))
     worst_run = min(runs, key=lambda r: r.get("score", 0)) if runs else {}
     _write_event(
@@ -992,12 +1063,7 @@ def main(argv: List[str] | None = None) -> int:
         TOURNAMENT_RUNS / worst_run.get("run_id", "") / "events.jsonl" if worst_run else None
     )
 
-    gate_summary = {
-        "max_drawdown": worst_run.get("max_drawdown_pct"),
-        "turnover": worst_run.get("num_orders"),
-        "pass": bool(worst_run and worst_run.get("max_drawdown_pct", 0) < 5.0),
-    }
-    _promotion_decision(candidate_version, bool(args.auto_promote), report_md, gate_summary)
+    _promotion_decision(decision_payload, candidate_version, bool(args.auto_promote), report_md)
 
     end_retention = _retention_sweep(
         runs_root,
