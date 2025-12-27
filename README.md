@@ -27,6 +27,12 @@ PR11 gate（PowerShell 复制即用）：
 .\.venv\Scripts\python.exe .\tools\progress_judge.py --runs-root .\Logs\train_runs
 ```
 
+PR17 gate（PowerShell 复制即用）：
+
+```
+.\.venv\Scripts\python.exe .\tools\verify_pr17_gate.py
+```
+
 ## PowerShell 状态一眼读懂
 
 - 输出中包含 `*_SUMMARY` / `*_HEADER` 这类 marker 行，直接看这些行即可判断 PASS / DEGRADED / FAIL。
@@ -204,6 +210,11 @@ cd $HOME\Desktop\STOCK
 - 产物位置：最新一条训练通常在 `Logs\\train_runs\\<日期>\\<run_id>\\`，包含 `summary.md`、`equity_curve.csv`、`orders_sim.jsonl` 等产物（UI 会用 holdings 预览和 equity 曲线渲染）。
 
 - 一键停机：创建 `config.yaml` 的 `risk_guards.kill_switch_path` 指向的文件（默认 `Data\\KILL_SWITCH`）即可停止训练/服务进程；删除后可恢复运行。
+
+## Progress UI contract
+
+- 所有 tabs 在小窗口也必须可用；垂直滚动是强制契约。
+- 当内容高度小于窗口时，滚动应保持惰性；超出时必须支持滚轮与滚动条拖拽。
 
 ## PR12 Progress Panel: interpreting statuses + Truthful XP
 

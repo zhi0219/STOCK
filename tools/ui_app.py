@@ -49,6 +49,7 @@ if str(ROOT) not in sys.path:
 
 from tools.git_baseline_probe import probe_baseline
 from tools.ui_parsers import load_policy_history, load_progress_judge_latest
+from tools.ui_scroll import VerticalScrolledFrame
 
 try:
     from tools import explain_now
@@ -426,28 +427,34 @@ class App(tk.Tk):
         self.service_max_hour_var = tk.StringVar(value="12")
         self.service_max_day_var = tk.StringVar(value="200")
         self.service_cooldown_var = tk.StringVar(value="10")
+        self._scroll_frames: list[VerticalScrolledFrame] = []
         self._build_ui()
         self._start_auto_refresh()
+
+    def _create_scrollable_tab(self, notebook: ttk.Notebook, title: str) -> tuple[ttk.Frame, tk.Frame]:
+        outer = ttk.Frame(notebook)
+        content: tk.Frame = outer
+        try:
+            scroller = VerticalScrolledFrame(outer)
+            scroller.pack(fill=tk.BOTH, expand=True)
+            content = scroller.interior
+            self._scroll_frames.append(scroller)
+        except Exception:
+            content = outer
+        notebook.add(outer, text=title)
+        return outer, content
 
     def _build_ui(self) -> None:
         notebook = ttk.Notebook(self)
         notebook.pack(fill=tk.BOTH, expand=True)
 
-        self.run_tab = tk.Frame(notebook)
-        self.health_tab = tk.Frame(notebook)
-        self.events_tab = tk.Frame(notebook)
-        self.progress_tab = tk.Frame(notebook)
-        self.summary_tab = tk.Frame(notebook)
-        self.qa_tab = tk.Frame(notebook)
-        self.verify_tab = tk.Frame(notebook)
-
-        notebook.add(self.run_tab, text="Run")
-        notebook.add(self.health_tab, text="Dashboard")
-        notebook.add(self.events_tab, text="Events")
-        notebook.add(self.progress_tab, text="Progress (SIM-only)")
-        notebook.add(self.summary_tab, text="摘要")
-        notebook.add(self.qa_tab, text="AI Q&A")
-        notebook.add(self.verify_tab, text="Verify")
+        _, self.run_tab = self._create_scrollable_tab(notebook, "Run")
+        _, self.health_tab = self._create_scrollable_tab(notebook, "Dashboard")
+        _, self.events_tab = self._create_scrollable_tab(notebook, "Events")
+        _, self.progress_tab = self._create_scrollable_tab(notebook, "Progress (SIM-only)")
+        _, self.summary_tab = self._create_scrollable_tab(notebook, "摘要")
+        _, self.qa_tab = self._create_scrollable_tab(notebook, "AI Q&A")
+        _, self.verify_tab = self._create_scrollable_tab(notebook, "Verify")
 
         self._build_run_tab()
         self._build_health_tab()
