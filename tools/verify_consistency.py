@@ -451,6 +451,7 @@ def _py_compile_targets() -> List[Path]:
         "verify_pr12_gate.py",
         "verify_pr14_gate.py",
         "verify_pr16_gate.py",
+        "verify_pr19_gate.py",
         "verify_ui_time_math.py",
         "git_baseline_probe.py",
         "ui_parsers.py",
@@ -508,6 +509,7 @@ def _run_quick_verifiers(missing_deps: List[str], env: dict[str, str | bool]) ->
         TOOLS_DIR / "verify_progress_index.py",
         TOOLS_DIR / "verify_ui_progress_panel.py",
         TOOLS_DIR / "verify_pr16_gate.py",
+        TOOLS_DIR / "verify_pr19_gate.py",
     ]
     results: List[CheckResult] = []
     for script in quick:

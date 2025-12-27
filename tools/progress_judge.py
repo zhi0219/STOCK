@@ -256,10 +256,12 @@ def main(argv: list[str] | None = None) -> int:
                 if end_val and (end_ts is None or str(end_val) > str(end_ts)):
                     end_ts = end_val
 
+            created_utc = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
             _write_run_judge(
                 run_dir,
                 {
                     "schema_version": "1.0",
+                    "created_utc": created_utc,
                     "run_id": record.get("run_id"),
                     "policy_version": record.get("policy_version"),
                     "net_change": record.get("net_change"),
@@ -271,7 +273,7 @@ def main(argv: list[str] | None = None) -> int:
                     "summary_path": record.get("summary_path"),
                     "summary_json_path": record.get("summary_json_path"),
                     "equity_path": record.get("equity_path"),
-                    "generated_ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                    "generated_ts": created_utc,
                 },
             )
     except Exception as exc:  # pragma: no cover - defensive fail closed
@@ -313,11 +315,15 @@ def main(argv: list[str] | None = None) -> int:
     judge_set_id = _compute_judge_set_id(args.seed, [str(rec.get("run_id")) for rec in used_records])
     recent_scores = numeric_scores[:5]
     trend_values = list(reversed(recent_scores))
+    latest_run_id = used_records[0].get("run_id") if used_records else None
+    created_utc = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     latest_payload = {
         "schema_version": "1.0",
+        "created_utc": created_utc,
         "judge_set_id": judge_set_id,
-        "generated_ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "generated_ts": created_utc,
         "runs_root": str(args.runs_root),
+        "run_id": latest_run_id,
         "policy_version": policy_version,
         "time_window": {"start": start_ts, "end": end_ts},
         "baseline": {"do_nothing": 0.0, "buy_hold": None, "buy_hold_available": False},

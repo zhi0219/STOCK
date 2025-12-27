@@ -42,6 +42,32 @@ UI Proof（PR18 gate, PowerShell 复制即用）：
 - `PR18_GATE_SUMMARY` 为 PASS 表示 UI smoke + scroll 检查完成。
 - 若无显示环境（headless）或未能提供 UI display，将返回 `degraded=1` 且标注 `ui_display_unavailable`。
 
+## PR19 — SIM 训练产物持续生成（候选/锦标赛/晋升/法官）
+
+PR19 让 SIM-only 训练守护循环持续产出候选、锦标赛、晋升决策与进度法官（Truthful Progress）工件，并提供稳定的 `_latest` 路径供 UI 直接读取；所有决策仍保持只读/可审计/可复现。
+
+PR19 gate（PowerShell 复制即用）：
+
+```
+.\.venv\Scripts\python.exe .\tools\verify_pr19_gate.py
+```
+
+Fallback：
+
+```
+python tools/verify_pr19_gate.py
+```
+
+产物位置（稳定指针）：
+
+- `Logs\\train_runs\\_latest\\progress_judge_latest.json`
+- `Logs\\train_runs\\_latest\\policy_history_latest.json`
+- `Logs\\train_runs\\_latest\\promotion_decision_latest.json`
+- `Logs\\train_runs\\_latest\\tournament_latest.json`
+- `Logs\\train_runs\\_latest\\candidates_latest.json`
+
+Rollback（只读安全）：回退到合并前提交并重启服务；如需清理最新指针，仅删除 `Logs\\train_runs\\_latest\\` 下文件即可（不会触及历史训练产物）。
+
 ## PowerShell 状态一眼读懂
 
 - 输出中包含 `*_SUMMARY` / `*_HEADER` 这类 marker 行，直接看这些行即可判断 PASS / DEGRADED / FAIL。

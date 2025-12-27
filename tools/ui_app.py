@@ -38,7 +38,12 @@ SERVICE_KILL_SWITCH = ROOT / "Logs" / "train_service" / "KILL_SWITCH"
 SERVICE_ROLLING_SUMMARY = ROOT / "Logs" / "train_service" / "rolling_summary.md"
 PROGRESS_INDEX_PATH = ROOT / "Logs" / "train_runs" / "progress_index.json"
 PROGRESS_INDEX_SCRIPT = ROOT / "tools" / "progress_index.py"
-PROGRESS_JUDGE_LATEST_PATH = ROOT / "Logs" / "train_runs" / "progress_judge" / "latest.json"
+LATEST_DIR = ROOT / "Logs" / "train_runs" / "_latest"
+PROGRESS_JUDGE_LATEST_PATH = LATEST_DIR / "progress_judge_latest.json"
+LEGACY_PROGRESS_JUDGE_LATEST_PATH = ROOT / "Logs" / "train_runs" / "progress_judge" / "latest.json"
+LATEST_POLICY_HISTORY_PATH = LATEST_DIR / "policy_history_latest.json"
+LATEST_PROMOTION_DECISION_PATH = LATEST_DIR / "promotion_decision_latest.json"
+LATEST_TOURNAMENT_PATH = LATEST_DIR / "tournament_latest.json"
 UI_SMOKE_LATEST_PATH = ROOT / "Logs" / "ui_smoke_latest.json"
 POLICY_REGISTRY_PATH = ROOT / "Logs" / "policy_registry.json"
 BASELINE_GUIDE_SCRIPT = ROOT / "tools" / "baseline_fix_guide.py"
@@ -49,7 +54,12 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from tools.git_baseline_probe import probe_baseline
-from tools.ui_parsers import load_policy_history, load_progress_judge_latest
+from tools.ui_parsers import (
+    load_engine_status,
+    load_policy_history,
+    load_policy_history_latest,
+    load_progress_judge_latest,
+)
 from tools.ui_scroll import VerticalScrolledFrame
 
 try:
@@ -398,11 +408,15 @@ class App(tk.Tk):
         self.progress_growth_gates_var = tk.StringVar(value="Gates triggered: -")
         self.progress_growth_service_var = tk.StringVar(value="Service: -")
         self.progress_growth_kill_var = tk.StringVar(value="Kill switch: -")
+        self.engine_status_tournament_var = tk.StringVar(value="Last tournament updated: -")
+        self.engine_status_promotion_var = tk.StringVar(value="Last promotion decision: -")
+        self.engine_status_judge_var = tk.StringVar(value="Last judge updated: -")
         self.skill_tree_status_var = tk.StringVar(value="Skill Tree: not loaded")
         self.skill_tree_detail_var = tk.StringVar(value="Pool summary: -")
         self.skill_tree_candidates_var = tk.StringVar(value="Candidates: -")
         self.upgrade_log_status_var = tk.StringVar(value="Upgrade Log: not loaded")
         self.upgrade_log_entries: list[dict[str, object]] = []
+        self.policy_history_status_var = tk.StringVar(value="Policy History: latest not loaded")
         self.progress_curve_mode_var = tk.StringVar(value="Latest run curve")
         self.progress_curve_runs_var = tk.IntVar(value=5)
         self.progress_equity_stats_var = tk.StringVar(value="Start: - | End: - | Net: - | Max DD: -")
@@ -1233,6 +1247,7 @@ class App(tk.Tk):
         last_max_dd = "unknown"
         last_rejects = "unknown"
         last_gates = "unknown"
+        last_missing_reason = ""
         seven_day_net = 0.0
         seven_day_count = 0
         for idx, entry in enumerate(self.progress_entries):
@@ -1259,6 +1274,9 @@ class App(tk.Tk):
                 net = summary.get("net_change")
                 if isinstance(net, (int, float)):
                     last_net_change = f"{net:+.2f}"
+                else:
+                    last_missing_reason = entry.get("missing_reason") or "net_change_missing"
+                    last_net_change = f"missing ({last_missing_reason})"
                 max_dd = summary.get("max_drawdown")
                 if isinstance(max_dd, (int, float)):
                     last_max_dd = f"{max_dd:.2f}%"
@@ -1278,7 +1296,8 @@ class App(tk.Tk):
         if seven_day_count:
             self.progress_growth_seven_day_var.set(f"7-day net: {seven_day_net:+.2f}")
         else:
-            self.progress_growth_seven_day_var.set("7-day net: insufficient history")
+            reason = last_missing_reason or "insufficient_history"
+            self.progress_growth_seven_day_var.set(f"7-day net: missing ({reason})")
         self.progress_growth_max_dd_var.set(f"Max drawdown (last): {last_max_dd}")
         self.progress_growth_rejects_var.set(f"Rejects: {last_rejects}")
         self.progress_growth_gates_var.set(f"Gates triggered: {last_gates}")
@@ -1402,6 +1421,11 @@ class App(tk.Tk):
                 if proc.returncode == 0:
                     self.progress_status_var.set("Progress index refreshed from disk")
                     self._load_progress_index()
+                    self._refresh_truthful_progress()
+                    self._refresh_engine_status()
+                    self._refresh_policy_history()
+                    self._refresh_skill_tree_panel()
+                    self._refresh_upgrade_log()
                 else:
                     self.progress_status_var.set("Progress index generation failed")
                     messagebox.showerror("Progress", output or "progress_index.py failed")
@@ -1414,6 +1438,11 @@ class App(tk.Tk):
     def _handle_refresh_progress_view(self) -> None:
         self.progress_status_var.set("Refreshing progress index view...")
         self._load_progress_index()
+        self._refresh_truthful_progress()
+        self._refresh_engine_status()
+        self._refresh_policy_history()
+        self._refresh_skill_tree_panel()
+        self._refresh_upgrade_log()
 
     def _selected_progress_entry(self) -> dict[str, object] | None:
         if not hasattr(self, "progress_tree"):
@@ -1650,7 +1679,9 @@ class App(tk.Tk):
                 ),
             )
         self.upgrade_log_status_var.set(
-            f"Upgrade Log: {len(entries)} decision(s) loaded" if entries else "Upgrade Log: no decisions found"
+            f"Upgrade Log: {len(entries)} decision(s) loaded"
+            if entries
+            else "Upgrade Log: none yet (no promotion decisions)"
         )
 
     def _open_strategy_pool_folder(self) -> None:
@@ -1938,6 +1969,12 @@ class App(tk.Tk):
         tk.Label(growth_frame, textvariable=self.progress_growth_service_var, font=hud_font).grid(row=3, column=1, sticky="w", padx=6, pady=2)
         tk.Label(growth_frame, textvariable=self.progress_growth_kill_var, font=hud_font).grid(row=4, column=0, sticky="w", padx=6, pady=2)
 
+        engine_frame = tk.LabelFrame(self.progress_tab, text="Engine Status", padx=6, pady=6)
+        engine_frame.pack(fill=tk.X, padx=6, pady=4)
+        tk.Label(engine_frame, textvariable=self.engine_status_tournament_var, anchor="w").pack(anchor="w")
+        tk.Label(engine_frame, textvariable=self.engine_status_promotion_var, anchor="w").pack(anchor="w")
+        tk.Label(engine_frame, textvariable=self.engine_status_judge_var, anchor="w").pack(anchor="w")
+
         status_label = tk.Label(self.progress_tab, textvariable=self.progress_status_var, anchor="w")
         status_label.pack(fill=tk.X, padx=6)
 
@@ -1958,6 +1995,7 @@ class App(tk.Tk):
 
         policy_frame = tk.LabelFrame(self.progress_tab, text="Policy History (SIM-only)", padx=6, pady=6)
         policy_frame.pack(fill=tk.BOTH, expand=False, padx=6, pady=4)
+        tk.Label(policy_frame, textvariable=self.policy_history_status_var, anchor="w").pack(anchor="w")
         policy_columns = ("ts", "policy_version", "decision", "reason")
         self.policy_tree = ttk.Treeview(policy_frame, columns=policy_columns, show="headings", height=5)
         for name, width in [
@@ -2113,6 +2151,7 @@ class App(tk.Tk):
         self._refresh_proof_lamps()
         self._load_progress_index()
         self._refresh_truthful_progress()
+        self._refresh_engine_status()
         self._refresh_policy_history()
         self._refresh_skill_tree_panel()
         self._refresh_upgrade_log()
@@ -2123,7 +2162,9 @@ class App(tk.Tk):
         return "N/A"
 
     def _refresh_truthful_progress(self) -> None:
-        payload = load_progress_judge_latest(PROGRESS_JUDGE_LATEST_PATH)
+        payload = load_progress_judge_latest(
+            PROGRESS_JUDGE_LATEST_PATH, fallback=LEGACY_PROGRESS_JUDGE_LATEST_PATH
+        )
         recommendation = payload.get("recommendation", "INSUFFICIENT_DATA")
         scores = payload.get("scores") if isinstance(payload.get("scores"), dict) else {}
         drivers = payload.get("drivers") if isinstance(payload.get("drivers"), list) else []
@@ -2154,10 +2195,51 @@ class App(tk.Tk):
         else:
             self.progress_truth_evidence_var.set("Evidence runs: none")
 
+    def _refresh_engine_status(self) -> None:
+        judge_path = PROGRESS_JUDGE_LATEST_PATH if PROGRESS_JUDGE_LATEST_PATH.exists() else LEGACY_PROGRESS_JUDGE_LATEST_PATH
+        status = load_engine_status(
+            LATEST_TOURNAMENT_PATH,
+            LATEST_PROMOTION_DECISION_PATH,
+            judge_path,
+        )
+
+        def _format_status(label: str, payload: dict[str, object]) -> str:
+            created = payload.get("created_utc") or payload.get("generated_ts") or "-"
+            reason = payload.get("missing_reason")
+            if payload.get("status") == "missing":
+                return f"{label}: missing ({reason})"
+            if reason:
+                return f"{label}: {created} (missing fields: {reason})"
+            return f"{label}: {created}"
+
+        self.engine_status_tournament_var.set(
+            _format_status("Last tournament updated", status.get("tournament", {}))
+        )
+        self.engine_status_promotion_var.set(
+            _format_status("Last promotion decision", status.get("promotion", {}))
+        )
+        self.engine_status_judge_var.set(
+            _format_status("Last judge updated", status.get("judge", {}))
+        )
+
     def _refresh_policy_history(self) -> None:
         events_path = latest_events_file()
         entries = load_policy_history(POLICY_REGISTRY_PATH, events_path=events_path)
         self.policy_history_entries = entries
+        latest_payload = load_policy_history_latest(LATEST_POLICY_HISTORY_PATH)
+        last_decision = latest_payload.get("last_decision") if isinstance(latest_payload, dict) else {}
+        decision_ts = ""
+        decision_value = ""
+        if isinstance(last_decision, dict):
+            decision_ts = str(last_decision.get("ts_utc") or "")
+            decision_value = str(last_decision.get("decision") or "")
+        policy_version = latest_payload.get("policy_version") if isinstance(latest_payload, dict) else None
+        if latest_payload.get("status") == "missing":
+            self.policy_history_status_var.set("Policy History: latest artifact missing")
+        else:
+            self.policy_history_status_var.set(
+                f"Policy History: current={policy_version or 'unknown'} | last decision={decision_value or 'unknown'} @ {decision_ts or '-'}"
+            )
         if hasattr(self, "policy_tree"):
             self.policy_tree.delete(*self.policy_tree.get_children())
             for entry in entries:

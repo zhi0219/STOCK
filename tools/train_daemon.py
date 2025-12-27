@@ -21,7 +21,7 @@ import yaml
 if str(Path(__file__).resolve().parent.parent) not in sys.path:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from tools.policy_registry import get_policy
+from tools.policy_registry import get_policy, load_registry, record_history
 from tools.policy_registry import promote_policy as _promote_policy
 from tools.promotion_gate_v2 import GateConfig, evaluate_promotion_gate
 from tools.sim_autopilot import _kill_switch_enabled, _kill_switch_path, run_step
@@ -35,6 +35,8 @@ from tools.sim_tournament import (
     run_strategy_tournament,
 )
 from tools.strategy_pool import select_candidates, write_strategy_pool_manifest
+from tools.progress_index import build_progress_index, write_progress_index
+from tools import progress_judge
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_INPUT = ROOT / "Data" / "quotes.csv"
@@ -44,6 +46,12 @@ STATE_PATH = TRAIN_SERVICE_ROOT / "state.json"
 LEGACY_STATE_PATH = ROOT / "Logs" / "train_daemon_state.json"
 EVENTS_PATH = ROOT / "Logs" / "events_train.jsonl"
 ARCHIVES_ROOT = ROOT / "Archives"
+LATEST_DIR = RUNS_ROOT / "_latest"
+LATEST_PROGRESS_JUDGE = LATEST_DIR / "progress_judge_latest.json"
+LATEST_POLICY_HISTORY = LATEST_DIR / "policy_history_latest.json"
+LATEST_PROMOTION_DECISION = LATEST_DIR / "promotion_decision_latest.json"
+LATEST_TOURNAMENT = LATEST_DIR / "tournament_latest.json"
+LATEST_CANDIDATES = LATEST_DIR / "candidates_latest.json"
 EVIDENCE_CORE = [
     ROOT / "evidence_packs",
     ROOT / "qa_packets",
@@ -350,6 +358,22 @@ def _atomic_write_json(path: Path, payload: Dict[str, object]) -> None:
     tmp.replace(path)
 
 
+def _atomic_copy_json(src: Path, dest: Path) -> None:
+    if not src.exists():
+        return
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dest.with_suffix(dest.suffix + ".tmp")
+    tmp.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+    tmp.replace(dest)
+
+
+def _write_latest_payload(dest: Path, payload: Dict[str, object]) -> None:
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dest.with_suffix(dest.suffix + ".tmp")
+    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(dest)
+
+
 def _load_config() -> dict:
     cfg_path = ROOT / "config.yaml"
     if not cfg_path.exists():
@@ -569,6 +593,49 @@ def _promotion_decision(
         auto_promote_enabled=auto_promote,
         auto_promote_eligible=auto_eligible,
     )
+    record_history(
+        action=f"PROMOTION_{decision}",
+        policy_version=str(decision_payload.get("candidate_id") or candidate_version or "unknown"),
+        evidence=str(evidence_path) if evidence_path else "",
+    )
+
+
+def _refresh_progress_index(runs_root: Path) -> None:
+    payload = build_progress_index(runs_root, max_runs=50)
+    output_path = runs_root / "progress_index.json"
+    write_progress_index(payload, output_path)
+
+
+def _refresh_progress_judge(runs_root: Path, seed: int | None = None) -> int:
+    args = ["--runs-root", str(runs_root), "--max-runs", "20"]
+    if seed is not None:
+        args.extend(["--seed", str(seed)])
+    return int(progress_judge.main(args))
+
+
+def _write_policy_history_latest(
+    run_id: str,
+    policy_version: str,
+    decision_payload: Dict[str, object],
+) -> None:
+    registry = load_registry()
+    history = registry.get("history", []) if isinstance(registry.get("history"), list) else []
+    last_entry = history[-1] if history else {}
+    payload = {
+        "schema_version": 1,
+        "created_utc": _now().isoformat(),
+        "run_id": run_id,
+        "policy_version": policy_version,
+        "last_decision": {
+            "ts_utc": decision_payload.get("ts_utc"),
+            "decision": decision_payload.get("decision"),
+            "candidate_id": decision_payload.get("candidate_id"),
+            "reasons": decision_payload.get("reasons"),
+        },
+        "history_tail": history[-5:] if history else [],
+        "registry_last_entry": last_entry,
+    }
+    _write_latest_payload(LATEST_POLICY_HISTORY, payload)
 
 
 def parse_args(argv: List[str]) -> argparse.Namespace:
@@ -995,16 +1062,19 @@ def main(argv: List[str] | None = None) -> int:
     strategy_pool_path = RUNS_ROOT / "strategy_pool.json"
     strategy_pool = write_strategy_pool_manifest(strategy_pool_path)
     selected_candidates = select_candidates(strategy_pool, count=6, seed=seed)
+    created_utc = _now().isoformat()
     candidates_payload = {
         "schema_version": 1,
-        "generated_at": _now().isoformat(),
+        "created_utc": created_utc,
         "run_id": run_id,
+        "policy_version": policy_version,
         "seed": seed,
         "pool_manifest": str(strategy_pool_path),
         "baselines": BASELINE_CANDIDATES,
         "candidates": selected_candidates,
     }
     _atomic_write_json(run_dir / "candidates.json", candidates_payload)
+    _atomic_copy_json(run_dir / "candidates.json", LATEST_CANDIDATES)
 
     gate_config = GateConfig()
     tournament_payload = run_strategy_tournament(
@@ -1014,7 +1084,11 @@ def main(argv: List[str] | None = None) -> int:
         seed=seed,
         gate_config=gate_config,
     )
+    tournament_payload["created_utc"] = _now().isoformat()
+    tournament_payload["run_id"] = run_id
+    tournament_payload["policy_version"] = policy_version
     _atomic_write_json(run_dir / "tournament.json", tournament_payload)
+    _atomic_copy_json(run_dir / "tournament.json", LATEST_TOURNAMENT)
 
     entries = tournament_payload.get("entries", [])
     entries = entries if isinstance(entries, list) else []
@@ -1037,8 +1111,9 @@ def main(argv: List[str] | None = None) -> int:
 
     recommendation = {
         "schema_version": 1,
-        "generated_at": _now().isoformat(),
+        "created_utc": _now().isoformat(),
         "run_id": run_id,
+        "policy_version": policy_version,
         "candidate_id": best_candidate.get("candidate_id") if best_candidate else None,
         "recommendation": "APPROVE" if best_candidate else "REJECT",
         "reasons": ["top_scoring_candidate"] if best_candidate else ["no_safe_candidate_available"],
@@ -1047,7 +1122,15 @@ def main(argv: List[str] | None = None) -> int:
     _atomic_write_json(run_dir / "promotion_recommendation.json", recommendation)
 
     decision_payload = evaluate_promotion_gate(best_candidate, baseline_entries, run_id, gate_config)
+    decision_payload = {
+        "schema_version": 1,
+        "created_utc": _now().isoformat(),
+        "run_id": run_id,
+        "policy_version": policy_version,
+        **decision_payload,
+    }
     _atomic_write_json(run_dir / "promotion_decision.json", decision_payload)
+    _atomic_copy_json(run_dir / "promotion_decision.json", LATEST_PROMOTION_DECISION)
 
     runs, report_md = _tournament_report(quotes, policy_version, max_steps=min(200, args.max_steps))
     worst_run = min(runs, key=lambda r: r.get("score", 0)) if runs else {}
@@ -1064,6 +1147,24 @@ def main(argv: List[str] | None = None) -> int:
     )
 
     _promotion_decision(decision_payload, candidate_version, bool(args.auto_promote), report_md)
+    _write_policy_history_latest(run_id, policy_version, decision_payload)
+
+    try:
+        _refresh_progress_index(runs_root)
+    except Exception as exc:
+        degraded_flags.append("PROGRESS_INDEX_FAILED")
+        _write_event("PROGRESS_INDEX_FAILED", "Failed to refresh progress index", severity="WARN", error=str(exc))
+
+    try:
+        judge_status = _refresh_progress_judge(runs_root, seed=seed)
+        if judge_status == 0:
+            _atomic_copy_json(progress_judge.LATEST_PATH, LATEST_PROGRESS_JUDGE)
+        else:
+            degraded_flags.append("PROGRESS_JUDGE_FAILED")
+            _write_event("PROGRESS_JUDGE_FAILED", "Progress judge returned non-zero", severity="WARN")
+    except Exception as exc:
+        degraded_flags.append("PROGRESS_JUDGE_FAILED")
+        _write_event("PROGRESS_JUDGE_FAILED", "Failed to refresh progress judge", severity="WARN", error=str(exc))
 
     end_retention = _retention_sweep(
         runs_root,
