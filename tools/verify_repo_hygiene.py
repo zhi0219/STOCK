@@ -20,6 +20,8 @@ REQUIRED_RULES = [
     "logs/train_runs/",
     "Logs/progress_index.json",
     "logs/progress_index.json",
+    "Logs/baseline_guide.txt",
+    "logs/baseline_guide.txt",
     "Logs/train_service/",
     "logs/train_service/",
     "Logs/tournament_runs/",

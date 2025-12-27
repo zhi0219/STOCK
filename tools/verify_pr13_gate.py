@@ -11,6 +11,7 @@ from typing import Dict, List
 if str(Path(__file__).resolve().parent.parent) not in sys.path:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from tools.git_baseline_probe import probe_baseline
 from tools.progress_diagnose import compute_progress_diagnosis
 from tools.progress_index import build_progress_index
 from tools.progress_plot import compute_polyline
@@ -194,6 +195,12 @@ def main() -> int:
     degraded_reasons: List[str] = []
 
     print("PR13_GATE_START")
+    baseline_info = probe_baseline()
+    baseline = baseline_info.get("baseline") or "unavailable"
+    baseline_status = baseline_info.get("status") or "UNAVAILABLE"
+    baseline_details = baseline_info.get("details") or "unknown"
+    if baseline_status != "AVAILABLE":
+        degraded_reasons.append(f"baseline_unavailable_{baseline_details}")
     summary_top = "|".join(
         [
             "PR13_GATE_SUMMARY",
@@ -201,6 +208,9 @@ def main() -> int:
             "degraded=0",
             "degraded_reasons=none",
             f"using_venv={_using_venv()}",
+            f"baseline={baseline}",
+            f"baseline_status={baseline_status}",
+            f"baseline_details={baseline_details}",
             "reasons=running",
         ]
     )
@@ -234,8 +244,11 @@ def main() -> int:
         reasons.append(str(exc))
 
     degraded = 1 if degraded_reasons else 0
-    allowed_degraded = {"baseline_unavailable", "ui_display_unavailable"}
-    if any(reason not in allowed_degraded for reason in degraded_reasons):
+    allowed_degraded = {"ui_display_unavailable"}
+    if any(
+        reason not in allowed_degraded and not reason.startswith("baseline_unavailable_")
+        for reason in degraded_reasons
+    ):
         status = "FAIL"
         reasons.append("invalid_degraded_reason")
 
@@ -246,6 +259,9 @@ def main() -> int:
             f"degraded={degraded}",
             f"degraded_reasons={','.join(degraded_reasons) if degraded_reasons else 'none'}",
             f"using_venv={_using_venv()}",
+            f"baseline={baseline}",
+            f"baseline_status={baseline_status}",
+            f"baseline_details={baseline_details}",
             f"reasons={';'.join(reasons) if reasons else 'none'}",
         ]
     )

@@ -12,6 +12,10 @@ from pathlib import Path
 from typing import Callable, Iterable, List, Tuple
 
 ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from tools.git_baseline_probe import probe_baseline
 TOOLS_DIR = ROOT / "tools"
 README_PATH = ROOT / "README.md"
 LOGS_DIR = ROOT / "Logs"
@@ -65,7 +69,9 @@ class CheckResult:
         return f"{status} {self.name}"
 
 
-def _print_header(env: dict[str, str | bool], missing_deps: list[str]) -> None:
+def _print_header(
+    env: dict[str, str | bool], missing_deps: list[str], baseline_info: dict[str, str | None]
+) -> None:
     marker = "|".join(
         [
             "CONSISTENCY_HEADER",
@@ -75,6 +81,9 @@ def _print_header(env: dict[str, str | bool], missing_deps: list[str]) -> None:
             f"using_venv={int(env.get('executable_in_venv', False))}",
             f"can_write_logs={int(env.get('can_write_logs', False))}",
             f"missing_deps={_format_dep_list(missing_deps)}",
+            f"baseline_status={baseline_info.get('status') or 'UNAVAILABLE'}",
+            f"baseline={baseline_info.get('baseline') or 'unavailable'}",
+            f"baseline_details={baseline_info.get('details') or 'unknown'}",
         ]
     )
     print(marker)
@@ -623,7 +632,8 @@ def check_read_only_guard() -> List[CheckResult]:
 def main() -> int:
     missing_deps = detect_missing_deps()
     env = _detect_environment()
-    _print_header(env, missing_deps)
+    baseline_info = probe_baseline()
+    _print_header(env, missing_deps, baseline_info)
 
     p0_checks: List[Callable[[], List[CheckResult]]] = [
         check_windows_paths,
