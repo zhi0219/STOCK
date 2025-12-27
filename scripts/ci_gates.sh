@@ -14,6 +14,8 @@ mkdir -p "${artifacts_dir}"
 
 exec > >(tee -a "${log_file}") 2>&1
 
+export PYTHONPATH="${PWD}"
+
 write_summary() {
   local exit_code=${1}
   local summary_status="${status}"

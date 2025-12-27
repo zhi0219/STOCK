@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from tools.action_center_report import ACTION_DEFINITIONS, CONFIRM_TOKENS, confirm_token_is_valid
+from action_center_report import ACTION_DEFINITIONS, CONFIRM_TOKENS, confirm_token_is_valid
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -103,11 +103,19 @@ def _check_ci_artifact_listing() -> None:
         raise GateError("ci_gates.sh does not reference action_center_report.json")
 
 
+def _check_imports_resolve() -> None:
+    try:
+        import action_center_report  # noqa: F401
+    except Exception as exc:  # pragma: no cover - static gate
+        raise GateError(f"failed to import action_center_report: {exc}") from exc
+
+
 def main() -> int:
     try:
         _check_report_if_present()
         _check_confirmation_gates()
         _check_ci_artifact_listing()
+        _check_imports_resolve()
     except GateError as exc:
         print(f"PR23 gate failed: {exc}")
         return 1
