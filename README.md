@@ -68,6 +68,28 @@ python tools/verify_pr19_gate.py
 
 Rollback（只读安全）：回退到合并前提交并重启服务；如需清理最新指针，仅删除 `Logs\\train_runs\\_latest\\` 下文件即可（不会触及历史训练产物）。
 
+## PR20 — Throughput + Auto-refresh + Run-rate Diagnostics（SIM-only）
+
+PR20 提供安全微迭代节奏预设（Micro/Normal/Conservative）、训练吞吐诊断（不造假，缺失会显式提示）、Progress UI 自动刷新与 run-rate HUD（带 stale 提醒），以及 24h rolling 曲线模式（SIM-only，风险优先）。
+
+PR20 gate（PowerShell 复制即用）：
+
+```
+.\.venv\Scripts\python.exe .\tools\verify_pr20_gate.py
+```
+
+Fallback：
+
+```
+python tools/verify_pr20_gate.py
+```
+
+UI 位置：
+- Progress Tab：Throughput / Auto-refresh / Run-rate / Curve mode（最后 24h / 最近 N runs）
+- Run Tab > Training > 24/7 Service：Cadence preset + 预算（SIM-only）
+
+Rollback（只读安全）：回退到合并前提交并重启服务；如需清理 throughput 报告，仅删除 `Logs\\train_service\\throughput_diagnose_latest.txt`。
+
 ## PowerShell 状态一眼读懂
 
 - 输出中包含 `*_SUMMARY` / `*_HEADER` 这类 marker 行，直接看这些行即可判断 PASS / DEGRADED / FAIL。
