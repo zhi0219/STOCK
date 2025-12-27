@@ -43,6 +43,7 @@ evidence_packs/
 qa_packets/
 qa_answers/
 Reports/
+artifacts/
 
 # Optional: keep Data and Logs folders but ignore other runtime artifacts
 Data/*.tmp
