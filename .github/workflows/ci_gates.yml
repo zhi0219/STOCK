@@ -1,0 +1,48 @@
+name: CI Gates
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      force_fail:
+        description: "Force CI gates to fail after running"
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  gates:
+    name: CI Gates
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            python3 -m pip install -r requirements.txt
+          elif [ -f pyproject.toml ]; then
+            python3 -m pip install .
+          else
+            echo "No dependency manifest found; skipping install."
+          fi
+      - name: Run CI gates
+        env:
+          CI_FORCE_FAIL: ${{ github.event_name == 'workflow_dispatch' && inputs.force_fail && '1' || '0' }}
+        run: |
+          chmod +x ./scripts/ci_gates.sh
+          ./scripts/ci_gates.sh
+      - name: Upload evidence pack
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-gates-artifacts
+          path: artifacts
