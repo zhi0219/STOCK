@@ -68,6 +68,40 @@ def _seed_run(base: Path) -> Path:
         "2024-03-03T00:05:00+00:00,10150,10050,0.75,2,v1,NORMAL\n",
         encoding="utf-8",
     )
+    (run_dir / "run_meta.json").write_text(
+        json.dumps(
+            {
+                "run_id": "run_pr12_001",
+                "stop_reason": "completed",
+                "steps_completed": 2,
+                "trades": 1,
+                "rejects": {},
+                "gates_triggered": [],
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    (run_dir / "run_complete.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "created_utc": "2024-03-03T00:05:00+00:00",
+                "run_id": "run_pr12_001",
+                "status": "complete",
+                "artifacts": {
+                    "equity_curve.csv": str(run_dir / "equity_curve.csv"),
+                    "summary.json": str(run_dir / "summary.json"),
+                    "holdings.json": str(run_dir / "holdings.json"),
+                    "run_meta.json": str(run_dir / "run_meta.json"),
+                },
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
     return runs_root
 
 

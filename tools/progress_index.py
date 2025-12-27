@@ -26,7 +26,7 @@ def _iter_runs(runs_root: Path) -> Iterable[Path]:
     if not runs_root.exists():
         return []
     run_mtimes: Dict[Path, float] = {}
-    patterns = ("**/summary.json", "**/equity_curve.csv", "**/summary.md")
+    patterns = ("**/summary.json", "**/equity_curve.csv", "**/summary.md", "**/run_meta.json", "**/run_complete.json")
     for pattern in patterns:
         for path in runs_root.glob(pattern):
             try:
@@ -215,6 +215,20 @@ def _load_judge_summary(judge_path: Path) -> Tuple[dict[str, object], bool]:
     return payload, False
 
 
+def _run_complete_status(run_complete_path: Path) -> Tuple[bool, list[str]]:
+    if not run_complete_path.exists():
+        return False, ["run_complete_missing"]
+    try:
+        payload = json.loads(run_complete_path.read_text(encoding="utf-8"))
+    except Exception:
+        return False, ["run_complete_parse_error"]
+    if not isinstance(payload, dict):
+        return False, ["run_complete_invalid"]
+    if payload.get("status") != "complete":
+        return False, ["run_complete_incomplete"]
+    return True, []
+
+
 def _still_writing(run_dir: Path) -> bool:
     for name in ("summary.json.tmp", "holdings.json.tmp", "equity_curve.csv.tmp"):
         if (run_dir / name).exists():
@@ -237,6 +251,8 @@ def build_progress_index(runs_root: Path, max_runs: int = 50) -> dict[str, objec
         summary_json_path = run_dir / "summary.json"
         holdings_path = run_dir / "holdings.json"
         equity_path = run_dir / "equity_curve.csv"
+        run_meta_path = run_dir / "run_meta.json"
+        run_complete_path = run_dir / "run_complete.json"
         run_mtime = None
         judge_path = run_dir / "judge_summary.json"
         for path in (summary_json_path, equity_path, summary_md_path):
@@ -253,86 +269,125 @@ def build_progress_index(runs_root: Path, max_runs: int = 50) -> dict[str, objec
             "summary_path": str(summary_md_path) if summary_md_path.exists() else "",
             "summary_json_path": str(summary_json_path) if summary_json_path.exists() else "",
             "holdings_path": str(holdings_path) if holdings_path.exists() else "",
+            "run_meta_path": str(run_meta_path) if run_meta_path.exists() else "",
+            "run_complete_path": str(run_complete_path) if run_complete_path.exists() else "",
             "mtime": datetime.fromtimestamp(run_mtime or 0.0, tz=timezone.utc).isoformat(),
         }
 
+        required_paths = {
+            "equity_curve.csv": equity_path,
+            "summary.json": summary_json_path,
+            "holdings.json": holdings_path,
+            "run_meta.json": run_meta_path,
+        }
         has_equity_curve = equity_path.exists()
         has_summary_json = summary_json_path.exists()
         has_holdings_json = holdings_path.exists()
         parse_errors: list[str] = []
 
-        summary_json, summary_warnings, summary_parse_error = _load_summary_json(summary_json_path)
-        if summary_parse_error:
-            parse_errors.extend(summary_warnings or ["summary_json_parse_error"])
-
         equity_stats: dict[str, object] = {}
         equity_points: list[dict[str, object]] = []
         equity_warnings: list[str] = []
-        if has_equity_curve:
-            equity_stats, equity_points, equity_warnings, equity_parse_error = _load_equity_metrics(
-                equity_path
-            )
-            entry["equity_path"] = str(equity_path)
-            if equity_stats:
-                entry["equity_stats"] = equity_stats
-            if equity_points:
-                entry["equity_points"] = equity_points
-            if equity_parse_error:
-                parse_errors.extend(equity_warnings or ["equity_curve_parse_error"])
-        holdings_snapshot, holdings_preview, holdings_parse_error = _load_holdings_snapshot(holdings_path)
-        if holdings_snapshot:
-            entry["holdings_snapshot"] = holdings_snapshot
-        if holdings_preview:
-            entry["holdings_preview"] = holdings_preview
-        if holdings_parse_error:
-            parse_errors.append("holdings_json_parse_error")
-
-        judge_summary, judge_parse_error = _load_judge_summary(judge_path)
-        if judge_summary:
-            entry["judge_summary"] = judge_summary
-        if judge_parse_error:
-            parse_errors.append("judge_summary_parse_error")
-
-        summary_from_md = _summary_fields(summary_md_path) if summary_md_path.exists() else {}
-        summary = {}
-        if summary_json:
-            summary = summary_json.copy()
-        else:
-            if summary_from_md:
-                summary = summary_from_md
-            if equity_stats:
-                summary["net_change"] = equity_stats.get("net_change")
-                summary["max_drawdown"] = equity_stats.get("max_drawdown")
-        if summary:
-            entry["summary"] = summary
-
+        run_complete_ok, run_complete_reasons = _run_complete_status(run_complete_path)
         still_writing = _still_writing(run_dir)
         missing_reasons: list[str] = []
-        if not has_equity_curve:
-            missing_reasons.append("equity_curve_missing")
-        if not has_summary_json:
-            missing_reasons.append("summary_json_missing")
-        if not has_holdings_json:
-            missing_reasons.append("holdings_json_missing")
-        if summary_warnings:
-            missing_reasons.extend(summary_warnings)
-        if equity_warnings and not parse_errors:
-            missing_reasons.extend(equity_warnings)
-        if parse_errors:
-            missing_reasons.append("parse_error")
+        missing_files: list[str] = []
+        missing_paths: list[str] = []
+        missing_artifacts: list[str] = []
+        for name, path in required_paths.items():
+            if not path.exists():
+                missing_files.append(name)
+                missing_artifacts.append(name)
+                missing_paths.append(str(path))
+                continue
+            try:
+                if path.stat().st_size == 0:
+                    missing_files.append(name)
+                    missing_artifacts.append(name)
+                    missing_paths.append(str(path))
+            except OSError:
+                missing_files.append(name)
+                missing_artifacts.append(name)
+                missing_paths.append(str(path))
+        if not run_complete_ok:
+            missing_reasons.extend(run_complete_reasons)
+            missing_artifacts.append("run_complete.json")
+            missing_paths.append(str(run_complete_path))
+        if missing_files:
+            missing_reasons.extend([f"{name.replace('.', '_')}_missing" for name in missing_files])
+        if run_complete_ok and missing_files:
+            missing_reasons.append("run_complete_inconsistent")
         if still_writing:
             missing_reasons.append("still_writing")
 
-        status = "OK" if not missing_reasons else "MISSING"
+        is_complete = run_complete_ok and not missing_files and not still_writing
+        if is_complete:
+            summary_json, summary_warnings, summary_parse_error = _load_summary_json(summary_json_path)
+            if summary_parse_error:
+                parse_errors.extend(summary_warnings or ["summary_json_parse_error"])
+
+            if has_equity_curve:
+                equity_stats, equity_points, equity_warnings, equity_parse_error = _load_equity_metrics(
+                    equity_path
+                )
+                entry["equity_path"] = str(equity_path)
+                if equity_stats:
+                    entry["equity_stats"] = equity_stats
+                if equity_points:
+                    entry["equity_points"] = equity_points
+                if equity_parse_error:
+                    parse_errors.extend(equity_warnings or ["equity_curve_parse_error"])
+            holdings_snapshot, holdings_preview, holdings_parse_error = _load_holdings_snapshot(holdings_path)
+            if holdings_snapshot:
+                entry["holdings_snapshot"] = holdings_snapshot
+            if holdings_preview:
+                entry["holdings_preview"] = holdings_preview
+            if holdings_parse_error:
+                parse_errors.append("holdings_json_parse_error")
+
+            judge_summary, judge_parse_error = _load_judge_summary(judge_path)
+            if judge_summary:
+                entry["judge_summary"] = judge_summary
+            if judge_parse_error:
+                parse_errors.append("judge_summary_parse_error")
+
+            summary_from_md = _summary_fields(summary_md_path) if summary_md_path.exists() else {}
+            summary = {}
+            if summary_json:
+                summary = summary_json.copy()
+            else:
+                if summary_from_md:
+                    summary = summary_from_md
+                if equity_stats:
+                    summary["net_change"] = equity_stats.get("net_change")
+                    summary["max_drawdown"] = equity_stats.get("max_drawdown")
+            if summary:
+                entry["summary"] = summary
+
+            if summary_warnings:
+                missing_reasons.extend(summary_warnings)
+            if equity_warnings and not parse_errors:
+                missing_reasons.extend(equity_warnings)
+            if parse_errors:
+                missing_reasons.append("parse_error")
+
+        status = "OK" if is_complete and not missing_reasons else "INCOMPLETE"
+        next_action = ""
+        if not is_complete:
+            next_action = "Wait for run artifacts to finish, then regenerate progress_index.json."
 
         entry.update(
             {
+                "run_complete": is_complete,
                 "has_equity_curve": has_equity_curve,
                 "has_summary_json": has_summary_json,
                 "has_holdings_json": has_holdings_json,
                 "parse_error": bool(parse_errors),
                 "still_writing": still_writing,
                 "missing_reason": ";".join(missing_reasons) if missing_reasons else "",
+                "missing_artifacts": sorted(set(missing_artifacts)),
+                "missing_paths": sorted(set(missing_paths)),
+                "next_action": next_action,
                 "status": status,
             }
         )

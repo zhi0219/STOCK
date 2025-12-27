@@ -894,6 +894,26 @@ def _run_simulation(
     if stop_reason == "budget_exhausted":
         stop_reason = "input_exhausted"
 
+    if not equity_rows:
+        risk_state = sim_state.get("risk_state", {}) or {}
+        equity = float(risk_state.get("equity", sim_state.get("cash_usd", 0.0)))
+        cash = float(sim_state.get("cash_usd", 0.0))
+        ts = _now().isoformat()
+        if first_ts is None:
+            first_ts = ts
+        last_ts = ts
+        equity_rows.append(
+            {
+                "ts_utc": ts,
+                "equity_usd": round(equity, 2),
+                "cash_usd": round(cash, 2),
+                "drawdown_pct": 0.0,
+                "step": 0,
+                "policy_version": policy_version,
+                "mode": risk_state.get("mode", "UNKNOWN"),
+            }
+        )
+
     meta = {
         "first_row_ts": first_ts,
         "last_row_ts": last_ts,
@@ -1005,6 +1025,10 @@ def main(argv: List[str] | None = None) -> int:
     _write_equity_csv(outputs["equity_curve.csv"], equity_rows)
 
     end_ts = _now().isoformat()
+    risk_state = sim_state.get("risk_state", {}) or {}
+    gates_triggered: List[str] = []
+    if risk_state.get("postmortem_triggered"):
+        gates_triggered.append("postmortem_triggered")
     run_meta = {
         "run_id": run_id,
         "seed": seed,
@@ -1020,6 +1044,8 @@ def main(argv: List[str] | None = None) -> int:
             "momentum_threshold": args.momentum_threshold,
             "verify_no_lookahead": True,
         },
+        "gates_triggered": gates_triggered,
+        "rejects": dict(rejects),
         **meta,
     }
     (run_dir / "run_meta.json").write_text(json.dumps(run_meta, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -1034,11 +1060,6 @@ def main(argv: List[str] | None = None) -> int:
         outputs={k: v.name for k, v in outputs.items()},
     )
     outputs["summary.md"].write_text(summary_body, encoding="utf-8")
-    risk_state = sim_state.get("risk_state", {}) or {}
-    gates_triggered: List[str] = []
-    if risk_state.get("postmortem_triggered"):
-        gates_triggered.append("postmortem_triggered")
-
     summary_json = _summary_payload(
         run_id=run_id,
         policy_version=policy_version,
@@ -1058,6 +1079,32 @@ def main(argv: List[str] | None = None) -> int:
         "positions": {str(sym): float(qty) for sym, qty in positions.items()},
     }
     _atomic_write_json(run_dir / "holdings.json", holdings_payload)
+
+    required_artifacts = {
+        "equity_curve.csv": run_dir / "equity_curve.csv",
+        "summary.json": run_dir / "summary.json",
+        "holdings.json": run_dir / "holdings.json",
+        "run_meta.json": run_dir / "run_meta.json",
+    }
+    missing_artifacts = []
+    for name, path in required_artifacts.items():
+        if not path.exists():
+            missing_artifacts.append(name)
+            continue
+        try:
+            if path.stat().st_size == 0:
+                missing_artifacts.append(name)
+        except OSError:
+            missing_artifacts.append(name)
+    if not missing_artifacts:
+        run_complete_payload = {
+            "schema_version": 1,
+            "created_utc": _now().isoformat(),
+            "run_id": run_id,
+            "status": "complete",
+            "artifacts": {name: str(path) for name, path in required_artifacts.items()},
+        }
+        _atomic_write_json(run_dir / "run_complete.json", run_complete_payload)
 
     strategy_pool_path = RUNS_ROOT / "strategy_pool.json"
     strategy_pool = write_strategy_pool_manifest(strategy_pool_path)

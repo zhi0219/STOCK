@@ -21,6 +21,7 @@ LOGS_DIR = ROOT / "Logs"
 STATE_PATH = LOGS_DIR / "supervisor_state.json"
 DEFAULT_QUOTE_SCRIPT = ROOT / "quotes.py"
 DEFAULT_ALERT_SCRIPT = ROOT / "alerts.py"
+SERVICE_KILL_SWITCH = LOGS_DIR / "train_service" / "KILL_SWITCH"
 
 
 def ensure_dirs() -> None:
@@ -56,6 +57,38 @@ def et_now() -> datetime:
 
 def isoformat(dt: datetime) -> str:
     return dt.isoformat()
+
+
+def clear_kill_switch_files(paths: list[Path], events_dir: Path, now: datetime | None = None) -> Dict[str, object]:
+    now = now or utc_now()
+    removed: list[str] = []
+    missing: list[str] = []
+    errors: list[str] = []
+    for path in paths:
+        if path.exists():
+            try:
+                path.unlink()
+                removed.append(str(path))
+            except Exception as exc:
+                errors.append(f"{path}: {exc}")
+        else:
+            missing.append(str(path))
+    payload: Dict[str, object] = {
+        "schema_version": 1,
+        "ts_utc": isoformat(now),
+        "event_type": "KILL_SWITCH_CLEARED",
+        "severity": "high",
+        "message": "Kill switch cleared",
+        "removed_files": removed,
+        "missing_files": missing,
+        "errors": errors,
+    }
+    events_path = events_dir / f"events_{now:%Y-%m-%d}.jsonl"
+    events_path.parent.mkdir(parents=True, exist_ok=True)
+    with events_path.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    payload["events_path"] = str(events_path)
+    return payload
 
 
 def write_state(state: Dict) -> None:
@@ -258,6 +291,19 @@ def status_sources(_: argparse.Namespace) -> int:
     return 0
 
 
+def clear_kill_switch(_: argparse.Namespace) -> int:
+    ensure_dirs()
+    paths = [SERVICE_KILL_SWITCH, get_kill_switch_path()]
+    payload = clear_kill_switch_files(paths, LOGS_DIR)
+    removed = payload.get("removed_files") or []
+    errors = payload.get("errors") or []
+    print(f"cleared kill switch files: {', '.join(removed) if removed else 'none'}")
+    if errors:
+        print("errors: " + "; ".join(str(item) for item in errors))
+        return 1
+    return 0
+
+
 def restart_sources(args: argparse.Namespace) -> int:
     stop_sources(args)
     return start_sources(args)
@@ -279,6 +325,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     status_p = sub.add_parser("status", help="show status")
     status_p.set_defaults(func=status_sources)
+
+    clear_p = sub.add_parser("clear-kill-switch", help="clear kill switch files (SIM-only)")
+    clear_p.set_defaults(func=clear_kill_switch)
 
     restart_p = sub.add_parser("restart", help="restart quotes and alerts")
     restart_p.add_argument("--quotes-script", type=Path, default=DEFAULT_QUOTE_SCRIPT)
