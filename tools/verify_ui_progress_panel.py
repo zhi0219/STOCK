@@ -34,30 +34,42 @@ def _seed_progress_index(base: Path) -> Path:
     runs_root = base / "train_runs"
     run_dir = runs_root / "2024-01-02" / "run_002"
     run_dir.mkdir(parents=True, exist_ok=True)
-    (run_dir / "summary.md").write_text(
-        "\n".join(
-            [
-                "# Summary",
-                "Stop reason: completed",
-                "Net value change: +1.0%",
-                "Max drawdown: -0.5%",
-                "Trades executed: 2",
-                "Turnover: 4",
-                "Reject count: 0",
-                "Gates triggered: none",
-                "## Rejection reasons",
-                "- none",
-            ]
+    (run_dir / "summary.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "policy_version": "v1",
+                "start_equity": 10000.0,
+                "end_equity": 10100.0,
+                "net_change": 100.0,
+                "max_drawdown": 0.5,
+                "turnover": 4,
+                "rejects_count": 0,
+                "gates_triggered": [],
+                "stop_reason": "completed",
+                "timestamps": {"start": "2024-01-02T00:00:00+00:00", "end": "2024-01-02T00:02:00+00:00"},
+                "parse_warnings": [],
+            },
+            ensure_ascii=False,
+            indent=2,
         ),
         encoding="utf-8",
     )
+    (run_dir / "summary.md").write_text("# Summary\n", encoding="utf-8")
     (run_dir / "equity_curve.csv").write_text(
         "ts_utc,equity_usd,cash_usd,drawdown_pct,step,policy_version,mode\n"
         "2024-01-02T00:00:00+00:00,10000,10000,0,1,v1,NORMAL\n"
         "2024-01-02T00:02:00+00:00,10100,10020,-0.01,2,v1,NORMAL\n",
         encoding="utf-8",
     )
-    (run_dir / "orders_sim.jsonl").write_text(json.dumps({"symbol": "SIM", "pnl": 1}), encoding="utf-8")
+    (run_dir / "holdings.json").write_text(
+        json.dumps(
+            {"timestamp": "2024-01-02T00:02:00+00:00", "cash_usd": 10020.0, "positions": {"SIM": 1.0}},
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
     payload = build_progress_index(runs_root)
     output_path = runs_root / "progress_index.json"
     write_progress_index(payload, output_path)

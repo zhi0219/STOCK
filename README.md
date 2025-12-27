@@ -205,6 +205,17 @@ cd $HOME\Desktop\STOCK
 
 - 一键停机：创建 `config.yaml` 的 `risk_guards.kill_switch_path` 指向的文件（默认 `Data\\KILL_SWITCH`）即可停止训练/服务进程；删除后可恢复运行。
 
+## PR12 Progress Panel: interpreting statuses + Truthful XP
+
+- 核心产物：每个 run 目录会写入 `summary.json` 和 `holdings.json`，UI 优先读取 JSON（`summary.md` 仍用于人工阅读）。
+- Status 列含义：
+  - `OK`：summary/holdings/equity 曲线均可读，字段齐全。
+  - `MISSING_FILES`：缺少 `summary.json` / `holdings.json` / `equity_curve.csv` 中的至少一个。
+  - `PARSE_ERROR`：文件存在但无法解析/字段缺失（保持 fail-closed，不猜测）。
+  - `IN_PROGRESS`：检测到 `.tmp` 或 0 字节文件，说明仍在写入。
+- Missing reason：列出缺失或解析失败的具体原因（例如 `summary_json_missing;holdings_json_missing`）。
+- Truthful XP/Level：仅当 run 目录内存在 judge 输出（如 `judge_summary.json` 且包含 `xp`/`level`）时显示；否则固定显示 “No judge data”。
+
 ## Deterministic MOVE self-test
 Run a synthetic injection so `alerts.py` emits a MOVE alert without waiting for real market moves.
 

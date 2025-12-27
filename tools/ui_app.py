@@ -313,6 +313,10 @@ class App(tk.Tk):
         self.progress_entries: list[dict[str, object]] = []
         self.progress_selected_entry: dict[str, object] | None = None
         self.progress_status_var = tk.StringVar(value="Progress index: not loaded")
+        self.progress_detail_status_var = tk.StringVar(value="Status: -")
+        self.progress_detail_missing_var = tk.StringVar(value="Missing reason: -")
+        self.progress_judge_xp_var = tk.StringVar(value="Truthful XP: No judge data")
+        self.progress_judge_level_var = tk.StringVar(value="Level: No judge data")
         self.hud_mode_detail_var = tk.StringVar(value="Status: unknown")
         self.hud_kill_switch_var = tk.StringVar(value="Kill switch: unknown")
         self.hud_data_health_var = tk.StringVar(value="Data health: unknown")
@@ -913,7 +917,12 @@ class App(tk.Tk):
             result += chars[idx]
         return result
 
-    def _draw_equity_canvas(self, values: List[float]) -> None:
+    def _draw_equity_canvas(
+        self,
+        values: List[float],
+        stats: dict[str, object] | None = None,
+        drawdown_points: List[float] | None = None,
+    ) -> None:
         if not hasattr(self, "progress_equity_canvas"):
             return
         canvas = self.progress_equity_canvas
@@ -937,6 +946,32 @@ class App(tk.Tk):
             x0, y0 = points[idx - 1]
             x1, y1 = points[idx]
             canvas.create_line(x0, y0, x1, y1, fill="#2563eb", width=2)
+        if points:
+            start_label = stats.get("start_equity") if isinstance(stats, dict) else None
+            end_label = stats.get("end_equity") if isinstance(stats, dict) else None
+            start_value = start_label if isinstance(start_label, (int, float)) else values[0]
+            end_value = end_label if isinstance(end_label, (int, float)) else values[-1]
+            canvas.create_text(
+                points[0][0] + 4,
+                points[0][1] + 8,
+                anchor="w",
+                text=f"Start {start_value:.2f}",
+            )
+            canvas.create_text(
+                points[-1][0] - 4,
+                points[-1][1] - 8,
+                anchor="e",
+                text=f"End {end_value:.2f}",
+            )
+        if drawdown_points:
+            clean_drawdowns = [dd for dd in drawdown_points if isinstance(dd, (int, float))]
+            if clean_drawdowns:
+                max_dd = max(clean_drawdowns)
+                idx = drawdown_points.index(max_dd) if max_dd in drawdown_points else None
+                if idx is not None and idx < len(points):
+                    x, y = points[idx]
+                    canvas.create_oval(x - 4, y - 4, x + 4, y + 4, outline="#dc2626", width=2)
+                    canvas.create_text(x + 6, y - 6, anchor="w", text=f"Max DD {max_dd:.2f}%")
 
     def _load_progress_index(self) -> None:
         path = self.progress_index_path
@@ -960,6 +995,24 @@ class App(tk.Tk):
         )
         self._render_progress_entries()
 
+    def _progress_status_label(self, entry: dict[str, object]) -> str:
+        if entry.get("still_writing"):
+            return "IN_PROGRESS"
+        if entry.get("parse_error"):
+            return "PARSE_ERROR"
+        has_equity = entry.get("has_equity_curve")
+        has_summary = entry.get("has_summary_json")
+        has_holdings = entry.get("has_holdings_json")
+        if not (has_equity and has_summary and has_holdings):
+            return "MISSING_FILES"
+        return "OK"
+
+    def _progress_missing_reason(self, entry: dict[str, object]) -> str:
+        missing = entry.get("missing_reason")
+        if isinstance(missing, str) and missing:
+            return missing
+        return "none"
+
     def _render_progress_entries(self) -> None:
         if not hasattr(self, "progress_tree"):
             return
@@ -968,10 +1021,17 @@ class App(tk.Tk):
             tree.delete(item)
         for entry in self.progress_entries:
             summary = entry.get("summary", {}) if isinstance(entry, dict) else {}
-            net_change = summary.get("net_change", "?")
-            stop_reason = summary.get("stop_reason", "?")
+            missing_reason = self._progress_missing_reason(entry) if isinstance(entry, dict) else "none"
+            raw_net = summary.get("net_change") if isinstance(summary, dict) else None
+            raw_stop = summary.get("stop_reason") if isinstance(summary, dict) else None
+            if isinstance(raw_net, (int, float)):
+                net_change = f"{raw_net:+.2f}"
+            else:
+                net_change = str(raw_net) if raw_net not in (None, "") else missing_reason
+            stop_reason = str(raw_stop) if raw_stop not in (None, "") else missing_reason
             mtime = entry.get("mtime", "")
-            tree.insert("", tk.END, values=(entry.get("run_id", "-"), net_change, stop_reason, mtime))
+            status = self._progress_status_label(entry) if isinstance(entry, dict) else "MISSING_FILES"
+            tree.insert("", tk.END, values=(entry.get("run_id", "-"), status, net_change, stop_reason, mtime))
         if self.progress_entries:
             tree.selection_set(tree.get_children()[0])
             self._on_progress_select()
@@ -1030,19 +1090,58 @@ class App(tk.Tk):
         holdings_text = "No holdings preview"
         ascii_text = "(no equity points)"
         equity_values: List[float] = []
+        equity_stats: dict[str, object] | None = None
+        drawdowns: List[float] = []
         if entry:
             summary = entry.get("summary", {}) if isinstance(entry, dict) else {}
             preview = summary.get("raw_preview") if isinstance(summary, dict) else None
-            summary_text = preview or json.dumps(summary, ensure_ascii=False, indent=2) if summary else "Summary missing"
+            if summary:
+                summary_text = preview or json.dumps(summary, ensure_ascii=False, indent=2)
+            else:
+                summary_path = entry.get("summary_path")
+                summary_text = entry.get("missing_reason", "summary_unavailable")
+                if summary_path:
+                    try:
+                        summary_text = Path(str(summary_path)).read_text(encoding="utf-8")
+                    except Exception:
+                        summary_text = entry.get("missing_reason", "summary_unavailable")
+
+            holdings_snapshot = entry.get("holdings_snapshot", {}) if isinstance(entry, dict) else {}
             holdings = entry.get("holdings_preview", []) if isinstance(entry, dict) else []
-            if holdings:
-                holdings_text = "\n".join(
-                    f"{item.get('symbol', '?')}: {item.get('count', 0)}" for item in holdings
-                )
+            if holdings_snapshot:
+                positions = holdings_snapshot.get("positions", {})
+                cash = holdings_snapshot.get("cash_usd", 0.0)
+                holdings_text = "\n".join(f"{sym}: {qty}" for sym, qty in positions.items())
+                holdings_text += f"\nCash: {cash}"
+            elif holdings:
+                holdings_text = "\n".join(f"{item.get('symbol', '-')}: {item.get('qty', 0)}" for item in holdings)
+            else:
+                holdings_text = entry.get("missing_reason", "holdings_unavailable")
+
             equity_points = entry.get("equity_points", []) if isinstance(entry, dict) else []
             equity_values = [float(p.get("equity", 0.0)) for p in equity_points if isinstance(p, dict)]
             if equity_values:
                 ascii_text = self._sparkline_text(equity_values)
+            equity_stats = entry.get("equity_stats") if isinstance(entry, dict) else None
+            drawdowns = [p.get("drawdown_pct") for p in equity_points if isinstance(p, dict)]
+
+            status = self._progress_status_label(entry)
+            missing_reason = self._progress_missing_reason(entry)
+            self.progress_detail_status_var.set(f"Status: {status}")
+            self.progress_detail_missing_var.set(f"Missing reason: {missing_reason}")
+
+            judge_summary = entry.get("judge_summary") if isinstance(entry, dict) else None
+            if isinstance(judge_summary, dict) and "xp" in judge_summary and "level" in judge_summary:
+                self.progress_judge_xp_var.set(f"Truthful XP: {judge_summary.get('xp')}")
+                self.progress_judge_level_var.set(f"Level: {judge_summary.get('level')}")
+            else:
+                self.progress_judge_xp_var.set("Truthful XP: No judge data")
+                self.progress_judge_level_var.set("Level: No judge data")
+        else:
+            self.progress_detail_status_var.set("Status: -")
+            self.progress_detail_missing_var.set("Missing reason: -")
+            self.progress_judge_xp_var.set("Truthful XP: No judge data")
+            self.progress_judge_level_var.set("Level: No judge data")
         self.progress_summary_preview.configure(state=tk.NORMAL)
         self.progress_summary_preview.delete("1.0", tk.END)
         self.progress_summary_preview.insert(tk.END, summary_text)
@@ -1054,7 +1153,7 @@ class App(tk.Tk):
         self.progress_holdings_text.configure(state=tk.DISABLED)
 
         self.progress_equity_ascii.configure(text=ascii_text)
-        self._draw_equity_canvas(equity_values)
+        self._draw_equity_canvas(equity_values, stats=equity_stats, drawdown_points=drawdowns)
 
     def _open_progress_folder(self) -> None:
         folder = self.progress_index_path.parent
@@ -1170,9 +1269,15 @@ class App(tk.Tk):
 
         runs_frame = tk.LabelFrame(left, text="Runs (SIM-only)", padx=4, pady=4)
         runs_frame.pack(fill=tk.BOTH, expand=True, padx=4)
-        columns = ("run_id", "net_change", "stop_reason", "mtime")
+        columns = ("run_id", "status", "net_change", "stop_reason", "mtime")
         self.progress_tree = ttk.Treeview(runs_frame, columns=columns, show="headings", height=8)
-        for name, width in [("run_id", 140), ("net_change", 120), ("stop_reason", 140), ("mtime", 180)]:
+        for name, width in [
+            ("run_id", 140),
+            ("status", 120),
+            ("net_change", 120),
+            ("stop_reason", 140),
+            ("mtime", 180),
+        ]:
             self.progress_tree.heading(name, text=name)
             self.progress_tree.column(name, width=width, anchor="w")
         self.progress_tree.pack(fill=tk.BOTH, expand=True)
@@ -1186,6 +1291,15 @@ class App(tk.Tk):
 
         detail_frame = tk.LabelFrame(right, text="Details", padx=4, pady=4)
         detail_frame.pack(fill=tk.BOTH, expand=True, padx=4)
+        status_frame = tk.Frame(detail_frame)
+        status_frame.pack(fill=tk.X, pady=4)
+        tk.Label(status_frame, textvariable=self.progress_detail_status_var, anchor="w").pack(anchor="w")
+        tk.Label(status_frame, textvariable=self.progress_detail_missing_var, anchor="w").pack(anchor="w")
+
+        judge_frame = tk.LabelFrame(detail_frame, text="Truthful XP/Level (judge-only)", padx=4, pady=4)
+        judge_frame.pack(fill=tk.X, pady=4)
+        tk.Label(judge_frame, textvariable=self.progress_judge_xp_var, anchor="w").pack(anchor="w")
+        tk.Label(judge_frame, textvariable=self.progress_judge_level_var, anchor="w").pack(anchor="w")
         tk.Label(detail_frame, text="Summary preview:").pack(anchor="w")
         self.progress_summary_preview = ScrolledText(detail_frame, height=8, wrap=tk.WORD)
         self.progress_summary_preview.pack(fill=tk.BOTH, expand=True)
