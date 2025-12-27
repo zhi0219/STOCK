@@ -39,6 +39,7 @@ SERVICE_ROLLING_SUMMARY = ROOT / "Logs" / "train_service" / "rolling_summary.md"
 PROGRESS_INDEX_PATH = ROOT / "Logs" / "train_runs" / "progress_index.json"
 PROGRESS_INDEX_SCRIPT = ROOT / "tools" / "progress_index.py"
 PROGRESS_JUDGE_LATEST_PATH = ROOT / "Logs" / "train_runs" / "progress_judge" / "latest.json"
+UI_SMOKE_LATEST_PATH = ROOT / "Logs" / "ui_smoke_latest.json"
 POLICY_REGISTRY_PATH = ROOT / "Logs" / "policy_registry.json"
 BASELINE_GUIDE_SCRIPT = ROOT / "tools" / "baseline_fix_guide.py"
 BASELINE_GUIDE_PATH = ROOT / "Logs" / "baseline_guide.txt"
@@ -105,6 +106,16 @@ def load_config() -> dict:
             return yaml.safe_load(fh) or {}
     except Exception:
         return {}
+
+
+def _load_ui_smoke_latest(path: Path) -> dict[str, object]:
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
 
 
 def get_kill_switch_path(cfg: dict | None = None) -> Path:
@@ -401,9 +412,12 @@ class App(tk.Tk):
         self.proof_service_detail_var = tk.StringVar(value="Heartbeat: -")
         self.proof_judge_status_var = tk.StringVar(value="Judge: unknown")
         self.proof_judge_detail_var = tk.StringVar(value="Updated: -")
+        self.proof_ui_smoke_status_var = tk.StringVar(value="UI Smoke: unknown")
+        self.proof_ui_smoke_detail_var = tk.StringVar(value="Updated: -")
         self.proof_baseline_lamp: tk.Label | None = None
         self.proof_service_lamp: tk.Label | None = None
         self.proof_judge_lamp: tk.Label | None = None
+        self.proof_ui_smoke_lamp: tk.Label | None = None
         self.policy_history_entries: list[dict[str, object]] = []
         self.hud_mode_detail_var = tk.StringVar(value="Status: unknown")
         self.hud_kill_switch_var = tk.StringVar(value="Kill switch: unknown")
@@ -1028,6 +1042,26 @@ class App(tk.Tk):
             self.proof_judge_detail_var.set("Last updated: missing")
         else:
             self.proof_judge_detail_var.set(f"Last updated: {_format_age(judge_age)} ago")
+
+        smoke_payload = _load_ui_smoke_latest(UI_SMOKE_LATEST_PATH)
+        smoke_status = str(smoke_payload.get("status", "")).upper() if smoke_payload else "MISSING"
+        smoke_reason = str(smoke_payload.get("reason", "missing")) if smoke_payload else "missing"
+        smoke_ts = ensure_aware_utc(parse_iso_timestamp(smoke_payload.get("ts_utc")))
+        smoke_age = max(0.0, (utc_now() - smoke_ts).total_seconds()) if smoke_ts else None
+        smoke_colors = {
+            "PASS": "#16a34a",
+            "SKIP": "#f97316",
+            "FAIL": "#b91c1c",
+            "MISSING": "#555",
+        }
+        smoke_color = smoke_colors.get(smoke_status, "#555")
+        if self.proof_ui_smoke_lamp:
+            self.proof_ui_smoke_lamp.configure(text=smoke_status, bg=smoke_color)
+        self.proof_ui_smoke_status_var.set(f"UI Smoke: {smoke_status}")
+        if smoke_age is None:
+            self.proof_ui_smoke_detail_var.set(f"Reason: {smoke_reason}")
+        else:
+            self.proof_ui_smoke_detail_var.set(f"Last updated: {_format_age(smoke_age)} ago | {smoke_reason}")
 
     def _refresh_training_hud(self) -> None:
         if not compute_training_hud:
@@ -1820,6 +1854,12 @@ class App(tk.Tk):
             "Judge Freshness",
             self.proof_judge_status_var,
             self.proof_judge_detail_var,
+        )
+        self.proof_ui_smoke_lamp = build_lamp(
+            row,
+            "UI Smoke",
+            self.proof_ui_smoke_status_var,
+            self.proof_ui_smoke_detail_var,
         )
 
         banner = tk.Label(

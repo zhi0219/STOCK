@@ -21,10 +21,10 @@ class VerticalScrolledFrame(ttk.Frame):
         self.interior.bind("<Configure>", self._on_interior_configure)
         self.canvas.bind("<Configure>", self._on_canvas_configure)
 
-        self.interior.bind("<Enter>", self._bind_mousewheel)
-        self.interior.bind("<Leave>", self._unbind_mousewheel)
-        self.canvas.bind("<Enter>", self._bind_mousewheel)
-        self.canvas.bind("<Leave>", self._unbind_mousewheel)
+        self.canvas.bind("<Enter>", self._on_canvas_enter)
+        self.canvas.bind("<Leave>", self._on_canvas_leave)
+        self.interior.bind("<Enter>", self._on_canvas_enter)
+        self.interior.bind("<Leave>", self._on_canvas_leave)
 
     def _on_interior_configure(self, event: tk.Event) -> None:
         self.canvas.configure(scrollregion=self.canvas.bbox("all"))
@@ -48,6 +48,12 @@ class VerticalScrolledFrame(ttk.Frame):
         self.canvas.unbind_all("<Button-5>")
         self._mousewheel_bound = False
 
+    def _on_canvas_enter(self, event: tk.Event) -> None:
+        self._bind_mousewheel(event)
+
+    def _on_canvas_leave(self, event: tk.Event) -> None:
+        self._unbind_mousewheel(event)
+
     def _on_mousewheel(self, event: tk.Event) -> None:
         if not self._should_handle_event(event):
             return
@@ -70,7 +76,14 @@ class VerticalScrolledFrame(ttk.Frame):
         widget = getattr(event, "widget", None)
         if widget is None:
             return False
+        if widget in (self.canvas, self.interior):
+            return True
+        if self._is_native_scroll_widget(widget):
+            return False
         return self._is_descendant(widget)
+
+    def _is_native_scroll_widget(self, widget: tk.Misc) -> bool:
+        return isinstance(widget, (tk.Text, tk.Listbox, tk.Canvas, ttk.Treeview))
 
     def _is_descendant(self, widget: tk.Misc) -> bool:
         current = widget
