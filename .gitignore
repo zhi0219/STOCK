@@ -34,6 +34,8 @@ Logs/progress_index.json
 logs/progress_index.json
 Logs/baseline_guide.txt
 logs/baseline_guide.txt
+Logs/action_center_report.json
+logs/action_center_report.json
 Logs/ui_smoke_latest.json
 Logs/*latest*.json
 logs/*latest*.json

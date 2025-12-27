@@ -40,6 +40,9 @@ PROGRESS_INDEX_PATH = ROOT / "Logs" / "train_runs" / "progress_index.json"
 PROGRESS_INDEX_SCRIPT = ROOT / "tools" / "progress_index.py"
 THROUGHPUT_DIAG_SCRIPT = ROOT / "tools" / "progress_throughput_diagnose.py"
 THROUGHPUT_DIAG_REPORT = ROOT / "Logs" / "train_service" / "throughput_diagnose_latest.txt"
+ACTION_CENTER_REPORT_PATH = ROOT / "Logs" / "action_center_report.json"
+ACTION_CENTER_SCRIPT = ROOT / "tools" / "action_center_report.py"
+ARTIFACTS_DIR = ROOT / "artifacts"
 LATEST_DIR = ROOT / "Logs" / "train_runs" / "_latest"
 PROGRESS_JUDGE_LATEST_PATH = LATEST_DIR / "progress_judge_latest.json"
 LEGACY_PROGRESS_JUDGE_LATEST_PATH = ROOT / "Logs" / "train_runs" / "progress_judge" / "latest.json"
@@ -55,6 +58,26 @@ CADENCE_LABELS = {
     "Micro (high frequency)": "micro",
     "Normal": "normal",
     "Conservative": "conservative",
+}
+ACTION_CENTER_DEFAULTS = {
+    "ACTION_CLEAR_KILL_SWITCH": {
+        "title": "Clear Kill Switch (SIM-only)",
+        "confirmation_token": "CLEAR",
+        "safety_notes": "SIM-only. Removes local kill switch files and does not place trades.",
+        "effect_summary": "Clears kill switch files via supervisor clear-kill-switch.",
+    },
+    "ACTION_REBUILD_PROGRESS_INDEX": {
+        "title": "Rebuild Progress Index",
+        "confirmation_token": "REBUILD",
+        "safety_notes": "SIM-only. Regenerates Logs/train_runs/progress_index.json from local files.",
+        "effect_summary": "Runs tools/progress_index.py to refresh the progress index.",
+    },
+    "ACTION_RESTART_SERVICES_SIM_ONLY": {
+        "title": "Restart SIM Services",
+        "confirmation_token": "RESTART",
+        "safety_notes": "SIM-only. Restarts local supervisor-managed services; no broker access.",
+        "effect_summary": "Stops and starts supervisor services (quotes/alerts).",
+    },
 }
 
 if str(ROOT) not in sys.path:
@@ -473,6 +496,7 @@ class App(tk.Tk):
         self.progress_run_rate_var = tk.StringVar(value="Run-rate: -")
         self.progress_run_stale_var = tk.StringVar(value="Stale: -")
         self.progress_throughput_diag_var = tk.StringVar(value="Throughput diagnosis: -")
+        self.action_center_status_var = tk.StringVar(value="Action Center report: not loaded")
         self.proof_baseline_status_var = tk.StringVar(value="Baseline: unknown")
         self.proof_baseline_detail_var = tk.StringVar(value="Reason: -")
         self.proof_service_status_var = tk.StringVar(value="Training Service: unknown")
@@ -521,6 +545,8 @@ class App(tk.Tk):
         self._progress_last_run_id: str | None = None
         self._progress_last_index_mtime: float | None = None
         self._progress_last_latest_mtime: float | None = None
+        self._action_center_last_mtime: float | None = None
+        self._action_center_report: dict[str, object] | None = None
         self._scroll_frames: list[VerticalScrolledFrame] = []
         self._apply_cadence_preset_fields(CADENCE_LABELS.get(self.service_cadence_preset_var.get(), "micro"))
         self._build_ui()
@@ -1347,6 +1373,7 @@ class App(tk.Tk):
         self._refresh_wakeup_dashboard()
         self._refresh_service_state()
         self._refresh_proof_lamps()
+        self._refresh_action_center_report()
         self._refresh_training_hud()
         self._refresh_truthful_progress()
         self._refresh_policy_history()
@@ -1891,12 +1918,241 @@ class App(tk.Tk):
     def _handle_refresh_progress_view(self) -> None:
         self.progress_status_var.set("Refreshing progress index view...")
         self._load_progress_index()
+        self._refresh_action_center_report()
         self._refresh_truthful_progress()
         self._refresh_engine_status()
         self._refresh_policy_history()
         self._refresh_skill_tree_panel()
         self._refresh_upgrade_log()
         self.progress_last_refresh_var.set(f"Last refresh: {utc_now().isoformat()}")
+
+    def _refresh_action_center_report(self) -> None:
+        if not hasattr(self, "action_center_output"):
+            return
+        if not ACTION_CENTER_REPORT_PATH.exists():
+            self.action_center_status_var.set("Action Center report: not found")
+            self._action_center_report = None
+            self._set_action_center_text("No action_center_report.json found.")
+            return
+        try:
+            mtime = ACTION_CENTER_REPORT_PATH.stat().st_mtime
+        except Exception:
+            mtime = None
+        if mtime is not None and mtime == self._action_center_last_mtime and self._action_center_report:
+            return
+        try:
+            payload = json.loads(ACTION_CENTER_REPORT_PATH.read_text(encoding="utf-8"))
+        except Exception as exc:
+            self.action_center_status_var.set("Action Center report: unreadable")
+            self._action_center_report = None
+            self._set_action_center_text(f"Failed to read report: {exc}")
+            return
+        if not isinstance(payload, dict):
+            self.action_center_status_var.set("Action Center report: invalid format")
+            self._action_center_report = None
+            self._set_action_center_text("Report payload is not a JSON object.")
+            return
+        self._action_center_report = payload
+        self._action_center_last_mtime = mtime
+        ts = payload.get("ts_utc") or "unknown"
+        self.action_center_status_var.set(f"Action Center report: {ts}")
+        self._set_action_center_text(self._format_action_center_report(payload))
+
+    def _set_action_center_text(self, text: str) -> None:
+        if not hasattr(self, "action_center_output"):
+            return
+        self.action_center_output.configure(state=tk.NORMAL)
+        self.action_center_output.delete("1.0", tk.END)
+        self.action_center_output.insert(tk.END, text)
+        self.action_center_output.configure(state=tk.DISABLED)
+
+    def _format_action_center_report(self, payload: dict[str, object]) -> str:
+        lines: list[str] = []
+        issues = payload.get("detected_issues", [])
+        notes = payload.get("environment_notes", [])
+        actions = payload.get("recommended_actions", [])
+        if notes:
+            lines.append("Environment notes:")
+            for note in notes:
+                if not isinstance(note, dict):
+                    continue
+                code = note.get("code", "-")
+                detail = note.get("detail", "")
+                lines.append(f"- {code}: {detail}")
+            lines.append("")
+        if issues:
+            lines.append("Detected issues:")
+            for issue in issues:
+                if not isinstance(issue, dict):
+                    continue
+                code = issue.get("code", "-")
+                severity = issue.get("severity", "-")
+                summary = issue.get("summary", "-")
+                recommended = issue.get("recommended_actions", [])
+                rec_text = ", ".join(recommended) if recommended else "no safe action"
+                lines.append(f"- [{severity}] {code}: {summary} (actions: {rec_text})")
+                evidence = issue.get("evidence_paths", [])
+                if evidence:
+                    evidence_text = ", ".join(str(path) for path in evidence)
+                    lines.append(f"  evidence: {evidence_text}")
+            lines.append("")
+        else:
+            lines.append("Detected issues: none")
+            lines.append("")
+        if actions:
+            lines.append("Recommended actions (confirmation required):")
+            for action in actions:
+                if not isinstance(action, dict):
+                    continue
+                action_id = action.get("action_id", "-")
+                title = action.get("title", "")
+                token = action.get("confirmation_token", "")
+                lines.append(f"- {action_id}: {title} (token: {token})")
+                evidence = action.get("related_evidence_paths", [])
+                if evidence:
+                    evidence_text = ", ".join(str(path) for path in evidence)
+                    lines.append(f"  evidence: {evidence_text}")
+        return "\n".join(lines).strip() or "Action Center report is empty."
+
+    def _generate_action_center_report(self) -> None:
+        def runner() -> None:
+            cmd = [sys.executable, str(ACTION_CENTER_SCRIPT), "--output", str(ACTION_CENTER_REPORT_PATH)]
+            proc = subprocess.run(
+                cmd,
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                env=_utf8_env(),
+            )
+            result = RunResult(cmd, ROOT, proc.returncode, proc.stdout or "", proc.stderr or "")
+            self._verify_output_queue.put(result.format_lines())
+
+            def updater() -> None:
+                if proc.returncode == 0:
+                    messagebox.showinfo("Action Center", "Report generated.")
+                else:
+                    messagebox.showerror("Action Center", proc.stderr or proc.stdout or "Report generation failed.")
+                self._refresh_action_center_report()
+
+            self._enqueue_ui(updater)
+
+        threading.Thread(target=runner, daemon=True).start()
+
+    def _prompt_action_center_action(self, action_id: str) -> None:
+        action_info = ACTION_CENTER_DEFAULTS.get(action_id, {}).copy()
+        if self._action_center_report:
+            actions = self._action_center_report.get("recommended_actions", [])
+            if isinstance(actions, list):
+                for entry in actions:
+                    if isinstance(entry, dict) and entry.get("action_id") == action_id:
+                        action_info.update(entry)
+                        break
+        token = str(action_info.get("confirmation_token", "")).strip()
+        title = action_info.get("title", action_id)
+        evidence_paths = action_info.get("related_evidence_paths", [])
+        safety_notes = action_info.get("safety_notes", "")
+        effect_summary = action_info.get("effect_summary", "")
+
+        dialog = tk.Toplevel(self)
+        dialog.title(title)
+        dialog.grab_set()
+
+        header = f"Type {token} to confirm executing this action (SIM-only)."
+        tk.Label(dialog, text=header, justify=tk.LEFT, wraplength=520).pack(anchor="w", padx=10, pady=10)
+        if effect_summary:
+            tk.Label(dialog, text=f"Effect: {effect_summary}", justify=tk.LEFT, wraplength=520).pack(
+                anchor="w", padx=10
+            )
+        if safety_notes:
+            tk.Label(dialog, text=f"Safety: {safety_notes}", justify=tk.LEFT, wraplength=520, fg="gray").pack(
+                anchor="w", padx=10, pady=4
+            )
+        if evidence_paths:
+            evidence_text = "\n".join(str(path) for path in evidence_paths)
+            tk.Label(dialog, text="Evidence paths:", anchor="w").pack(anchor="w", padx=10, pady=(6, 0))
+            evidence_box = ScrolledText(dialog, height=4, wrap=tk.WORD)
+            evidence_box.pack(fill=tk.X, padx=10)
+            evidence_box.insert(tk.END, evidence_text)
+            evidence_box.configure(state=tk.DISABLED)
+
+        entry_var = tk.StringVar()
+        entry = tk.Entry(dialog, textvariable=entry_var, width=20)
+        entry.pack(anchor="w", padx=10, pady=(6, 2))
+        entry.focus_set()
+
+        button_frame = tk.Frame(dialog)
+        button_frame.pack(pady=10)
+        confirm_btn = tk.Button(button_frame, text="Execute Action", state=tk.DISABLED)
+        confirm_btn.pack(side=tk.LEFT, padx=5)
+        tk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+
+        def _on_change(*_args: object) -> None:
+            if token and entry_var.get().strip() == token:
+                confirm_btn.configure(state=tk.NORMAL)
+            else:
+                confirm_btn.configure(state=tk.DISABLED)
+
+        def _on_confirm() -> None:
+            dialog.destroy()
+            self._run_action_center_action(action_id, entry_var.get().strip())
+
+        entry_var.trace_add("write", _on_change)
+        confirm_btn.configure(command=_on_confirm)
+
+    def _run_action_center_action(self, action_id: str, token: str) -> None:
+        def runner() -> None:
+            cmd = [
+                sys.executable,
+                str(ACTION_CENTER_SCRIPT),
+                "--execute",
+                action_id,
+                "--confirm",
+                token,
+                "--output",
+                str(ACTION_CENTER_REPORT_PATH),
+            ]
+            proc = subprocess.run(
+                cmd,
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                env=_utf8_env(),
+            )
+            result = RunResult(cmd, ROOT, proc.returncode, proc.stdout or "", proc.stderr or "")
+            self._verify_output_queue.put(result.format_lines())
+
+            def updater() -> None:
+                if proc.returncode == 0:
+                    messagebox.showinfo("Action Center", "Action executed successfully.")
+                else:
+                    messagebox.showerror(
+                        "Action Center",
+                        proc.stderr or proc.stdout or "Action execution failed.",
+                    )
+                self._refresh_action_center_report()
+
+            self._enqueue_ui(updater)
+
+        threading.Thread(target=runner, daemon=True).start()
+
+    def _open_latest_evidence_pack(self) -> None:
+        if not ARTIFACTS_DIR.exists():
+            messagebox.showinfo("Action Center", "Evidence pack folder not found.")
+            return
+        if os.name == "nt":
+            try:
+                os.startfile(str(ARTIFACTS_DIR))  # type: ignore[attr-defined]
+            except Exception as exc:  # pragma: no cover - UI feedback
+                messagebox.showerror("Action Center", f"Failed to open folder: {exc}")
+            return
+        messagebox.showinfo(
+            "Action Center",
+            f"Evidence pack available at {ARTIFACTS_DIR}. Open manually on this platform.",
+        )
 
     def _selected_progress_entry(self) -> dict[str, object] | None:
         if not hasattr(self, "progress_tree"):
@@ -2347,6 +2603,42 @@ class App(tk.Tk):
             self.proof_ui_smoke_status_var,
             self.proof_ui_smoke_detail_var,
         )
+
+        action_center_frame = tk.LabelFrame(self.progress_tab, text="Action Center (SIM-only)", padx=6, pady=6)
+        action_center_frame.pack(fill=tk.X, padx=6, pady=4)
+        tk.Label(action_center_frame, textvariable=self.action_center_status_var, anchor="w").pack(anchor="w")
+        self.action_center_output = ScrolledText(action_center_frame, height=6, wrap=tk.WORD)
+        self.action_center_output.pack(fill=tk.X, padx=4, pady=4)
+        self.action_center_output.configure(state=tk.DISABLED)
+        action_center_controls = tk.Frame(action_center_frame)
+        action_center_controls.pack(fill=tk.X, pady=2)
+        tk.Button(
+            action_center_controls,
+            text="Generate report",
+            command=self._generate_action_center_report,
+        ).pack(side=tk.LEFT, padx=4)
+        tk.Button(
+            action_center_controls,
+            text="Open latest evidence pack",
+            command=self._open_latest_evidence_pack,
+        ).pack(side=tk.LEFT, padx=4)
+        action_buttons = tk.Frame(action_center_frame)
+        action_buttons.pack(fill=tk.X, pady=2)
+        tk.Button(
+            action_buttons,
+            text="Clear Kill Switch",
+            command=lambda: self._prompt_action_center_action("ACTION_CLEAR_KILL_SWITCH"),
+        ).pack(side=tk.LEFT, padx=4)
+        tk.Button(
+            action_buttons,
+            text="Rebuild Progress Index",
+            command=lambda: self._prompt_action_center_action("ACTION_REBUILD_PROGRESS_INDEX"),
+        ).pack(side=tk.LEFT, padx=4)
+        tk.Button(
+            action_buttons,
+            text="Restart SIM Services",
+            command=lambda: self._prompt_action_center_action("ACTION_RESTART_SERVICES_SIM_ONLY"),
+        ).pack(side=tk.LEFT, padx=4)
 
         banner = tk.Label(
             self.progress_tab,

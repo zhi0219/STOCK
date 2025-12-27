@@ -30,6 +30,8 @@ write_summary() {
   export CI_GATES_FAILING_GATE="${summary_failing_gate}"
   export CI_GATES_RUNNER="${runner}"
 
+  python3 tools/action_center_report.py --output "${artifacts_dir}/action_center_report.json" || true
+
   python3 - <<'PY'
 from __future__ import annotations
 from pathlib import Path

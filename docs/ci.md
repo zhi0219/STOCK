@@ -16,6 +16,7 @@ CI always writes and uploads the following files under `artifacts/`:
 
 - `artifacts/gates.log` (full gate output)
 - `artifacts/proof_summary.json` (machine-readable summary)
+- `artifacts/action_center_report.json` (Action Center report)
 
 If present, it also copies:
 
