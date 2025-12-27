@@ -7,7 +7,7 @@ import subprocess
 import sys
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Sequence
@@ -38,6 +38,8 @@ SERVICE_KILL_SWITCH = ROOT / "Logs" / "train_service" / "KILL_SWITCH"
 SERVICE_ROLLING_SUMMARY = ROOT / "Logs" / "train_service" / "rolling_summary.md"
 PROGRESS_INDEX_PATH = ROOT / "Logs" / "train_runs" / "progress_index.json"
 PROGRESS_INDEX_SCRIPT = ROOT / "tools" / "progress_index.py"
+THROUGHPUT_DIAG_SCRIPT = ROOT / "tools" / "progress_throughput_diagnose.py"
+THROUGHPUT_DIAG_REPORT = ROOT / "Logs" / "train_service" / "throughput_diagnose_latest.txt"
 LATEST_DIR = ROOT / "Logs" / "train_runs" / "_latest"
 PROGRESS_JUDGE_LATEST_PATH = LATEST_DIR / "progress_judge_latest.json"
 LEGACY_PROGRESS_JUDGE_LATEST_PATH = ROOT / "Logs" / "train_runs" / "progress_judge" / "latest.json"
@@ -49,11 +51,17 @@ POLICY_REGISTRY_PATH = ROOT / "Logs" / "policy_registry.json"
 BASELINE_GUIDE_SCRIPT = ROOT / "tools" / "baseline_fix_guide.py"
 BASELINE_GUIDE_PATH = ROOT / "Logs" / "baseline_guide.txt"
 JUDGE_STALE_SECONDS = 3600
+CADENCE_LABELS = {
+    "Micro (high frequency)": "micro",
+    "Normal": "normal",
+    "Conservative": "conservative",
+}
 
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from tools.git_baseline_probe import probe_baseline
+from tools.train_service import CADENCE_PRESETS
 from tools.ui_parsers import (
     load_engine_status,
     load_policy_history,
@@ -402,12 +410,15 @@ class App(tk.Tk):
         self.progress_growth_total_var = tk.StringVar(value="Total runs: -")
         self.progress_growth_runs_today_var = tk.StringVar(value="Runs today: - | Last run: -")
         self.progress_growth_last_net_var = tk.StringVar(value="Last run net: -")
+        self.progress_growth_cash_last_var = tk.StringVar(value="Δcash (last run): -")
+        self.progress_growth_cash_24h_var = tk.StringVar(value="Δcash (24h): -")
         self.progress_growth_seven_day_var = tk.StringVar(value="7-day net: -")
         self.progress_growth_max_dd_var = tk.StringVar(value="Max drawdown (last): -")
         self.progress_growth_rejects_var = tk.StringVar(value="Rejects: -")
         self.progress_growth_gates_var = tk.StringVar(value="Gates triggered: -")
         self.progress_growth_service_var = tk.StringVar(value="Service: -")
         self.progress_growth_kill_var = tk.StringVar(value="Kill switch: -")
+        self.progress_growth_truth_xp_var = tk.StringVar(value="Truthful XP: -")
         self.engine_status_tournament_var = tk.StringVar(value="Last tournament updated: -")
         self.engine_status_promotion_var = tk.StringVar(value="Last promotion decision: -")
         self.engine_status_judge_var = tk.StringVar(value="Last judge updated: -")
@@ -417,9 +428,16 @@ class App(tk.Tk):
         self.upgrade_log_status_var = tk.StringVar(value="Upgrade Log: not loaded")
         self.upgrade_log_entries: list[dict[str, object]] = []
         self.policy_history_status_var = tk.StringVar(value="Policy History: latest not loaded")
-        self.progress_curve_mode_var = tk.StringVar(value="Latest run curve")
-        self.progress_curve_runs_var = tk.IntVar(value=5)
+        self.progress_curve_mode_var = tk.StringVar(value="Last N runs (concat)")
+        self.progress_curve_runs_var = tk.IntVar(value=10)
         self.progress_equity_stats_var = tk.StringVar(value="Start: - | End: - | Net: - | Max DD: -")
+        self.progress_auto_refresh_var = tk.BooleanVar(value=True)
+        self.progress_refresh_interval_var = tk.IntVar(value=5)
+        self.progress_last_refresh_var = tk.StringVar(value="Last refresh: -")
+        self.progress_last_new_run_var = tk.StringVar(value="Last new run: -")
+        self.progress_run_rate_var = tk.StringVar(value="Run-rate: -")
+        self.progress_run_stale_var = tk.StringVar(value="Stale: -")
+        self.progress_throughput_diag_var = tk.StringVar(value="Throughput diagnosis: -")
         self.proof_baseline_status_var = tk.StringVar(value="Baseline: unknown")
         self.proof_baseline_detail_var = tk.StringVar(value="Reason: -")
         self.proof_service_status_var = tk.StringVar(value="Training Service: unknown")
@@ -455,7 +473,19 @@ class App(tk.Tk):
         self.service_max_hour_var = tk.StringVar(value="12")
         self.service_max_day_var = tk.StringVar(value="200")
         self.service_cooldown_var = tk.StringVar(value="10")
+        self.service_max_steps_var = tk.StringVar(value="5000")
+        self.service_max_trades_var = tk.StringVar(value="500")
+        self.service_max_events_var = tk.StringVar(value="300")
+        self.service_max_disk_var = tk.StringVar(value="5000")
+        self.service_max_runtime_day_var = tk.StringVar(value="28800")
+        self.service_cadence_preset_var = tk.StringVar(value="Micro (high frequency)")
+        self._progress_last_refresh_ts: float | None = None
+        self._progress_last_new_run_ts: datetime | None = None
+        self._progress_last_run_id: str | None = None
+        self._progress_last_index_mtime: float | None = None
+        self._progress_last_latest_mtime: float | None = None
         self._scroll_frames: list[VerticalScrolledFrame] = []
+        self._apply_cadence_preset_fields(CADENCE_LABELS.get(self.service_cadence_preset_var.get(), "micro"))
         self._build_ui()
         self._start_auto_refresh()
 
@@ -590,6 +620,20 @@ class App(tk.Tk):
             daemon=True,
         ).start()
 
+    def _apply_cadence_preset_fields(self, preset_key: str) -> None:
+        preset = CADENCE_PRESETS.get(preset_key)
+        if not preset:
+            return
+        self.service_episode_seconds_var.set(str(preset.get("episode_seconds", "")))
+        self.service_max_hour_var.set(str(preset.get("max_episodes_per_hour", "")))
+        self.service_max_day_var.set(str(preset.get("max_episodes_per_day", "")))
+        self.service_cooldown_var.set(str(preset.get("cooldown_seconds_between_episodes", "")))
+        self.service_max_steps_var.set(str(preset.get("max_steps", "")))
+        self.service_max_trades_var.set(str(preset.get("max_trades", "")))
+        self.service_max_events_var.set(str(preset.get("max_events_per_hour", "")))
+        self.service_max_disk_var.set(str(preset.get("max_disk_mb", "")))
+        self.service_max_runtime_day_var.set(str(preset.get("max_runtime_per_day", "")))
+
     def _handle_start_service(self) -> None:
         def _parse_int(var: tk.StringVar, default: int) -> int:
             try:
@@ -602,11 +646,19 @@ class App(tk.Tk):
         max_hour = _parse_int(self.service_max_hour_var, 12)
         max_day = _parse_int(self.service_max_day_var, 200)
         cooldown = _parse_int(self.service_cooldown_var, 10)
+        max_steps = _parse_int(self.service_max_steps_var, 5000)
+        max_trades = _parse_int(self.service_max_trades_var, 500)
+        max_events = _parse_int(self.service_max_events_var, 300)
+        max_disk = _parse_int(self.service_max_disk_var, 5000)
+        max_runtime_day = _parse_int(self.service_max_runtime_day_var, 28800)
+        preset_key = CADENCE_LABELS.get(self.service_cadence_preset_var.get(), "micro")
 
         def runner() -> None:
             cmd = [
                 sys.executable,
                 str(TRAIN_SERVICE_SCRIPT),
+                "--cadence-preset",
+                preset_key,
                 "--episode-seconds",
                 str(episode_seconds),
                 "--max-episodes-per-hour",
@@ -615,6 +667,16 @@ class App(tk.Tk):
                 str(max_day),
                 "--cooldown-seconds-between-episodes",
                 str(cooldown),
+                "--max-steps",
+                str(max_steps),
+                "--max-trades",
+                str(max_trades),
+                "--max-events-per-hour",
+                str(max_events),
+                "--max-disk-mb",
+                str(max_disk),
+                "--max-runtime-per-day",
+                str(max_runtime_day),
                 "--retain-days",
                 str(retention.get("retain_days", 7)),
                 "--retain-latest-n",
@@ -640,6 +702,55 @@ class App(tk.Tk):
             self._training_output_queue.put("Kill switch written for train_service")
         except Exception as exc:  # pragma: no cover - UI feedback
             messagebox.showerror("Service", f"Failed to write kill switch: {exc}")
+
+    def _run_throughput_diagnose(self) -> None:
+        def runner() -> None:
+            cmd = [sys.executable, str(THROUGHPUT_DIAG_SCRIPT)]
+            proc = subprocess.run(
+                cmd,
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                env=_utf8_env(),
+            )
+            output = (proc.stdout or "") + ("\n" + proc.stderr if proc.stderr else "")
+            THROUGHPUT_DIAG_REPORT.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                THROUGHPUT_DIAG_REPORT.write_text(output, encoding="utf-8")
+            except Exception:
+                pass
+
+            def updater() -> None:
+                self._update_throughput_output(output or "(empty output)")
+                self._refresh_throughput_panel()
+                if proc.returncode != 0:
+                    messagebox.showerror("Throughput Diagnose", output or "diagnose failed")
+
+            self._enqueue_ui(updater)
+
+        threading.Thread(target=runner, daemon=True).start()
+
+    def _update_throughput_output(self, content: str) -> None:
+        if not hasattr(self, "progress_throughput_output"):
+            return
+        self.progress_throughput_output.configure(state=tk.NORMAL)
+        self.progress_throughput_output.delete("1.0", tk.END)
+        self.progress_throughput_output.insert(tk.END, content)
+        self.progress_throughput_output.configure(state=tk.DISABLED)
+
+    def _open_throughput_report(self) -> None:
+        if not THROUGHPUT_DIAG_REPORT.exists():
+            messagebox.showinfo("Throughput Diagnose", "No diagnose report found")
+            return
+        try:
+            if hasattr(os, "startfile"):
+                os.startfile(str(THROUGHPUT_DIAG_REPORT))  # type: ignore[attr-defined]
+            else:
+                subprocess.Popen(["xdg-open", str(THROUGHPUT_DIAG_REPORT)], env=_utf8_env())
+        except Exception as exc:  # pragma: no cover - UI feedback
+            messagebox.showerror("Throughput Diagnose", f"Failed to open report: {exc}")
 
     def _handle_show_rolling_summary(self) -> None:
         def loader() -> None:
@@ -1139,6 +1250,111 @@ class App(tk.Tk):
         self._refresh_training_hud()
         self._refresh_truthful_progress()
         self._refresh_policy_history()
+        self._maybe_auto_refresh_progress()
+        self._refresh_throughput_panel()
+
+    def _maybe_auto_refresh_progress(self) -> None:
+        if not self.progress_auto_refresh_var.get():
+            return
+        try:
+            interval = int(self.progress_refresh_interval_var.get())
+        except Exception:
+            interval = 15
+        now = time.time()
+        if self._progress_last_refresh_ts and (now - self._progress_last_refresh_ts) < max(interval, 1):
+            return
+        index_mtime = None
+        if self.progress_index_path.exists():
+            try:
+                index_mtime = self.progress_index_path.stat().st_mtime
+            except Exception:
+                index_mtime = None
+        latest_mtime = None
+        for path in [
+            PROGRESS_JUDGE_LATEST_PATH,
+            LATEST_POLICY_HISTORY_PATH,
+            LATEST_PROMOTION_DECISION_PATH,
+            LATEST_TOURNAMENT_PATH,
+        ]:
+            if not path.exists():
+                continue
+            try:
+                latest_mtime = max(latest_mtime or 0.0, path.stat().st_mtime)
+            except Exception:
+                continue
+
+        should_refresh_index = index_mtime is None or index_mtime != self._progress_last_index_mtime
+        should_refresh_latest = latest_mtime is None or latest_mtime != self._progress_last_latest_mtime
+        if should_refresh_index:
+            self._load_progress_index()
+        if should_refresh_latest:
+            self._refresh_truthful_progress()
+            self._refresh_engine_status()
+            self._refresh_policy_history()
+        self._progress_last_index_mtime = index_mtime
+        self._progress_last_latest_mtime = latest_mtime
+        self._progress_last_refresh_ts = now
+        refresh_ts = utc_now().isoformat()
+        self.progress_last_refresh_var.set(f"Last refresh: {refresh_ts}")
+
+    def _refresh_throughput_panel(self) -> None:
+        now = utc_now()
+        last_run_ts = None
+        if self.progress_entries:
+            first = self.progress_entries[0] if isinstance(self.progress_entries[0], dict) else {}
+            last_run_ts = ensure_aware_utc(parse_iso_timestamp(first.get("mtime")))
+        runs_last_hour = 0
+        for entry in self.progress_entries:
+            if not isinstance(entry, dict):
+                continue
+            parsed = ensure_aware_utc(parse_iso_timestamp(entry.get("mtime")))
+            if parsed and (now - parsed) <= timedelta(hours=1):
+                runs_last_hour += 1
+
+        state = load_service_state()
+        config = state.get("config") if isinstance(state.get("config"), dict) else {}
+        target_per_hour = state.get("target_runs_per_hour") or config.get("max_episodes_per_hour") or "-"
+        self.progress_run_rate_var.set(f"Run-rate: {runs_last_hour}/hr (target {target_per_hour})")
+
+        age_text = "unknown"
+        age_seconds = None
+        if last_run_ts:
+            age_seconds = max(0.0, (now - last_run_ts).total_seconds())
+            age_text = _format_age(age_seconds)
+        self.progress_run_stale_var.set(
+            f"Last run: {last_run_ts.isoformat() if last_run_ts else 'missing'} | age {age_text}"
+        )
+
+        expected_eta = None
+        next_eta = state.get("next_run_eta_s") if isinstance(state, dict) else None
+        if isinstance(next_eta, (int, float)) and next_eta >= 0:
+            expected_eta = float(next_eta) + 60.0
+        last_duration = state.get("last_run_duration_s") if isinstance(state, dict) else None
+        if expected_eta is None and isinstance(last_duration, (int, float)) and last_duration > 0:
+            expected_eta = float(last_duration) + 60.0
+        stale = False
+        if age_seconds is None:
+            stale = True
+        elif expected_eta is not None and age_seconds > expected_eta:
+            stale = True
+
+        lamp_color = "#b91c1c" if stale else "#16a34a"
+        lamp_text = "STALE" if stale else "ACTIVE"
+        if hasattr(self, "progress_throughput_lamp") and self.progress_throughput_lamp:
+            self.progress_throughput_lamp.configure(text=lamp_text, bg=lamp_color)
+
+        summary_line = ""
+        if THROUGHPUT_DIAG_REPORT.exists():
+            try:
+                for line in THROUGHPUT_DIAG_REPORT.read_text(encoding="utf-8").splitlines():
+                    if line.startswith("THROUGHPUT_DIAG_SUMMARY"):
+                        summary_line = line
+                        break
+            except Exception:
+                summary_line = ""
+        self.progress_throughput_diag_var.set(
+            summary_line or "Throughput diagnosis: (run diagnose for details)"
+        )
 
     def _sparkline_text(self, values: List[float]) -> str:
         if not values:
@@ -1209,11 +1425,18 @@ class App(tk.Tk):
                             canvas.create_oval(x - 4, y - 4, x + 4, y + 4, outline="#dc2626", width=2)
                             canvas.create_text(x + 6, y - 6, anchor="w", text=f"Max DD {max_dd:.2f}%")
 
-    def _collect_recent_equity_series(self, limit: int) -> List[List[float]]:
+    def _collect_recent_equity_series(self, limit: int, window_hours: int | None = None) -> List[List[float]]:
         series: List[List[float]] = []
-        for entry in self.progress_entries[:limit]:
+        now = utc_now()
+        for entry in self.progress_entries:
+            if len(series) >= limit:
+                break
             if not isinstance(entry, dict):
                 continue
+            if window_hours is not None:
+                parsed = ensure_aware_utc(parse_iso_timestamp(entry.get("mtime")))
+                if not parsed or (now - parsed) > timedelta(hours=window_hours):
+                    continue
             points = entry.get("equity_points", [])
             values = [float(p.get("equity", 0.0)) for p in points if isinstance(p, dict)]
             if values:
@@ -1247,9 +1470,16 @@ class App(tk.Tk):
         last_max_dd = "unknown"
         last_rejects = "unknown"
         last_gates = "unknown"
+        last_cash_delta = "unknown"
         last_missing_reason = ""
+        cash_24h_delta = None
+        cash_24h_missing = ""
         seven_day_net = 0.0
         seven_day_count = 0
+        latest_cash_end = None
+        oldest_cash_start = None
+        latest_judge_xp = None
+        previous_judge_xp = None
         for idx, entry in enumerate(self.progress_entries):
             if not isinstance(entry, dict):
                 continue
@@ -1267,6 +1497,21 @@ class App(tk.Tk):
                 if isinstance(net, (int, float)):
                     seven_day_net += float(net)
                     seven_day_count += 1
+            if (now - parsed) <= timedelta(hours=24):
+                equity_points = (
+                    entry.get("equity_points", [])
+                    if isinstance(entry.get("equity_points", []), list)
+                    else []
+                )
+                cash_points = [
+                    float(p.get("cash", 0.0))
+                    for p in equity_points
+                    if isinstance(p, dict) and isinstance(p.get("cash"), (int, float))
+                ]
+                if cash_points:
+                    if latest_cash_end is None:
+                        latest_cash_end = cash_points[-1]
+                    oldest_cash_start = cash_points[0]
             if idx == 0:
                 last_run_time = parsed.isoformat()
             if idx == 0:
@@ -1277,6 +1522,20 @@ class App(tk.Tk):
                 else:
                     last_missing_reason = entry.get("missing_reason") or "net_change_missing"
                     last_net_change = f"missing ({last_missing_reason})"
+                equity_points = (
+                    entry.get("equity_points", [])
+                    if isinstance(entry.get("equity_points", []), list)
+                    else []
+                )
+                cash_points = [
+                    float(p.get("cash", 0.0))
+                    for p in equity_points
+                    if isinstance(p, dict) and isinstance(p.get("cash"), (int, float))
+                ]
+                if cash_points:
+                    last_cash_delta = f"{(cash_points[-1] - cash_points[0]):+.2f}"
+                else:
+                    last_cash_delta = f"missing ({last_missing_reason or 'cash_missing'})"
                 max_dd = summary.get("max_drawdown")
                 if isinstance(max_dd, (int, float)):
                     last_max_dd = f"{max_dd:.2f}%"
@@ -1290,9 +1549,36 @@ class App(tk.Tk):
                     last_gates = str(gates)
                 elif isinstance(gates, str):
                     last_gates = gates
+                judge_summary = (
+                    entry.get("judge_summary")
+                    if isinstance(entry.get("judge_summary"), dict)
+                    else {}
+                )
+                if isinstance(judge_summary, dict):
+                    xp = judge_summary.get("xp")
+                    if isinstance(xp, (int, float)):
+                        latest_judge_xp = float(xp)
+            if idx == 1:
+                judge_summary = (
+                    entry.get("judge_summary")
+                    if isinstance(entry.get("judge_summary"), dict)
+                    else {}
+                )
+                if isinstance(judge_summary, dict):
+                    xp = judge_summary.get("xp")
+                    if isinstance(xp, (int, float)):
+                        previous_judge_xp = float(xp)
 
         self.progress_growth_runs_today_var.set(f"Runs today: {runs_today} | Last run: {last_run_time}")
         self.progress_growth_last_net_var.set(f"Last run net: {last_net_change}")
+        self.progress_growth_cash_last_var.set(f"Δcash (last run): {last_cash_delta}")
+        if latest_cash_end is not None and oldest_cash_start is not None:
+            cash_24h_delta = latest_cash_end - oldest_cash_start
+        if cash_24h_delta is None:
+            cash_24h_missing = last_missing_reason or "cash_missing"
+            self.progress_growth_cash_24h_var.set(f"Δcash (24h): missing ({cash_24h_missing})")
+        else:
+            self.progress_growth_cash_24h_var.set(f"Δcash (24h): {cash_24h_delta:+.2f}")
         if seven_day_count:
             self.progress_growth_seven_day_var.set(f"7-day net: {seven_day_net:+.2f}")
         else:
@@ -1326,6 +1612,25 @@ class App(tk.Tk):
         kill_triggered = [str(path) for path in kill_switch_paths if path.exists()]
         kill_status = "TRIPPED" if kill_triggered else "CLEAR"
         self.progress_growth_kill_var.set(f"Kill switch: {kill_status}")
+        judge_age = None
+        if PROGRESS_JUDGE_LATEST_PATH.exists():
+            try:
+                judge_age = max(0.0, time.time() - PROGRESS_JUDGE_LATEST_PATH.stat().st_mtime)
+            except Exception:
+                judge_age = None
+        judge_age_text = _format_age(judge_age) if judge_age is not None else "missing"
+        if latest_judge_xp is not None:
+            if previous_judge_xp is not None:
+                delta = latest_judge_xp - previous_judge_xp
+                self.progress_growth_truth_xp_var.set(
+                    f"Truthful XP: {latest_judge_xp:.1f} (Δ {delta:+.1f}) | judge age {judge_age_text}"
+                )
+            else:
+                self.progress_growth_truth_xp_var.set(
+                    f"Truthful XP: {latest_judge_xp:.1f} | judge age {judge_age_text}"
+                )
+        else:
+            self.progress_growth_truth_xp_var.set(f"Truthful XP: missing | judge age {judge_age_text}")
 
     def _load_progress_index(self) -> None:
         path = self.progress_index_path
@@ -1351,6 +1656,20 @@ class App(tk.Tk):
         self.progress_status_var.set(
             f"Progress index runs={len(self.progress_entries)} | generated_at={generated_ts or 'unknown'}"
         )
+        latest_run_id = None
+        if self.progress_entries:
+            first_entry = self.progress_entries[0] if isinstance(self.progress_entries[0], dict) else {}
+            latest_run_id = str(first_entry.get("run_id") or "")
+        if latest_run_id and latest_run_id != self._progress_last_run_id:
+            self._progress_last_run_id = latest_run_id
+            self._progress_last_new_run_ts = utc_now()
+            self.progress_last_new_run_var.set(
+                f"Last new run: {self._progress_last_new_run_ts.isoformat()} (run_id={latest_run_id})"
+            )
+        elif self._progress_last_new_run_ts:
+            self.progress_last_new_run_var.set(
+                f"Last new run: {self._progress_last_new_run_ts.isoformat()} (run_id={self._progress_last_run_id})"
+            )
         self._render_progress_entries()
         self._refresh_progress_diagnosis()
         self._update_progress_growth_hud()
@@ -1426,6 +1745,7 @@ class App(tk.Tk):
                     self._refresh_policy_history()
                     self._refresh_skill_tree_panel()
                     self._refresh_upgrade_log()
+                    self.progress_last_refresh_var.set(f"Last refresh: {utc_now().isoformat()}")
                 else:
                     self.progress_status_var.set("Progress index generation failed")
                     messagebox.showerror("Progress", output or "progress_index.py failed")
@@ -1443,6 +1763,7 @@ class App(tk.Tk):
         self._refresh_policy_history()
         self._refresh_skill_tree_panel()
         self._refresh_upgrade_log()
+        self.progress_last_refresh_var.set(f"Last refresh: {utc_now().isoformat()}")
 
     def _selected_progress_entry(self) -> dict[str, object] | None:
         if not hasattr(self, "progress_tree"):
@@ -1535,7 +1856,7 @@ class App(tk.Tk):
             curve_series = [equity_values] if equity_values else []
             label_values = equity_values
         elif curve_mode == "Last N runs (concat)":
-            recent = self._collect_recent_equity_series(int(self.progress_curve_runs_var.get()))
+            recent = self._collect_recent_equity_series(int(self.progress_curve_runs_var.get()), window_hours=24)
             if recent:
                 combined: List[float] = []
                 for series in recent:
@@ -1543,7 +1864,7 @@ class App(tk.Tk):
                 curve_series = [combined] if combined else []
                 label_values = combined
         else:
-            curve_series = self._collect_recent_equity_series(int(self.progress_curve_runs_var.get()))
+            curve_series = self._collect_recent_equity_series(int(self.progress_curve_runs_var.get()), window_hours=24)
             if equity_values:
                 label_values = equity_values
             elif curve_series:
@@ -1900,6 +2221,26 @@ class App(tk.Tk):
             anchor="w",
         )
         banner.pack(fill=tk.X, padx=6, pady=4)
+        auto_frame = tk.LabelFrame(self.progress_tab, text="Auto-refresh", padx=6, pady=6)
+        auto_frame.pack(fill=tk.X, padx=6, pady=4)
+        tk.Checkbutton(
+            auto_frame, text="Auto-refresh", variable=self.progress_auto_refresh_var
+        ).grid(row=0, column=0, sticky="w", padx=4)
+        tk.Label(auto_frame, text="Interval (s)").grid(row=0, column=1, sticky="w")
+        ttk.OptionMenu(
+            auto_frame,
+            self.progress_refresh_interval_var,
+            self.progress_refresh_interval_var.get(),
+            5,
+            15,
+            30,
+        ).grid(row=0, column=2, sticky="w", padx=4)
+        tk.Label(auto_frame, textvariable=self.progress_last_refresh_var, anchor="w").grid(
+            row=1, column=0, columnspan=3, sticky="w", padx=4
+        )
+        tk.Label(auto_frame, textvariable=self.progress_last_new_run_var, anchor="w").grid(
+            row=2, column=0, columnspan=3, sticky="w", padx=4
+        )
         truthful_frame = tk.LabelFrame(self.progress_tab, text="Truthful Progress (Judge)", padx=6, pady=6)
         truthful_frame.pack(fill=tk.X, padx=6, pady=4)
         tk.Label(truthful_frame, textvariable=self.progress_truth_status_var, font=("Helvetica", 13, "bold")).pack(
@@ -1962,12 +2303,42 @@ class App(tk.Tk):
         tk.Label(growth_frame, textvariable=self.progress_growth_total_var, font=hud_font).grid(row=0, column=0, sticky="w", padx=6, pady=2)
         tk.Label(growth_frame, textvariable=self.progress_growth_runs_today_var, font=hud_font).grid(row=0, column=1, sticky="w", padx=6, pady=2)
         tk.Label(growth_frame, textvariable=self.progress_growth_last_net_var, font=hud_font).grid(row=1, column=0, sticky="w", padx=6, pady=2)
-        tk.Label(growth_frame, textvariable=self.progress_growth_seven_day_var, font=hud_font).grid(row=1, column=1, sticky="w", padx=6, pady=2)
-        tk.Label(growth_frame, textvariable=self.progress_growth_max_dd_var, font=hud_font).grid(row=2, column=0, sticky="w", padx=6, pady=2)
-        tk.Label(growth_frame, textvariable=self.progress_growth_rejects_var, font=hud_font).grid(row=2, column=1, sticky="w", padx=6, pady=2)
-        tk.Label(growth_frame, textvariable=self.progress_growth_gates_var, font=hud_font).grid(row=3, column=0, sticky="w", padx=6, pady=2)
-        tk.Label(growth_frame, textvariable=self.progress_growth_service_var, font=hud_font).grid(row=3, column=1, sticky="w", padx=6, pady=2)
-        tk.Label(growth_frame, textvariable=self.progress_growth_kill_var, font=hud_font).grid(row=4, column=0, sticky="w", padx=6, pady=2)
+        tk.Label(growth_frame, textvariable=self.progress_growth_cash_last_var, font=hud_font).grid(row=1, column=1, sticky="w", padx=6, pady=2)
+        tk.Label(growth_frame, textvariable=self.progress_growth_cash_24h_var, font=hud_font).grid(row=2, column=0, sticky="w", padx=6, pady=2)
+        tk.Label(growth_frame, textvariable=self.progress_growth_seven_day_var, font=hud_font).grid(row=2, column=1, sticky="w", padx=6, pady=2)
+        tk.Label(growth_frame, textvariable=self.progress_growth_max_dd_var, font=hud_font).grid(row=3, column=0, sticky="w", padx=6, pady=2)
+        tk.Label(growth_frame, textvariable=self.progress_growth_rejects_var, font=hud_font).grid(row=3, column=1, sticky="w", padx=6, pady=2)
+        tk.Label(growth_frame, textvariable=self.progress_growth_gates_var, font=hud_font).grid(row=4, column=0, sticky="w", padx=6, pady=2)
+        tk.Label(growth_frame, textvariable=self.progress_growth_service_var, font=hud_font).grid(row=4, column=1, sticky="w", padx=6, pady=2)
+        tk.Label(growth_frame, textvariable=self.progress_growth_kill_var, font=hud_font).grid(row=5, column=0, sticky="w", padx=6, pady=2)
+        tk.Label(growth_frame, textvariable=self.progress_growth_truth_xp_var, font=hud_font).grid(row=5, column=1, sticky="w", padx=6, pady=2)
+
+        throughput_frame = tk.LabelFrame(self.progress_tab, text="Throughput (SIM-only)", padx=6, pady=6)
+        throughput_frame.pack(fill=tk.X, padx=6, pady=4)
+        self.progress_throughput_lamp = tk.Label(
+            throughput_frame, text="STALE", width=8, relief=tk.SOLID, fg="white", bg="#555"
+        )
+        self.progress_throughput_lamp.pack(side=tk.LEFT, padx=4, pady=2)
+        throughput_text = tk.Frame(throughput_frame)
+        throughput_text.pack(side=tk.LEFT, padx=6, fill=tk.X, expand=True)
+        tk.Label(throughput_text, textvariable=self.progress_run_rate_var, anchor="w").pack(anchor="w")
+        tk.Label(throughput_text, textvariable=self.progress_run_stale_var, anchor="w").pack(anchor="w")
+        tk.Label(throughput_text, textvariable=self.progress_throughput_diag_var, anchor="w").pack(anchor="w")
+        throughput_actions = tk.Frame(throughput_frame)
+        throughput_actions.pack(side=tk.RIGHT, padx=4)
+        tk.Button(
+            throughput_actions,
+            text="Run Diagnose Now",
+            command=self._run_throughput_diagnose,
+        ).pack(side=tk.TOP, pady=2)
+        tk.Button(
+            throughput_actions,
+            text="Open Diagnose Report",
+            command=self._open_throughput_report,
+        ).pack(side=tk.TOP, pady=2)
+        self.progress_throughput_output = ScrolledText(throughput_frame, height=4, wrap=tk.WORD)
+        self.progress_throughput_output.pack(fill=tk.X, padx=4, pady=4)
+        self.progress_throughput_output.configure(state=tk.DISABLED)
 
         engine_frame = tk.LabelFrame(self.progress_tab, text="Engine Status", padx=6, pady=6)
         engine_frame.pack(fill=tk.X, padx=6, pady=4)
@@ -2139,6 +2510,9 @@ class App(tk.Tk):
             side=tk.LEFT, padx=4
         )
         tk.Button(controls, text="Export Chart", command=self._export_progress_chart).pack(side=tk.RIGHT, padx=4)
+        tk.Label(equity_frame, text="Curve modes use last 24h runs for rolling views (SIM-only).", fg="#6b7280").pack(
+            anchor="w"
+        )
         tk.Label(equity_frame, textvariable=self.progress_equity_stats_var, anchor="w").pack(anchor="w")
         self.progress_equity_ascii = tk.Label(equity_frame, font=("Courier", 10), anchor="w", justify=tk.LEFT)
         self.progress_equity_ascii.pack(fill=tk.X)
@@ -2840,6 +3214,19 @@ class App(tk.Tk):
             command=self._handle_open_latest_service_summary,
         ).pack(side=tk.LEFT, padx=4)
 
+        preset_frame = tk.Frame(service_frame)
+        preset_frame.pack(fill=tk.X, pady=2)
+        tk.Label(preset_frame, text="Cadence preset").pack(side=tk.LEFT)
+        ttk.OptionMenu(
+            preset_frame,
+            self.service_cadence_preset_var,
+            self.service_cadence_preset_var.get(),
+            *CADENCE_LABELS.keys(),
+            command=lambda *_: self._apply_cadence_preset_fields(
+                CADENCE_LABELS.get(self.service_cadence_preset_var.get(), "micro")
+            ),
+        ).pack(side=tk.LEFT, padx=4)
+
         service_limits = tk.Frame(service_frame)
         service_limits.pack(fill=tk.X, pady=2)
         tk.Label(service_limits, text="episode-seconds").pack(side=tk.LEFT)
@@ -2856,6 +3243,29 @@ class App(tk.Tk):
         )
         tk.Label(service_limits, text="cooldown-seconds-between-episodes").pack(side=tk.LEFT)
         tk.Entry(service_limits, textvariable=self.service_cooldown_var, width=6).pack(
+            side=tk.LEFT, padx=3
+        )
+
+        service_budget_row = tk.Frame(service_frame)
+        service_budget_row.pack(fill=tk.X, pady=2)
+        tk.Label(service_budget_row, text="max-steps").pack(side=tk.LEFT)
+        tk.Entry(service_budget_row, textvariable=self.service_max_steps_var, width=7).pack(
+            side=tk.LEFT, padx=3
+        )
+        tk.Label(service_budget_row, text="max-trades").pack(side=tk.LEFT)
+        tk.Entry(service_budget_row, textvariable=self.service_max_trades_var, width=7).pack(
+            side=tk.LEFT, padx=3
+        )
+        tk.Label(service_budget_row, text="max-events-per-hour").pack(side=tk.LEFT)
+        tk.Entry(service_budget_row, textvariable=self.service_max_events_var, width=7).pack(
+            side=tk.LEFT, padx=3
+        )
+        tk.Label(service_budget_row, text="max-disk-mb").pack(side=tk.LEFT)
+        tk.Entry(service_budget_row, textvariable=self.service_max_disk_var, width=7).pack(
+            side=tk.LEFT, padx=3
+        )
+        tk.Label(service_budget_row, text="max-runtime-per-day").pack(side=tk.LEFT)
+        tk.Entry(service_budget_row, textvariable=self.service_max_runtime_day_var, width=8).pack(
             side=tk.LEFT, padx=3
         )
 

@@ -27,6 +27,42 @@ ROLLING_SUMMARY_PATH = SERVICE_ROOT / "rolling_summary.md"
 SERVICE_KILL_SWITCH = SERVICE_ROOT / "KILL_SWITCH"
 TRAIN_DAEMON = ROOT / "tools" / "train_daemon.py"
 
+CADENCE_PRESETS: Dict[str, Dict[str, int]] = {
+    "micro": {
+        "episode_seconds": 120,
+        "cooldown_seconds_between_episodes": 5,
+        "max_episodes_per_hour": 24,
+        "max_episodes_per_day": 200,
+        "max_steps": 1500,
+        "max_trades": 200,
+        "max_events_per_hour": 400,
+        "max_disk_mb": 2500,
+        "max_runtime_per_day": 6 * 3600,
+    },
+    "normal": {
+        "episode_seconds": 300,
+        "cooldown_seconds_between_episodes": 10,
+        "max_episodes_per_hour": 12,
+        "max_episodes_per_day": 120,
+        "max_steps": 5000,
+        "max_trades": 500,
+        "max_events_per_hour": 300,
+        "max_disk_mb": 5000,
+        "max_runtime_per_day": 8 * 3600,
+    },
+    "conservative": {
+        "episode_seconds": 600,
+        "cooldown_seconds_between_episodes": 20,
+        "max_episodes_per_hour": 6,
+        "max_episodes_per_day": 60,
+        "max_steps": 4000,
+        "max_trades": 200,
+        "max_events_per_hour": 200,
+        "max_disk_mb": 3000,
+        "max_runtime_per_day": 4 * 3600,
+    },
+}
+
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
@@ -95,12 +131,14 @@ def _sleep_with_heartbeat(
 ) -> None:
     deadline = time.monotonic() + max(seconds, 0)
     state["next_iteration_eta"] = (_now() + timedelta(seconds=max(seconds, 0))).isoformat()
+    state["next_run_eta_s"] = int(max(seconds, 0))
     _write_state(state)
     while time.monotonic() < deadline:
         remaining = deadline - time.monotonic()
         time.sleep(min(remaining, 5))
         state["last_heartbeat_ts"] = _now().isoformat()
         state["next_iteration_eta"] = (_now() + timedelta(seconds=max(remaining, 0))).isoformat()
+        state["next_run_eta_s"] = int(max(remaining, 0))
         _write_state(state)
         print(
             f"SERVICE_HEARTBEAT|episodes_completed={episodes_completed}|last_run_dir={last_run_dir or ''}",
@@ -145,6 +183,12 @@ def _compute_wait_time(history: Deque[datetime], args: argparse.Namespace) -> fl
     return 0.0
 
 
+def _runs_per_hour(history: Deque[datetime], now: datetime | None = None) -> int:
+    now = now or _now()
+    one_hour_ago = now - timedelta(hours=1)
+    return sum(1 for ts in history if ts >= one_hour_ago)
+
+
 def _run_episode(
     idx: int, args: argparse.Namespace, cfg: dict, state: Dict[str, object]
 ) -> Tuple[str | None, str | None, str]:
@@ -152,12 +196,25 @@ def _run_episode(
     print(f"EPISODE_START|i={idx}|planned_seconds={planned_seconds}", flush=True)
     state["last_episode_start_ts"] = _now().isoformat()
     state["last_planned_seconds"] = planned_seconds
+    state["last_run_duration_s"] = None
+    state["next_run_eta_s"] = 0
     _write_state(state)
+    start_time = time.monotonic()
     cmd = [
         sys.executable,
         str(TRAIN_DAEMON),
         "--max-runtime-seconds",
         str(planned_seconds),
+        "--max-steps",
+        str(args.max_steps),
+        "--max-trades",
+        str(args.max_trades),
+        "--max-events-per-hour",
+        str(args.max_events_per_hour),
+        "--max-disk-mb",
+        str(args.max_disk_mb),
+        "--max-runtime-per-day",
+        str(args.max_runtime_per_day),
         "--retain-days",
         str(args.retain_days),
         "--retain-latest-n",
@@ -199,6 +256,7 @@ def _run_episode(
         state["last_error"] = proc.stderr or proc.stdout or "episode failed"
     else:
         state["last_error"] = None
+    state["last_run_duration_s"] = int(max(0.0, time.monotonic() - start_time))
     _write_state(state)
 
     return run_dir, summary_path, stop_reason
@@ -209,15 +267,27 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
         description="SIM-only 24/7 training service",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument("--episode-seconds", type=int, default=300, dest="episode_seconds")
-    parser.add_argument("--max-episodes-per-hour", type=int, default=12, dest="max_episodes_per_hour")
-    parser.add_argument("--max-episodes-per-day", type=int, default=200, dest="max_episodes_per_day")
+    parser.add_argument(
+        "--cadence-preset",
+        choices=sorted(CADENCE_PRESETS.keys()),
+        default="micro",
+        dest="cadence_preset",
+        help="Cadence preset for throughput/safety (micro recommended for frequent SIM updates)",
+    )
+    parser.add_argument("--episode-seconds", type=int, default=None, dest="episode_seconds")
+    parser.add_argument("--max-episodes-per-hour", type=int, default=None, dest="max_episodes_per_hour")
+    parser.add_argument("--max-episodes-per-day", type=int, default=None, dest="max_episodes_per_day")
     parser.add_argument(
         "--cooldown-seconds-between-episodes",
         type=int,
-        default=10,
+        default=None,
         dest="cooldown_seconds_between_episodes",
     )
+    parser.add_argument("--max-steps", type=int, default=None, dest="max_steps")
+    parser.add_argument("--max-trades", type=int, default=None, dest="max_trades")
+    parser.add_argument("--max-events-per-hour", type=int, default=None, dest="max_events_per_hour")
+    parser.add_argument("--max-disk-mb", type=int, default=None, dest="max_disk_mb")
+    parser.add_argument("--max-runtime-per-day", type=int, default=None, dest="max_runtime_per_day")
     parser.add_argument("--retain-days", type=int, default=7, dest="retain_days")
     parser.add_argument("--retain-latest-n", type=int, default=50, dest="retain_latest_n")
     parser.add_argument(
@@ -233,8 +303,16 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv or sys.argv[1:])
 
 
+def _apply_cadence_preset(args: argparse.Namespace) -> None:
+    preset = CADENCE_PRESETS.get(args.cadence_preset, CADENCE_PRESETS["micro"])
+    for key, value in preset.items():
+        if getattr(args, key, None) in (None, ""):
+            setattr(args, key, value)
+
+
 def main(argv: List[str] | None = None) -> int:
     args = parse_args(argv)
+    _apply_cadence_preset(args)
     cfg = _load_kill_switch_cfg()
     runs_root = _enforce_runs_root(Path(args.runs_root))
     args.runs_root = runs_root
@@ -256,11 +334,21 @@ def main(argv: List[str] | None = None) -> int:
         "service_pid": os.getpid(),
         "last_heartbeat_ts": _now().isoformat(),
         "stop_reason": None,
+        "cadence_preset": args.cadence_preset,
+        "target_runs_per_hour": int(args.max_episodes_per_hour),
+        "computed_runs_per_hour": 0,
+        "last_run_duration_s": None,
+        "next_run_eta_s": None,
         "config": {
             "episode_seconds": args.episode_seconds,
             "cooldown_seconds_between_episodes": args.cooldown_seconds_between_episodes,
             "max_episodes_per_hour": args.max_episodes_per_hour,
             "max_episodes_per_day": args.max_episodes_per_day,
+            "max_steps": args.max_steps,
+            "max_trades": args.max_trades,
+            "max_events_per_hour": args.max_events_per_hour,
+            "max_disk_mb": args.max_disk_mb,
+            "max_runtime_per_day": args.max_runtime_per_day,
             "max_total_train_runs_mb": args.max_total_train_runs_mb,
             "retain_days": args.retain_days,
             "retain_latest_n": args.retain_latest_n,
@@ -274,7 +362,9 @@ def main(argv: List[str] | None = None) -> int:
     episode_idx = 1
 
     while True:
-        service_state["last_heartbeat_ts"] = _now().isoformat()
+        now = _now()
+        service_state["last_heartbeat_ts"] = now.isoformat()
+        service_state["computed_runs_per_hour"] = _runs_per_hour(history, now)
         _write_state(service_state)
 
         tripped, reason = _kill_switch_triggered(cfg)
@@ -292,6 +382,7 @@ def main(argv: List[str] | None = None) -> int:
             return 0
         if wait_time > 0:
             service_state["next_iteration_eta"] = (_now() + timedelta(seconds=wait_time)).isoformat()
+            service_state["next_run_eta_s"] = int(max(wait_time, 0))
             _write_state(service_state)
             print(
                 f"SERVICE_HEARTBEAT|episodes_completed={service_state['episodes_completed']}|last_run_dir={service_state.get('last_run_dir') or ''}",
