@@ -141,6 +141,30 @@ def _format_age(seconds: float | None) -> str:
     return f"{int(seconds // 86400)}d"
 
 
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def ensure_aware_utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def parse_iso_timestamp(value: object) -> datetime | None:
+    if value in (None, ""):
+        return None
+    raw = str(value)
+    if raw.endswith("Z"):
+        raw = raw[:-1] + "+00:00"
+    try:
+        return datetime.fromisoformat(raw)
+    except Exception:
+        return None
+
+
 def run_supervisor_command(commands: Sequence[str]) -> subprocess.CompletedProcess:
     return subprocess.run(
         [sys.executable, str(SUPERVISOR_SCRIPT), *commands],
@@ -305,8 +329,10 @@ def _service_running(state: dict) -> bool:
     hb = state.get("last_heartbeat_ts")
     try:
         if hb:
-            ts = datetime.fromisoformat(str(hb))
-            return (datetime.now(ts.tzinfo or datetime.utcnow().astimezone().tzinfo) - ts).total_seconds() < 120 and not state.get("stop_reason")
+            ts = ensure_aware_utc(parse_iso_timestamp(hb))
+            if ts is None:
+                return False
+            return (utc_now() - ts).total_seconds() < 120 and not state.get("stop_reason")
     except Exception:
         return False
     return False
@@ -360,6 +386,11 @@ class App(tk.Tk):
         self.progress_growth_gates_var = tk.StringVar(value="Gates triggered: -")
         self.progress_growth_service_var = tk.StringVar(value="Service: -")
         self.progress_growth_kill_var = tk.StringVar(value="Kill switch: -")
+        self.skill_tree_status_var = tk.StringVar(value="Skill Tree: not loaded")
+        self.skill_tree_detail_var = tk.StringVar(value="Pool summary: -")
+        self.skill_tree_candidates_var = tk.StringVar(value="Candidates: -")
+        self.upgrade_log_status_var = tk.StringVar(value="Upgrade Log: not loaded")
+        self.upgrade_log_entries: list[dict[str, object]] = []
         self.progress_curve_mode_var = tk.StringVar(value="Latest run curve")
         self.progress_curve_runs_var = tk.IntVar(value=5)
         self.progress_equity_stats_var = tk.StringVar(value="Start: - | End: - | Net: - | Max DD: -")
@@ -961,11 +992,10 @@ class App(tk.Tk):
         hb_age: float | None = None
         hb_value = state.get("last_heartbeat_ts")
         if hb_value:
-            hb_text = str(hb_value).replace("Z", "+00:00")
             try:
-                ts = datetime.fromisoformat(hb_text)
-                now = datetime.now(ts.tzinfo or timezone.utc)
-                hb_age = max(0.0, (now - ts).total_seconds())
+                ts = ensure_aware_utc(parse_iso_timestamp(hb_value))
+                if ts is not None:
+                    hb_age = max(0.0, (utc_now() - ts).total_seconds())
             except Exception:
                 hb_age = None
         service_text = "RUNNING" if running else "STOPPED"
@@ -1155,7 +1185,7 @@ class App(tk.Tk):
     def _update_progress_growth_hud(self) -> None:
         runs_total = len(self.progress_entries)
         self.progress_growth_total_var.set(f"Total runs: {runs_total}")
-        now = datetime.utcnow()
+        now = utc_now()
         runs_today = 0
         last_run_time = "unknown"
         last_net_change = "unknown"
@@ -1168,23 +1198,21 @@ class App(tk.Tk):
             if not isinstance(entry, dict):
                 continue
             raw_mtime = entry.get("mtime")
-            parsed = None
-            if raw_mtime:
-                try:
-                    parsed = datetime.fromisoformat(str(raw_mtime))
-                except Exception:
-                    parsed = None
-            if parsed:
-                if parsed.date() == now.date():
-                    runs_today += 1
-                if (now - parsed).days <= 7:
-                    summary = entry.get("summary", {}) if isinstance(entry.get("summary", {}), dict) else {}
-                    net = summary.get("net_change")
-                    if isinstance(net, (int, float)):
-                        seven_day_net += float(net)
-                        seven_day_count += 1
+            parsed = ensure_aware_utc(parse_iso_timestamp(raw_mtime))
+            if parsed is None:
                 if idx == 0:
-                    last_run_time = parsed.isoformat()
+                    last_run_time = "unknown"
+                continue
+            if parsed.date() == now.date():
+                runs_today += 1
+            if (now - parsed).days <= 7:
+                summary = entry.get("summary", {}) if isinstance(entry.get("summary", {}), dict) else {}
+                net = summary.get("net_change")
+                if isinstance(net, (int, float)):
+                    seven_day_net += float(net)
+                    seven_day_count += 1
+            if idx == 0:
+                last_run_time = parsed.isoformat()
             if idx == 0:
                 summary = entry.get("summary", {}) if isinstance(entry.get("summary", {}), dict) else {}
                 net = summary.get("net_change")
@@ -1219,8 +1247,9 @@ class App(tk.Tk):
         heartbeat = state.get("last_heartbeat_ts") if isinstance(state, dict) else None
         if heartbeat:
             try:
-                ts = datetime.fromisoformat(str(heartbeat))
-                heartbeat_age = int((datetime.now(ts.tzinfo) - ts).total_seconds())
+                ts = ensure_aware_utc(parse_iso_timestamp(heartbeat))
+                if ts is not None:
+                    heartbeat_age = int((utc_now() - ts).total_seconds())
             except Exception:
                 heartbeat_age = None
         stop_reason = state.get("stop_reason") if isinstance(state, dict) else None
@@ -1244,6 +1273,8 @@ class App(tk.Tk):
             self.progress_status_var.set(f"progress_index.json missing: {path}")
             self.progress_entries = []
             self._render_progress_entries()
+            self._refresh_skill_tree_panel()
+            self._refresh_upgrade_log()
             return
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
@@ -1251,6 +1282,8 @@ class App(tk.Tk):
             self.progress_status_var.set(f"Failed to load progress index: {exc}")
             self.progress_entries = []
             self._render_progress_entries()
+            self._refresh_skill_tree_panel()
+            self._refresh_upgrade_log()
             return
         entries = payload.get("entries", []) if isinstance(payload, dict) else []
         self.progress_entries = entries if isinstance(entries, list) else []
@@ -1261,6 +1294,8 @@ class App(tk.Tk):
         self._render_progress_entries()
         self._refresh_progress_diagnosis()
         self._update_progress_growth_hud()
+        self._refresh_skill_tree_panel()
+        self._refresh_upgrade_log()
 
     def _progress_status_label(self, entry: dict[str, object]) -> str:
         status = entry.get("status")
@@ -1469,6 +1504,176 @@ class App(tk.Tk):
             drawdown_points=drawdown_points,
             label_values=label_values if label_values else None,
         )
+
+    def _latest_run_dir(self) -> Path | None:
+        if not self.progress_entries:
+            return None
+        entry = self.progress_entries[0]
+        run_dir = entry.get("run_dir") if isinstance(entry, dict) else None
+        if not run_dir:
+            return None
+        return Path(str(run_dir))
+
+    def _refresh_skill_tree_panel(self) -> None:
+        pool_path = ROOT / "Logs" / "train_runs" / "strategy_pool.json"
+        if not pool_path.exists():
+            self.skill_tree_status_var.set("Skill Tree: pool manifest missing")
+            self.skill_tree_detail_var.set("Pool summary: -")
+            self._update_skill_tree_candidates("(no candidates yet)")
+            return
+        try:
+            pool = json.loads(pool_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            self.skill_tree_status_var.set(f"Skill Tree: failed to read manifest ({exc})")
+            self.skill_tree_detail_var.set("Pool summary: -")
+            self._update_skill_tree_candidates("(manifest parse error)")
+            return
+        candidates = pool.get("candidates", []) if isinstance(pool, dict) else []
+        families = pool.get("families", {}) if isinstance(pool, dict) else {}
+        total = len(candidates) if isinstance(candidates, list) else 0
+        family_summary = ", ".join(f"{name}:{count}" for name, count in (families or {}).items())
+        self.skill_tree_status_var.set(f"Skill Tree: {total} strategies available")
+        self.skill_tree_detail_var.set(f"Pool summary: {family_summary or 'unknown'}")
+
+        latest_dir = self._latest_run_dir()
+        if not latest_dir:
+            self._update_skill_tree_candidates("(no latest run found)")
+            return
+        candidate_path = latest_dir / "candidates.json"
+        if not candidate_path.exists():
+            self._update_skill_tree_candidates("(candidates.json missing for latest run)")
+            return
+        try:
+            payload = json.loads(candidate_path.read_text(encoding="utf-8"))
+        except Exception:
+            self._update_skill_tree_candidates("(candidates.json parse error)")
+            return
+        selected = payload.get("candidates", []) if isinstance(payload, dict) else []
+        lines: List[str] = []
+        for item in selected:
+            if not isinstance(item, dict):
+                continue
+            cid = item.get("candidate_id", "?")
+            family = item.get("family", "?")
+            params = item.get("params", {})
+            lines.append(f"{cid} | {family} | {params}")
+        self._update_skill_tree_candidates("\n".join(lines) if lines else "(no candidates selected)")
+
+    def _update_skill_tree_candidates(self, text: str) -> None:
+        if not hasattr(self, "skill_tree_candidates_text"):
+            return
+        self.skill_tree_candidates_text.configure(state=tk.NORMAL)
+        self.skill_tree_candidates_text.delete("1.0", tk.END)
+        self.skill_tree_candidates_text.insert(tk.END, text)
+        self.skill_tree_candidates_text.configure(state=tk.DISABLED)
+
+    def _refresh_upgrade_log(self) -> None:
+        if not hasattr(self, "upgrade_tree"):
+            return
+        self.upgrade_tree.delete(*self.upgrade_tree.get_children())
+        entries: List[dict[str, object]] = []
+        for entry in self.progress_entries[:20]:
+            if not isinstance(entry, dict):
+                continue
+            run_dir = entry.get("run_dir")
+            if not run_dir:
+                continue
+            decision_path = Path(str(run_dir)) / "promotion_decision.json"
+            if not decision_path.exists():
+                continue
+            try:
+                payload = json.loads(decision_path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            entry_payload = {
+                "ts_utc": payload.get("ts_utc", ""),
+                "run_id": entry.get("run_id", ""),
+                "candidate_id": payload.get("candidate_id", ""),
+                "decision": payload.get("decision", ""),
+                "reasons": ", ".join(payload.get("reasons", [])) if isinstance(payload.get("reasons"), list) else "",
+                "run_dir": run_dir,
+                "decision_path": str(decision_path),
+            }
+            entries.append(entry_payload)
+        self.upgrade_log_entries = entries
+        for entry in entries:
+            self.upgrade_tree.insert(
+                "",
+                tk.END,
+                values=(
+                    entry.get("ts_utc", ""),
+                    entry.get("run_id", ""),
+                    entry.get("candidate_id", ""),
+                    entry.get("decision", ""),
+                    entry.get("reasons", ""),
+                ),
+            )
+        self.upgrade_log_status_var.set(
+            f"Upgrade Log: {len(entries)} decision(s) loaded" if entries else "Upgrade Log: no decisions found"
+        )
+
+    def _open_strategy_pool_folder(self) -> None:
+        folder = ROOT / "Logs" / "train_runs"
+        try:
+            if hasattr(os, "startfile"):
+                os.startfile(str(folder))  # type: ignore[attr-defined]
+            else:
+                subprocess.Popen(["xdg-open", str(folder)], env=_utf8_env())
+        except Exception as exc:  # pragma: no cover - UI feedback
+            messagebox.showerror("Skill Tree", f"Failed to open folder: {exc}")
+
+    def _open_selected_upgrade_run(self) -> None:
+        if not hasattr(self, "upgrade_tree"):
+            return
+        selection = self.upgrade_tree.selection()
+        if not selection:
+            messagebox.showinfo("Upgrade Log", "No upgrade entry selected")
+            return
+        index = self.upgrade_tree.index(selection[0])
+        if index >= len(self.upgrade_log_entries):
+            messagebox.showinfo("Upgrade Log", "Selected entry missing")
+            return
+        entry = self.upgrade_log_entries[index]
+        run_dir = entry.get("run_dir")
+        if not run_dir:
+            messagebox.showinfo("Upgrade Log", "Run directory missing")
+            return
+        try:
+            path = Path(str(run_dir))
+            if hasattr(os, "startfile"):
+                os.startfile(str(path))  # type: ignore[attr-defined]
+            else:
+                subprocess.Popen(["xdg-open", str(path)], env=_utf8_env())
+        except Exception as exc:  # pragma: no cover - UI feedback
+            messagebox.showerror("Upgrade Log", f"Failed to open run dir: {exc}")
+
+    def _open_selected_upgrade_decision(self) -> None:
+        if not hasattr(self, "upgrade_tree"):
+            return
+        selection = self.upgrade_tree.selection()
+        if not selection:
+            messagebox.showinfo("Upgrade Log", "No upgrade entry selected")
+            return
+        index = self.upgrade_tree.index(selection[0])
+        if index >= len(self.upgrade_log_entries):
+            messagebox.showinfo("Upgrade Log", "Selected entry missing")
+            return
+        entry = self.upgrade_log_entries[index]
+        decision_path = entry.get("decision_path")
+        if not decision_path:
+            messagebox.showinfo("Upgrade Log", "Decision path missing")
+            return
+        path = Path(str(decision_path))
+        if not path.exists():
+            messagebox.showinfo("Upgrade Log", "Decision file not found")
+            return
+        try:
+            if hasattr(os, "startfile"):
+                os.startfile(str(path))  # type: ignore[attr-defined]
+            else:
+                subprocess.Popen(["xdg-open", str(path)], env=_utf8_env())
+        except Exception as exc:  # pragma: no cover - UI feedback
+            messagebox.showerror("Upgrade Log", f"Failed to open decision: {exc}")
 
     def _open_progress_folder(self) -> None:
         folder = self.progress_index_path.parent
@@ -1726,6 +1931,59 @@ class App(tk.Tk):
             side=tk.LEFT, padx=3
         )
 
+        skill_frame = tk.LabelFrame(self.progress_tab, text="Skill Tree (Strategy Pool)", padx=6, pady=6)
+        skill_frame.pack(fill=tk.X, padx=6, pady=4)
+        tk.Label(skill_frame, textvariable=self.skill_tree_status_var, anchor="w").pack(anchor="w")
+        tk.Label(skill_frame, textvariable=self.skill_tree_detail_var, anchor="w", fg="#6b7280").pack(anchor="w")
+        tk.Label(skill_frame, text="Currently tested candidates:", anchor="w").pack(anchor="w")
+        self.skill_tree_candidates_text = ScrolledText(skill_frame, height=4, wrap=tk.WORD)
+        self.skill_tree_candidates_text.pack(fill=tk.X, padx=2, pady=2)
+        self.skill_tree_candidates_text.configure(state=tk.DISABLED)
+        tk.Label(
+            skill_frame,
+            text="What this means: candidates advance only when they repeatedly beat baselines without violating safety gates.",
+            anchor="w",
+            justify=tk.LEFT,
+            wraplength=1000,
+        ).pack(anchor="w")
+        skill_buttons = tk.Frame(skill_frame)
+        skill_buttons.pack(fill=tk.X, pady=2)
+        tk.Button(skill_buttons, text="Open pool manifest folder", command=self._open_strategy_pool_folder).pack(
+            side=tk.LEFT, padx=3
+        )
+
+        upgrade_frame = tk.LabelFrame(self.progress_tab, text="Upgrade Log (Promotion Decisions)", padx=6, pady=6)
+        upgrade_frame.pack(fill=tk.X, padx=6, pady=4)
+        tk.Label(upgrade_frame, textvariable=self.upgrade_log_status_var, anchor="w").pack(anchor="w")
+        upgrade_columns = ("ts", "run_id", "candidate_id", "decision", "reasons")
+        self.upgrade_tree = ttk.Treeview(upgrade_frame, columns=upgrade_columns, show="headings", height=4)
+        for name, width in [
+            ("ts", 160),
+            ("run_id", 140),
+            ("candidate_id", 160),
+            ("decision", 110),
+            ("reasons", 360),
+        ]:
+            self.upgrade_tree.heading(name, text=name)
+            self.upgrade_tree.column(name, width=width, anchor="w")
+        self.upgrade_tree.pack(fill=tk.X, expand=True)
+        upgrade_actions = tk.Frame(upgrade_frame)
+        upgrade_actions.pack(fill=tk.X, pady=2)
+        tk.Button(upgrade_actions, text="Open run folder", command=self._open_selected_upgrade_run).pack(
+            side=tk.LEFT, padx=3
+        )
+        tk.Button(upgrade_actions, text="Open decision JSON", command=self._open_selected_upgrade_decision).pack(
+            side=tk.LEFT, padx=3
+        )
+        tk.Label(
+            upgrade_frame,
+            text="What this means: promotions are advisory by default and prioritize risk limits over raw returns.",
+            anchor="w",
+            justify=tk.LEFT,
+            wraplength=1000,
+            fg="#6b7280",
+        ).pack(anchor="w")
+
         container = tk.Frame(self.progress_tab)
         container.pack(fill=tk.BOTH, expand=True, padx=6, pady=4)
         left = tk.Frame(container)
@@ -1809,6 +2067,8 @@ class App(tk.Tk):
         self._load_progress_index()
         self._refresh_truthful_progress()
         self._refresh_policy_history()
+        self._refresh_skill_tree_panel()
+        self._refresh_upgrade_log()
 
     def _format_score(self, value: object) -> str:
         if isinstance(value, (int, float)):
