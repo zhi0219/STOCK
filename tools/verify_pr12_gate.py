@@ -7,6 +7,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+from tools.git_baseline_probe import probe_baseline
+
 ROOT = Path(__file__).resolve().parent.parent
 PROGRESS_SCRIPT = ROOT / "tools" / "progress_index.py"
 SUMMARY_TAG = "PR12_GATE_SUMMARY"
@@ -69,9 +71,18 @@ def _seed_run(base: Path) -> Path:
     return runs_root
 
 
-def _summary_line(status: str, reason: str) -> str:
+def _summary_line(status: str, reason: str, baseline: str, baseline_status: str, baseline_details: str) -> str:
     detail = reason or "ok"
-    return "|".join([SUMMARY_TAG, f"status={status}", f"reason={detail}"])
+    return "|".join(
+        [
+            SUMMARY_TAG,
+            f"status={status}",
+            f"reason={detail}",
+            f"baseline={baseline}",
+            f"baseline_status={baseline_status}",
+            f"baseline_details={baseline_details}",
+        ]
+    )
 
 
 def _run_cmd(cmd: list[str]) -> subprocess.CompletedProcess[str]:
@@ -122,18 +133,6 @@ def _check_py_compile() -> tuple[bool, str]:
     return True, "ok"
 
 
-def _baseline_status() -> tuple[str | None, bool]:
-    origin_main = "origin/main"
-    local_main = "main"
-    origin_check = _run_cmd(["git", "rev-parse", "--verify", origin_main])
-    if origin_check.returncode == 0:
-        return origin_main, False
-    local_check = _run_cmd(["git", "rev-parse", "--verify", local_main])
-    if local_check.returncode == 0:
-        return local_main, False
-    return None, True
-
-
 def _verify_ui_progress() -> tuple[bool, str]:
     if not UI_PROGRESS_VERIFY.exists():
         return True, "ui_verify_missing_skipped"
@@ -173,10 +172,13 @@ def run() -> int:
                     status = "FAIL"
                     reasons.append(reason)
 
-    baseline, baseline_missing = _baseline_status()
-    if baseline_missing:
+    baseline_info = probe_baseline()
+    baseline = baseline_info.get("baseline") or "unavailable"
+    baseline_status = baseline_info.get("status") or "UNAVAILABLE"
+    baseline_details = baseline_info.get("details") or "unknown"
+    if baseline_status != "AVAILABLE":
         degraded = True
-        degraded_reasons.append("baseline_unavailable")
+        degraded_reasons.append(f"baseline_unavailable_{baseline_details}")
 
     with tempfile.TemporaryDirectory() as tmpdir:
         base = Path(tmpdir)
@@ -240,7 +242,9 @@ def run() -> int:
             f"reasons={reasons_text}",
             f"degraded_reasons={';'.join(degraded_reasons) if degraded_reasons else 'none'}",
             f"using_venv={1 if _using_venv() else 0}",
-            f"baseline={baseline or 'unavailable'}",
+            f"baseline={baseline}",
+            f"baseline_status={baseline_status}",
+            f"baseline_details={baseline_details}",
         ]
     )
     print("PR12_GATE_START")

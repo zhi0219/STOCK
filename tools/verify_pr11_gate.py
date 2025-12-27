@@ -5,6 +5,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+from tools.git_baseline_probe import probe_baseline
+
 ROOT = Path(__file__).resolve().parent.parent
 TOOLS_DIR = ROOT / "tools"
 LOGS_DIR = ROOT / "Logs"
@@ -16,7 +18,16 @@ TARGETS = [
 ]
 
 
-def _summary_line(status: str, reasons: list[str], using_venv: bool, repo_root_ok: bool, can_write_logs: bool) -> str:
+def _summary_line(
+    status: str,
+    reasons: list[str],
+    using_venv: bool,
+    repo_root_ok: bool,
+    can_write_logs: bool,
+    baseline: str,
+    baseline_status: str,
+    baseline_details: str,
+) -> str:
     detail = ";".join(reasons) if reasons else "ok"
     return "|".join(
         [
@@ -25,6 +36,9 @@ def _summary_line(status: str, reasons: list[str], using_venv: bool, repo_root_o
             f"using_venv={int(using_venv)}",
             f"repo_root_ok={int(repo_root_ok)}",
             f"can_write_logs={int(can_write_logs)}",
+            f"baseline={baseline}",
+            f"baseline_status={baseline_status}",
+            f"baseline_details={baseline_details}",
             f"reasons={detail}",
         ]
     )
@@ -91,6 +105,10 @@ def main() -> int:
     venv_present, using_venv = _check_venv()
     repo_root_ok = _check_repo_root()
     can_write_logs, log_error = _probe_logs()
+    baseline_info = probe_baseline()
+    baseline = baseline_info.get("baseline") or "unavailable"
+    baseline_status = baseline_info.get("status") or "UNAVAILABLE"
+    baseline_details = baseline_info.get("details") or "unknown"
 
     if not repo_root_ok:
         reasons.append("run_from_repo_root")
@@ -114,7 +132,9 @@ def main() -> int:
             reasons.append("verify_progress_truth_failed")
 
     status = "PASS" if not reasons else "FAIL"
-    summary = _summary_line(status, reasons, using_venv, repo_root_ok, can_write_logs)
+    summary = _summary_line(
+        status, reasons, using_venv, repo_root_ok, can_write_logs, baseline, baseline_status, baseline_details
+    )
 
     print(summary)
     if compile_output:

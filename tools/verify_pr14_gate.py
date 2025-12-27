@@ -18,7 +18,7 @@ SUMMARY_TAG = "PR14_GATE_SUMMARY"
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from tools.git_baseline_probe import detect_baseline
+from tools.git_baseline_probe import probe_baseline
 from tools.ui_parsers import load_policy_history, load_progress_judge_latest
 
 
@@ -126,7 +126,14 @@ def _run_repo_hygiene() -> tuple[int, str]:
     return proc.returncode, output.strip()
 
 
-def _summary_line(status: str, degraded: bool, degraded_reasons: List[str], baseline: str | None) -> str:
+def _summary_line(
+    status: str,
+    degraded: bool,
+    degraded_reasons: List[str],
+    baseline: str | None,
+    baseline_status: str,
+    baseline_details: str,
+) -> str:
     detail = ";".join(degraded_reasons) if degraded_reasons else "ok"
     return "|".join(
         [
@@ -135,6 +142,8 @@ def _summary_line(status: str, degraded: bool, degraded_reasons: List[str], base
             f"degraded={int(degraded)}",
             f"degraded_reasons={detail}",
             f"baseline={baseline or 'unavailable'}",
+            f"baseline_status={baseline_status}",
+            f"baseline_details={baseline_details}",
         ]
     )
 
@@ -146,9 +155,12 @@ def main() -> int:
     judge_output = ""
     hygiene_output = ""
 
-    baseline = detect_baseline()
-    if baseline is None:
-        degraded_reasons.append("baseline_unavailable")
+    baseline_info = probe_baseline()
+    baseline = baseline_info.get("baseline")
+    baseline_status = baseline_info.get("status") or "UNAVAILABLE"
+    baseline_details = baseline_info.get("details") or "unknown"
+    if baseline_status != "AVAILABLE":
+        degraded_reasons.append(f"baseline_unavailable_{baseline_details}")
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_root = Path(tmpdir)
@@ -195,7 +207,7 @@ def main() -> int:
         status = "FAIL"
 
     degraded = bool(degraded_reasons)
-    summary = _summary_line(status, degraded, degraded_reasons, baseline)
+    summary = _summary_line(status, degraded, degraded_reasons, baseline, baseline_status, baseline_details)
 
     print("PR14_GATE_START")
     print(summary)

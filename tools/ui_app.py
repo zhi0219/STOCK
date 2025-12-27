@@ -7,7 +7,7 @@ import subprocess
 import sys
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Sequence
@@ -40,10 +40,14 @@ PROGRESS_INDEX_PATH = ROOT / "Logs" / "train_runs" / "progress_index.json"
 PROGRESS_INDEX_SCRIPT = ROOT / "tools" / "progress_index.py"
 PROGRESS_JUDGE_LATEST_PATH = ROOT / "Logs" / "train_runs" / "progress_judge" / "latest.json"
 POLICY_REGISTRY_PATH = ROOT / "Logs" / "policy_registry.json"
+BASELINE_GUIDE_SCRIPT = ROOT / "tools" / "baseline_fix_guide.py"
+BASELINE_GUIDE_PATH = ROOT / "Logs" / "baseline_guide.txt"
+JUDGE_STALE_SECONDS = 3600
 
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from tools.git_baseline_probe import probe_baseline
 from tools.ui_parsers import load_policy_history, load_progress_judge_latest
 
 try:
@@ -123,6 +127,18 @@ def read_text_tail(path: Path, lines: int = 20) -> str:
 def latest_events_file() -> Path | None:
     candidates = sorted((ROOT / "Logs").glob("events_*.jsonl"))
     return candidates[-1] if candidates else None
+
+
+def _format_age(seconds: float | None) -> str:
+    if seconds is None:
+        return "unknown"
+    if seconds < 60:
+        return f"{int(seconds)}s"
+    if seconds < 3600:
+        return f"{int(seconds // 60)}m"
+    if seconds < 86400:
+        return f"{int(seconds // 3600)}h"
+    return f"{int(seconds // 86400)}d"
 
 
 def run_supervisor_command(commands: Sequence[str]) -> subprocess.CompletedProcess:
@@ -347,6 +363,15 @@ class App(tk.Tk):
         self.progress_curve_mode_var = tk.StringVar(value="Latest run curve")
         self.progress_curve_runs_var = tk.IntVar(value=5)
         self.progress_equity_stats_var = tk.StringVar(value="Start: - | End: - | Net: - | Max DD: -")
+        self.proof_baseline_status_var = tk.StringVar(value="Baseline: unknown")
+        self.proof_baseline_detail_var = tk.StringVar(value="Reason: -")
+        self.proof_service_status_var = tk.StringVar(value="Training Service: unknown")
+        self.proof_service_detail_var = tk.StringVar(value="Heartbeat: -")
+        self.proof_judge_status_var = tk.StringVar(value="Judge: unknown")
+        self.proof_judge_detail_var = tk.StringVar(value="Updated: -")
+        self.proof_baseline_lamp: tk.Label | None = None
+        self.proof_service_lamp: tk.Label | None = None
+        self.proof_judge_lamp: tk.Label | None = None
         self.policy_history_entries: list[dict[str, object]] = []
         self.hud_mode_detail_var = tk.StringVar(value="Status: unknown")
         self.hud_kill_switch_var = tk.StringVar(value="Kill switch: unknown")
@@ -725,6 +750,40 @@ class App(tk.Tk):
         except Exception as exc:  # pragma: no cover - UI feedback
             messagebox.showerror("Training", f"Failed to open folder: {exc}")
 
+    def _open_baseline_guide(self) -> None:
+        output_path = BASELINE_GUIDE_PATH
+        cmd = [sys.executable, str(BASELINE_GUIDE_SCRIPT), "--output", str(output_path)]
+        proc = subprocess.run(
+            cmd,
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=_utf8_env(),
+        )
+        if proc.returncode != 0:
+            messagebox.showerror(
+                "Baseline Guide",
+                f"baseline_fix_guide.py failed:\n{proc.stderr or proc.stdout}",
+            )
+            return
+        if not output_path.exists():
+            messagebox.showinfo("Baseline Guide", "Guide file not found.")
+            return
+        try:
+            content = output_path.read_text(encoding="utf-8")
+        except Exception as exc:  # pragma: no cover - UI feedback
+            messagebox.showerror("Baseline Guide", f"Failed to read guide: {exc}")
+            return
+        dialog = tk.Toplevel(self)
+        dialog.title("Baseline Fix Guide")
+        dialog.geometry("900x600")
+        text = ScrolledText(dialog, wrap=tk.WORD)
+        text.pack(fill=tk.BOTH, expand=True)
+        text.insert(tk.END, content)
+        text.configure(state=tk.DISABLED)
+
     def _refresh_wakeup_dashboard(self) -> None:
         runs_root = LOGS_DIR / "train_runs"
         if not find_latest_run_dir or not find_latest_summary_md or not parse_summary_key_fields:
@@ -873,6 +932,66 @@ class App(tk.Tk):
         if state.get("last_summary_path"):
             self._latest_training_summary_path = Path(str(state.get("last_summary_path")))
 
+    def _refresh_proof_lamps(self) -> None:
+        baseline_info = probe_baseline()
+        baseline_status = baseline_info.get("status") or "UNAVAILABLE"
+        baseline = baseline_info.get("baseline") or "unavailable"
+        baseline_details = baseline_info.get("details") or "unknown"
+        baseline_reason_map = {
+            "no_origin": "No origin remote",
+            "no_main_ref": "No main/master ref",
+            "shallow_repo": "Shallow repository",
+            "git_error": "Git error",
+        }
+        if baseline_status == "AVAILABLE":
+            lamp_text = "AVAILABLE"
+            lamp_color = "#16a34a"
+            reason = f"Using {baseline}"
+        else:
+            lamp_text = "UNAVAILABLE"
+            lamp_color = "#f97316"
+            reason = baseline_reason_map.get(baseline_details, baseline_details)
+        if self.proof_baseline_lamp:
+            self.proof_baseline_lamp.configure(text=lamp_text, bg=lamp_color)
+        self.proof_baseline_status_var.set(f"Baseline: {lamp_text}")
+        self.proof_baseline_detail_var.set(f"Reason: {reason}")
+
+        state = load_service_state()
+        running = _service_running(state)
+        hb_age: float | None = None
+        hb_value = state.get("last_heartbeat_ts")
+        if hb_value:
+            hb_text = str(hb_value).replace("Z", "+00:00")
+            try:
+                ts = datetime.fromisoformat(hb_text)
+                now = datetime.now(ts.tzinfo or timezone.utc)
+                hb_age = max(0.0, (now - ts).total_seconds())
+            except Exception:
+                hb_age = None
+        service_text = "RUNNING" if running else "STOPPED"
+        service_color = "#16a34a" if running else "#b91c1c"
+        if self.proof_service_lamp:
+            self.proof_service_lamp.configure(text=service_text, bg=service_color)
+        self.proof_service_status_var.set(f"Training Service: {service_text}")
+        self.proof_service_detail_var.set(f"Heartbeat age: {_format_age(hb_age)}")
+
+        judge_age: float | None = None
+        if PROGRESS_JUDGE_LATEST_PATH.exists():
+            try:
+                judge_age = max(0.0, time.time() - PROGRESS_JUDGE_LATEST_PATH.stat().st_mtime)
+            except Exception:
+                judge_age = None
+        judge_updated = judge_age is not None and judge_age <= JUDGE_STALE_SECONDS
+        judge_text = "UPDATED" if judge_updated else "STALE"
+        judge_color = "#16a34a" if judge_updated else "#b91c1c"
+        if self.proof_judge_lamp:
+            self.proof_judge_lamp.configure(text=judge_text, bg=judge_color)
+        self.proof_judge_status_var.set(f"Judge Freshness: {judge_text}")
+        if judge_age is None:
+            self.proof_judge_detail_var.set("Last updated: missing")
+        else:
+            self.proof_judge_detail_var.set(f"Last updated: {_format_age(judge_age)} ago")
+
     def _refresh_training_hud(self) -> None:
         if not compute_training_hud:
             return
@@ -931,6 +1050,7 @@ class App(tk.Tk):
         self._load_dashboard()
         self._refresh_wakeup_dashboard()
         self._refresh_service_state()
+        self._refresh_proof_lamps()
         self._refresh_training_hud()
         self._refresh_truthful_progress()
         self._refresh_policy_history()
@@ -1445,6 +1565,51 @@ class App(tk.Tk):
             messagebox.showerror("Progress", f"Failed to export chart: {exc}")
 
     def _build_progress_tab(self) -> None:
+        proof_frame = tk.LabelFrame(self.progress_tab, text="Proof Lamps (SIM-only)", padx=6, pady=6)
+        proof_frame.pack(fill=tk.X, padx=6, pady=4)
+        row = tk.Frame(proof_frame)
+        row.pack(fill=tk.X)
+
+        def build_lamp(
+            parent: tk.Frame,
+            title: str,
+            status_var: tk.StringVar,
+            detail_var: tk.StringVar,
+            button_text: str | None = None,
+            command=None,
+        ) -> tk.Label:
+            frame = tk.Frame(parent)
+            frame.pack(side=tk.LEFT, padx=10, pady=2)
+            tk.Label(frame, text=title, font=("Helvetica", 11, "bold")).pack(anchor="w")
+            lamp = tk.Label(frame, text="UNKNOWN", width=12, relief=tk.SOLID, fg="white", bg="#555")
+            lamp.pack(anchor="w", pady=2)
+            tk.Label(frame, textvariable=status_var, anchor="w").pack(anchor="w")
+            tk.Label(frame, textvariable=detail_var, anchor="w").pack(anchor="w")
+            if button_text and command:
+                tk.Button(frame, text=button_text, command=command).pack(anchor="w", pady=2)
+            return lamp
+
+        self.proof_baseline_lamp = build_lamp(
+            row,
+            "Baseline",
+            self.proof_baseline_status_var,
+            self.proof_baseline_detail_var,
+            button_text="Open Guide",
+            command=self._open_baseline_guide,
+        )
+        self.proof_service_lamp = build_lamp(
+            row,
+            "Training Service",
+            self.proof_service_status_var,
+            self.proof_service_detail_var,
+        )
+        self.proof_judge_lamp = build_lamp(
+            row,
+            "Judge Freshness",
+            self.proof_judge_status_var,
+            self.proof_judge_detail_var,
+        )
+
         banner = tk.Label(
             self.progress_tab,
             text="Progress panel (SIM-only). Uses Logs/train_runs/progress_index.json to render training snapshots.",
@@ -1640,6 +1805,7 @@ class App(tk.Tk):
         self.progress_curve_mode_var.trace_add("write", lambda *_: self._render_progress_detail(self.progress_selected_entry))
         self.progress_curve_runs_var.trace_add("write", lambda *_: self._render_progress_detail(self.progress_selected_entry))
 
+        self._refresh_proof_lamps()
         self._load_progress_index()
         self._refresh_truthful_progress()
         self._refresh_policy_history()
