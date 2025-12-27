@@ -34,6 +34,7 @@ Logs/progress_index.json
 logs/progress_index.json
 Logs/baseline_guide.txt
 logs/baseline_guide.txt
+Logs/ui_smoke_latest.json
 Logs/train_service/
 logs/train_service/
 evidence_packs/

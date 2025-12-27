@@ -33,6 +33,15 @@ PR17 gate（PowerShell 复制即用）：
 .\.venv\Scripts\python.exe .\tools\verify_pr17_gate.py
 ```
 
+UI Proof（PR18 gate, PowerShell 复制即用）：
+
+```
+.\.venv\Scripts\python.exe .\tools\verify_pr18_gate.py
+```
+
+- `PR18_GATE_SUMMARY` 为 PASS 表示 UI smoke + scroll 检查完成。
+- 若无显示环境（headless）或未能提供 UI display，将返回 `degraded=1` 且标注 `ui_display_unavailable`。
+
 ## PowerShell 状态一眼读懂
 
 - 输出中包含 `*_SUMMARY` / `*_HEADER` 这类 marker 行，直接看这些行即可判断 PASS / DEGRADED / FAIL。
