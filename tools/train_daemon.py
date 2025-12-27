@@ -263,6 +263,43 @@ def _summary_md(
     return "\n".join(lines)
 
 
+def _summary_payload(
+    run_id: str,
+    policy_version: str,
+    equity_rows: List[Dict[str, object]],
+    trade_count: int,
+    rejects: Counter,
+    stop_reason: str,
+    start_ts: str,
+    end_ts: str,
+    gates_triggered: List[str],
+) -> Dict[str, object]:
+    equities = [float(row.get("equity_usd", 0.0)) for row in equity_rows]
+    parse_warnings: List[str] = []
+    if not equities:
+        parse_warnings.append("equity_rows_missing")
+    start_equity = equities[0] if equities else None
+    end_equity = equities[-1] if equities else None
+    net_change = (end_equity - start_equity) if equities else None
+    max_drawdown = _calc_drawdown(equities) * 100 if equities else None
+
+    return {
+        "schema_version": "1.0",
+        "policy_version": policy_version,
+        "start_equity": start_equity,
+        "end_equity": end_equity,
+        "net_change": net_change,
+        "max_drawdown": max_drawdown,
+        "turnover": trade_count,
+        "rejects_count": sum(rejects.values()),
+        "gates_triggered": gates_triggered,
+        "stop_reason": stop_reason,
+        "timestamps": {"start": start_ts, "end": end_ts},
+        "parse_warnings": parse_warnings,
+        "run_id": run_id,
+    }
+
+
 def _append_retention_to_summary(path: Path, retention_result: RetentionResult) -> None:
     lines = ["", "## Retention", f"- {_format_retention_summary(retention_result)}"]
     with path.open("a", encoding="utf-8") as fh:
@@ -687,7 +724,7 @@ def _run_simulation(
     args: argparse.Namespace,
     run_dir: Path,
     kill_cfg: Dict[str, object],
-) -> Tuple[str, Dict[str, object], List[Dict[str, object]], Counter, int]:
+) -> Tuple[str, Dict[str, object], List[Dict[str, object]], Counter, int, Dict[str, object]]:
     sim_state: Dict[str, object] = {
         "cash_usd": 10_000.0,
         "risk_state": {
@@ -783,7 +820,7 @@ def _run_simulation(
         "steps_completed": len(equity_rows),
         "trades": trade_count,
     }
-    return stop_reason, meta, equity_rows, rejects, trade_count
+    return stop_reason, meta, equity_rows, rejects, trade_count, sim_state
 
 
 def main(argv: List[str] | None = None) -> int:
@@ -866,7 +903,7 @@ def main(argv: List[str] | None = None) -> int:
         _write_event("TRAIN_BUDGET_EXHAUSTED", "Budget exhausted", stop_reason=stop)
         return 1
 
-    stop_reason, meta, equity_rows, rejects, trade_count = _run_simulation(
+    stop_reason, meta, equity_rows, rejects, trade_count, sim_state = _run_simulation(
         quotes, policy_version, policy_cfg, args, run_dir, kill_cfg
     )
     if stop_reason == "kill_switch":
@@ -881,16 +918,19 @@ def main(argv: List[str] | None = None) -> int:
         "equity_curve.csv": run_dir / "equity_curve.csv",
         "orders_sim.jsonl": run_dir / "orders_sim.jsonl",
         "summary.md": run_dir / "summary.md",
+        "summary.json": run_dir / "summary.json",
+        "holdings.json": run_dir / "holdings.json",
     }
     _write_equity_csv(outputs["equity_curve.csv"], equity_rows)
 
+    end_ts = _now().isoformat()
     run_meta = {
         "run_id": run_id,
         "seed": seed,
         "input": str(input_path),
         "policy_version": policy_version,
         "start_ts": start_ts.isoformat(),
-        "end_ts": _now().isoformat(),
+        "end_ts": end_ts,
         "params": {
             "max_runtime_seconds": float(args.max_runtime_seconds),
             "max_steps": int(args.max_steps),
@@ -913,6 +953,30 @@ def main(argv: List[str] | None = None) -> int:
         outputs={k: v.name for k, v in outputs.items()},
     )
     outputs["summary.md"].write_text(summary_body, encoding="utf-8")
+    risk_state = sim_state.get("risk_state", {}) or {}
+    gates_triggered: List[str] = []
+    if risk_state.get("postmortem_triggered"):
+        gates_triggered.append("postmortem_triggered")
+
+    summary_json = _summary_payload(
+        run_id=run_id,
+        policy_version=policy_version,
+        equity_rows=equity_rows,
+        trade_count=trade_count,
+        rejects=rejects,
+        stop_reason=stop_reason,
+        start_ts=start_ts.isoformat(),
+        end_ts=end_ts,
+        gates_triggered=gates_triggered,
+    )
+    _atomic_write_json(run_dir / "summary.json", summary_json)
+    positions = sim_state.get("positions", {}) or {}
+    holdings_payload = {
+        "timestamp": end_ts,
+        "cash_usd": sim_state.get("cash_usd", 0.0),
+        "positions": {str(sym): float(qty) for sym, qty in positions.items()},
+    }
+    _atomic_write_json(run_dir / "holdings.json", holdings_payload)
 
     runs, report_md = _tournament_report(quotes, policy_version, max_steps=min(200, args.max_steps))
     worst_run = min(runs, key=lambda r: r.get("score", 0)) if runs else {}

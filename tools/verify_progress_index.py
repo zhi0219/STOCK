@@ -13,24 +13,30 @@ PROGRESS_SCRIPT = ROOT / "tools" / "progress_index.py"
 def _write_sample_run(base: Path) -> Path:
     run_dir = base / "2024-01-01" / "run_001"
     run_dir.mkdir(parents=True, exist_ok=True)
-    summary = run_dir / "summary.md"
-    summary.write_text(
-        "\n".join(
-            [
-                "# Training summary",
-                "Stop reason: completed",
-                "Net value change: +2.5%",
-                "Max drawdown: -1.2%",
-                "Trades executed: 3",
-                "Turnover: 12",
-                "Reject count: 0",
-                "Gates triggered: none",
-                "## Rejection reasons",
-                "- none",
-            ]
+    summary_json = run_dir / "summary.json"
+    summary_json.write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "policy_version": "v1",
+                "start_equity": 10000.0,
+                "end_equity": 10250.0,
+                "net_change": 250.0,
+                "max_drawdown": 1.2,
+                "turnover": 12,
+                "rejects_count": 0,
+                "gates_triggered": [],
+                "stop_reason": "completed",
+                "timestamps": {"start": "2024-01-01T00:00:00+00:00", "end": "2024-01-01T00:01:00+00:00"},
+                "parse_warnings": [],
+            },
+            ensure_ascii=False,
+            indent=2,
         ),
         encoding="utf-8",
     )
+    summary = run_dir / "summary.md"
+    summary.write_text("# Training summary\n", encoding="utf-8")
     equity = run_dir / "equity_curve.csv"
     equity.write_text(
         "ts_utc,equity_usd,cash_usd,drawdown_pct,step,policy_version,mode\n"
@@ -38,14 +44,16 @@ def _write_sample_run(base: Path) -> Path:
         "2024-01-01T00:01:00+00:00,10250,10050,-0.01,2,v1,NORMAL\n",
         encoding="utf-8",
     )
-    orders = run_dir / "orders_sim.jsonl"
-    orders.write_text(
-        "\n".join(
-            [
-                json.dumps({"symbol": "AAPL", "pnl": 10}),
-                json.dumps({"symbol": "MSFT", "pnl": -2}),
-                json.dumps({"symbol": "AAPL", "pnl": 5}),
-            ]
+    holdings = run_dir / "holdings.json"
+    holdings.write_text(
+        json.dumps(
+            {
+                "timestamp": "2024-01-01T00:01:00+00:00",
+                "cash_usd": 10050.0,
+                "positions": {"AAPL": 1.0, "MSFT": -1.0},
+            },
+            ensure_ascii=False,
+            indent=2,
         ),
         encoding="utf-8",
     )
@@ -91,10 +99,16 @@ def run() -> int:
         holdings = entry.get("holdings_preview", [])
         equity_points = entry.get("equity_points", [])
         if not holdings or holdings[0].get("symbol") != "AAPL":
-            print("FAIL: holdings preview did not aggregate symbols")
+            print("FAIL: holdings preview did not load holdings.json")
             return 1
         if len(equity_points) < 2:
             print("FAIL: equity preview did not load csv rows")
+            return 1
+        if not entry.get("has_summary_json") or not entry.get("has_holdings_json"):
+            print("FAIL: progress index flags missing summary/holdings")
+            return 1
+        if entry.get("parse_error"):
+            print("FAIL: progress index reported parse_error for valid run")
             return 1
         print("PROGRESS_VERIFY_SUMMARY|status=PASS|entries=1|message=progress index generated")
         return 0
