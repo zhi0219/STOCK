@@ -323,6 +323,8 @@ def build_progress_index(runs_root: Path, max_runs: int = 50) -> dict[str, objec
         if still_writing:
             missing_reasons.append("still_writing")
 
+        status = "OK" if not missing_reasons else "MISSING"
+
         entry.update(
             {
                 "has_equity_curve": has_equity_curve,
@@ -331,6 +333,7 @@ def build_progress_index(runs_root: Path, max_runs: int = 50) -> dict[str, objec
                 "parse_error": bool(parse_errors),
                 "still_writing": still_writing,
                 "missing_reason": ";".join(missing_reasons) if missing_reasons else "",
+                "status": status,
             }
         )
 

@@ -305,6 +305,12 @@ The injector writes to `.\Data\quotes.csv` with `source=SELF_TEST_INJECT` so the
   .\.venv\Scripts\python.exe .\tools\verify_dashboard.py
   ```
 
+## PR13 Progress Gate (SIM-only)
+- One-command proof gate (Windows venv required, expect `using_venv=1` in output):
+  ```powershell
+  .\.venv\Scripts\python.exe .\tools\verify_pr13_gate.py
+  ```
+
 ## 零成本 AI 问答（复制即用）
 - 生成证据包：
   ```powershell
