@@ -38,9 +38,13 @@ SERVICE_KILL_SWITCH = ROOT / "Logs" / "train_service" / "KILL_SWITCH"
 SERVICE_ROLLING_SUMMARY = ROOT / "Logs" / "train_service" / "rolling_summary.md"
 PROGRESS_INDEX_PATH = ROOT / "Logs" / "train_runs" / "progress_index.json"
 PROGRESS_INDEX_SCRIPT = ROOT / "tools" / "progress_index.py"
+PROGRESS_JUDGE_LATEST_PATH = ROOT / "Logs" / "train_runs" / "progress_judge" / "latest.json"
+POLICY_REGISTRY_PATH = ROOT / "Logs" / "policy_registry.json"
 
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+from tools.ui_parsers import load_policy_history, load_progress_judge_latest
 
 try:
     from tools import explain_now
@@ -321,6 +325,14 @@ class App(tk.Tk):
         self.progress_detail_missing_var = tk.StringVar(value="Missing reason: -")
         self.progress_judge_xp_var = tk.StringVar(value="Truthful XP: No judge data")
         self.progress_judge_level_var = tk.StringVar(value="Level: No judge data")
+        self.progress_truth_status_var = tk.StringVar(value="Truthful Progress: INSUFFICIENT_DATA")
+        self.progress_truth_score_do_nothing_var = tk.StringVar(value="Score vs DoNothing: -")
+        self.progress_truth_score_buy_hold_var = tk.StringVar(value="Score vs Buy&Hold: -")
+        self.progress_truth_trend_var = tk.StringVar(value="Trend: unknown")
+        self.progress_truth_why_var = tk.StringVar(value="Why: -")
+        self.progress_truth_not_improving_var = tk.StringVar(value="Not improving because: -")
+        self.progress_truth_action_var = tk.StringVar(value="Suggested action: -")
+        self.progress_truth_evidence_var = tk.StringVar(value="Evidence: -")
         self.progress_diag_status_var = tk.StringVar(value="Diagnosis: -")
         self.progress_diag_summary_var = tk.StringVar(value="Progress diagnosis will appear here.")
         self.progress_growth_total_var = tk.StringVar(value="Total runs: -")
@@ -335,6 +347,7 @@ class App(tk.Tk):
         self.progress_curve_mode_var = tk.StringVar(value="Latest run curve")
         self.progress_curve_runs_var = tk.IntVar(value=5)
         self.progress_equity_stats_var = tk.StringVar(value="Start: - | End: - | Net: - | Max DD: -")
+        self.policy_history_entries: list[dict[str, object]] = []
         self.hud_mode_detail_var = tk.StringVar(value="Status: unknown")
         self.hud_kill_switch_var = tk.StringVar(value="Kill switch: unknown")
         self.hud_data_health_var = tk.StringVar(value="Data health: unknown")
@@ -919,6 +932,8 @@ class App(tk.Tk):
         self._refresh_wakeup_dashboard()
         self._refresh_service_state()
         self._refresh_training_hud()
+        self._refresh_truthful_progress()
+        self._refresh_policy_history()
 
     def _sparkline_text(self, values: List[float]) -> str:
         if not values:
@@ -1437,6 +1452,49 @@ class App(tk.Tk):
             anchor="w",
         )
         banner.pack(fill=tk.X, padx=6, pady=4)
+        truthful_frame = tk.LabelFrame(self.progress_tab, text="Truthful Progress (Judge)", padx=6, pady=6)
+        truthful_frame.pack(fill=tk.X, padx=6, pady=4)
+        tk.Label(truthful_frame, textvariable=self.progress_truth_status_var, font=("Helvetica", 13, "bold")).pack(
+            anchor="w"
+        )
+        score_row = tk.Frame(truthful_frame)
+        score_row.pack(fill=tk.X, pady=2)
+        tk.Label(score_row, textvariable=self.progress_truth_score_do_nothing_var, font=("Helvetica", 12, "bold")).pack(
+            side=tk.LEFT, padx=4
+        )
+        tk.Label(score_row, textvariable=self.progress_truth_score_buy_hold_var, font=("Helvetica", 12, "bold")).pack(
+            side=tk.LEFT, padx=12
+        )
+        tk.Label(truthful_frame, textvariable=self.progress_truth_trend_var, anchor="w").pack(anchor="w")
+        tk.Label(
+            truthful_frame,
+            textvariable=self.progress_truth_why_var,
+            anchor="w",
+            justify=tk.LEFT,
+            wraplength=1000,
+        ).pack(anchor="w")
+        tk.Label(
+            truthful_frame,
+            textvariable=self.progress_truth_not_improving_var,
+            anchor="w",
+            justify=tk.LEFT,
+            wraplength=1000,
+        ).pack(anchor="w")
+        tk.Label(
+            truthful_frame,
+            textvariable=self.progress_truth_action_var,
+            anchor="w",
+            justify=tk.LEFT,
+            wraplength=1000,
+        ).pack(anchor="w")
+        tk.Label(
+            truthful_frame,
+            textvariable=self.progress_truth_evidence_var,
+            anchor="w",
+            justify=tk.LEFT,
+            wraplength=1000,
+            fg="#6b7280",
+        ).pack(anchor="w")
         diag_frame = tk.LabelFrame(self.progress_tab, text="Run-rate diagnosis (SIM-only)", padx=6, pady=6)
         diag_frame.pack(fill=tk.X, padx=6, pady=4)
         tk.Label(diag_frame, textvariable=self.progress_diag_status_var, anchor="w", font=("Helvetica", 12, "bold")).pack(
@@ -1479,6 +1537,28 @@ class App(tk.Tk):
         )
         tk.Button(button_frame, text="Open index file", command=self._open_progress_index_file).pack(
             side=tk.LEFT, padx=4
+        )
+
+        policy_frame = tk.LabelFrame(self.progress_tab, text="Policy History (SIM-only)", padx=6, pady=6)
+        policy_frame.pack(fill=tk.BOTH, expand=False, padx=6, pady=4)
+        policy_columns = ("ts", "policy_version", "decision", "reason")
+        self.policy_tree = ttk.Treeview(policy_frame, columns=policy_columns, show="headings", height=5)
+        for name, width in [
+            ("ts", 160),
+            ("policy_version", 140),
+            ("decision", 120),
+            ("reason", 360),
+        ]:
+            self.policy_tree.heading(name, text=name)
+            self.policy_tree.column(name, width=width, anchor="w")
+        self.policy_tree.pack(fill=tk.BOTH, expand=True)
+        policy_actions = tk.Frame(policy_frame)
+        policy_actions.pack(fill=tk.X, pady=2)
+        tk.Button(policy_actions, text="Open evidence", command=self._open_policy_evidence).pack(
+            side=tk.LEFT, padx=3
+        )
+        tk.Button(policy_actions, text="Refresh history", command=self._refresh_policy_history).pack(
+            side=tk.LEFT, padx=3
         )
 
         container = tk.Frame(self.progress_tab)
@@ -1561,6 +1641,91 @@ class App(tk.Tk):
         self.progress_curve_runs_var.trace_add("write", lambda *_: self._render_progress_detail(self.progress_selected_entry))
 
         self._load_progress_index()
+        self._refresh_truthful_progress()
+        self._refresh_policy_history()
+
+    def _format_score(self, value: object) -> str:
+        if isinstance(value, (int, float)):
+            return f"{value:+.2f}"
+        return "N/A"
+
+    def _refresh_truthful_progress(self) -> None:
+        payload = load_progress_judge_latest(PROGRESS_JUDGE_LATEST_PATH)
+        recommendation = payload.get("recommendation", "INSUFFICIENT_DATA")
+        scores = payload.get("scores") if isinstance(payload.get("scores"), dict) else {}
+        drivers = payload.get("drivers") if isinstance(payload.get("drivers"), list) else []
+        not_improving = payload.get("not_improving_reasons") if isinstance(payload.get("not_improving_reasons"), list) else []
+        actions = payload.get("suggested_next_actions") if isinstance(payload.get("suggested_next_actions"), list) else []
+        evidence = payload.get("evidence") if isinstance(payload.get("evidence"), dict) else {}
+        trend = payload.get("trend") if isinstance(payload.get("trend"), dict) else {}
+
+        score_do_nothing = self._format_score(scores.get("vs_do_nothing") if isinstance(scores, dict) else None)
+        score_buy_hold = self._format_score(scores.get("vs_buy_hold") if isinstance(scores, dict) else None)
+        trend_dir = trend.get("direction", "unknown")
+        trend_window = trend.get("window", 0)
+
+        self.progress_truth_status_var.set(f"Truthful Progress: {recommendation}")
+        self.progress_truth_score_do_nothing_var.set(f"Score vs DoNothing: {score_do_nothing}")
+        self.progress_truth_score_buy_hold_var.set(f"Score vs Buy&Hold: {score_buy_hold}")
+        self.progress_truth_trend_var.set(f"Trend (last {trend_window}): {trend_dir}")
+        self.progress_truth_why_var.set(f"Why: {', '.join(drivers) if drivers else 'No drivers available'}")
+        self.progress_truth_not_improving_var.set(
+            f"Not improving because: {', '.join(not_improving) if not_improving else '—'}"
+        )
+        self.progress_truth_action_var.set(
+            f"Suggested action: {', '.join(actions) if actions else 'No action suggestions'}"
+        )
+        evidence_ids = evidence.get("run_ids") if isinstance(evidence, dict) else []
+        if isinstance(evidence_ids, list) and evidence_ids:
+            self.progress_truth_evidence_var.set(f"Evidence runs: {', '.join([str(rid) for rid in evidence_ids])}")
+        else:
+            self.progress_truth_evidence_var.set("Evidence runs: none")
+
+    def _refresh_policy_history(self) -> None:
+        events_path = latest_events_file()
+        entries = load_policy_history(POLICY_REGISTRY_PATH, events_path=events_path)
+        self.policy_history_entries = entries
+        if hasattr(self, "policy_tree"):
+            self.policy_tree.delete(*self.policy_tree.get_children())
+            for entry in entries:
+                self.policy_tree.insert(
+                    "",
+                    tk.END,
+                    values=(
+                        entry.get("ts_utc", ""),
+                        entry.get("policy_version", ""),
+                        entry.get("decision", ""),
+                        entry.get("reason", ""),
+                    ),
+                )
+
+    def _open_policy_evidence(self) -> None:
+        if not hasattr(self, "policy_tree"):
+            return
+        selection = self.policy_tree.selection()
+        if not selection:
+            messagebox.showinfo("Policy History", "No policy history selected")
+            return
+        index = self.policy_tree.index(selection[0])
+        if index >= len(self.policy_history_entries):
+            messagebox.showinfo("Policy History", "Selected entry missing")
+            return
+        entry = self.policy_history_entries[index]
+        evidence = entry.get("evidence")
+        if not evidence:
+            messagebox.showinfo("Policy History", "No evidence path for selection")
+            return
+        path = Path(str(evidence))
+        if path.exists():
+            try:
+                if hasattr(os, "startfile"):
+                    os.startfile(str(path))  # type: ignore[attr-defined]
+                else:
+                    subprocess.Popen(["xdg-open", str(path)], env=_utf8_env())
+            except Exception as exc:  # pragma: no cover - UI feedback
+                messagebox.showerror("Policy History", f"Failed to open evidence: {exc}")
+        else:
+            messagebox.showinfo("Policy History", f"Evidence not found: {evidence}")
 
     def _load_dashboard(self) -> None:
         if not compute_health or not compute_event_rows:
