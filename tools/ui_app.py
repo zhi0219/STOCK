@@ -51,6 +51,8 @@ try:
         load_latest_status,
         load_recent_events,
     )
+    from tools.progress_diagnose import compute_progress_diagnosis
+    from tools.progress_plot import compute_polyline
     from tools.stdio_utf8 import configure_stdio_utf8
     from tools.wakeup_dashboard import (
         MISSING_FIELD_TEXT,
@@ -66,6 +68,8 @@ except Exception:
     compute_move_leaderboard = None  # type: ignore[assignment]
     load_latest_status = None  # type: ignore[assignment]
     load_recent_events = None  # type: ignore[assignment]
+    compute_progress_diagnosis = None  # type: ignore[assignment]
+    compute_polyline = None  # type: ignore[assignment]
     configure_stdio_utf8 = None  # type: ignore[assignment]
     MISSING_FIELD_TEXT = "字段缺失/版本差异"  # type: ignore[assignment]
     find_latest_run_dir = None  # type: ignore[assignment]
@@ -317,6 +321,20 @@ class App(tk.Tk):
         self.progress_detail_missing_var = tk.StringVar(value="Missing reason: -")
         self.progress_judge_xp_var = tk.StringVar(value="Truthful XP: No judge data")
         self.progress_judge_level_var = tk.StringVar(value="Level: No judge data")
+        self.progress_diag_status_var = tk.StringVar(value="Diagnosis: -")
+        self.progress_diag_summary_var = tk.StringVar(value="Progress diagnosis will appear here.")
+        self.progress_growth_total_var = tk.StringVar(value="Total runs: -")
+        self.progress_growth_runs_today_var = tk.StringVar(value="Runs today: - | Last run: -")
+        self.progress_growth_last_net_var = tk.StringVar(value="Last run net: -")
+        self.progress_growth_seven_day_var = tk.StringVar(value="7-day net: -")
+        self.progress_growth_max_dd_var = tk.StringVar(value="Max drawdown (last): -")
+        self.progress_growth_rejects_var = tk.StringVar(value="Rejects: -")
+        self.progress_growth_gates_var = tk.StringVar(value="Gates triggered: -")
+        self.progress_growth_service_var = tk.StringVar(value="Service: -")
+        self.progress_growth_kill_var = tk.StringVar(value="Kill switch: -")
+        self.progress_curve_mode_var = tk.StringVar(value="Latest run curve")
+        self.progress_curve_runs_var = tk.IntVar(value=5)
+        self.progress_equity_stats_var = tk.StringVar(value="Start: - | End: - | Net: - | Max DD: -")
         self.hud_mode_detail_var = tk.StringVar(value="Status: unknown")
         self.hud_kill_switch_var = tk.StringVar(value="Kill switch: unknown")
         self.hud_data_health_var = tk.StringVar(value="Data health: unknown")
@@ -919,59 +937,171 @@ class App(tk.Tk):
 
     def _draw_equity_canvas(
         self,
-        values: List[float],
+        series_list: List[List[float]],
         stats: dict[str, object] | None = None,
         drawdown_points: List[float] | None = None,
+        label_values: List[float] | None = None,
     ) -> None:
         if not hasattr(self, "progress_equity_canvas"):
             return
         canvas = self.progress_equity_canvas
         canvas.delete("all")
-        if not values:
+        if not series_list or not any(series_list):
             canvas.create_text(10, 20, anchor="w", text="No equity curve available")
             return
         width = int(canvas.winfo_width() or 320)
         height = int(canvas.winfo_height() or 120)
-        lo, hi = min(values), max(values)
-        if hi == lo:
-            hi = lo + 1
-        step = max(1, len(values) // max(width // 4, 1))
-        sampled = values[::step]
-        points = []
-        for idx, val in enumerate(sampled):
-            x = idx * (width / max(len(sampled) - 1, 1))
-            y = height - ((val - lo) / (hi - lo) * height)
-            points.append((x, y))
-        for idx in range(1, len(points)):
-            x0, y0 = points[idx - 1]
-            x1, y1 = points[idx]
-            canvas.create_line(x0, y0, x1, y1, fill="#2563eb", width=2)
-        if points:
-            start_label = stats.get("start_equity") if isinstance(stats, dict) else None
-            end_label = stats.get("end_equity") if isinstance(stats, dict) else None
-            start_value = start_label if isinstance(start_label, (int, float)) else values[0]
-            end_value = end_label if isinstance(end_label, (int, float)) else values[-1]
-            canvas.create_text(
-                points[0][0] + 4,
-                points[0][1] + 8,
-                anchor="w",
-                text=f"Start {start_value:.2f}",
-            )
-            canvas.create_text(
-                points[-1][0] - 4,
-                points[-1][1] - 8,
-                anchor="e",
-                text=f"End {end_value:.2f}",
-            )
-        if drawdown_points:
-            clean_drawdowns = [dd for dd in drawdown_points if isinstance(dd, (int, float))]
-            if clean_drawdowns:
-                max_dd = max(clean_drawdowns)
-                idx = drawdown_points.index(max_dd) if max_dd in drawdown_points else None
-                if idx is not None and idx < len(points):
-                    x, y = points[idx]
-                    canvas.create_oval(x - 4, y - 4, x + 4, y + 4, outline="#dc2626", width=2)
-                    canvas.create_text(x + 6, y - 6, anchor="w", text=f"Max DD {max_dd:.2f}%")
+        colors = ["#2563eb", "#16a34a", "#f97316", "#7c3aed", "#dc2626"]
+        pad = 10
+        for idx, values in enumerate(series_list):
+            if not values:
+                continue
+            if not compute_polyline:
+                return
+            points = compute_polyline(values, width, height, pad)
+            for j in range(1, len(points)):
+                x0, y0 = points[j - 1]
+                x1, y1 = points[j]
+                canvas.create_line(x0, y0, x1, y1, fill=colors[idx % len(colors)], width=2)
+            if idx == 0:
+                if label_values:
+                    label_start = label_values[0]
+                    label_end = label_values[-1]
+                    canvas.create_text(
+                        points[0][0] + 4,
+                        points[0][1] + 8,
+                        anchor="w",
+                        text=f"Start {label_start:.2f}",
+                    )
+                    canvas.create_text(
+                        points[-1][0] - 4,
+                        points[-1][1] - 8,
+                        anchor="e",
+                        text=f"End {label_end:.2f}",
+                    )
+                if drawdown_points:
+                    clean_drawdowns = [dd for dd in drawdown_points if isinstance(dd, (int, float))]
+                    if clean_drawdowns:
+                        max_dd = max(clean_drawdowns)
+                        idx_dd = drawdown_points.index(max_dd) if max_dd in drawdown_points else None
+                        if idx_dd is not None and idx_dd < len(points):
+                            x, y = points[idx_dd]
+                            canvas.create_oval(x - 4, y - 4, x + 4, y + 4, outline="#dc2626", width=2)
+                            canvas.create_text(x + 6, y - 6, anchor="w", text=f"Max DD {max_dd:.2f}%")
+
+    def _collect_recent_equity_series(self, limit: int) -> List[List[float]]:
+        series: List[List[float]] = []
+        for entry in self.progress_entries[:limit]:
+            if not isinstance(entry, dict):
+                continue
+            points = entry.get("equity_points", [])
+            values = [float(p.get("equity", 0.0)) for p in points if isinstance(p, dict)]
+            if values:
+                series.append(values)
+        return series
+
+    def _refresh_progress_diagnosis(self) -> None:
+        if not compute_progress_diagnosis:
+            self.progress_diag_status_var.set("Diagnosis: unavailable")
+            self.progress_diag_summary_var.set("progress_diagnose module not available.")
+            return
+        diagnosis = compute_progress_diagnosis()
+        primary = diagnosis.get("primary_reason", "unknown")
+        status = diagnosis.get("status", "WARN")
+        summary = diagnosis.get("summary", "")
+        ranked = diagnosis.get("reasons_ranked", [])
+        ranked_text = ", ".join(ranked) if isinstance(ranked, list) else str(ranked)
+        self.progress_diag_status_var.set(f"Diagnosis: {primary} ({status})")
+        detail = summary or "No diagnosis summary."
+        if ranked_text:
+            detail += f" Ranked reasons: {ranked_text}"
+        self.progress_diag_summary_var.set(detail)
+
+    def _update_progress_growth_hud(self) -> None:
+        runs_total = len(self.progress_entries)
+        self.progress_growth_total_var.set(f"Total runs: {runs_total}")
+        now = datetime.utcnow()
+        runs_today = 0
+        last_run_time = "unknown"
+        last_net_change = "unknown"
+        last_max_dd = "unknown"
+        last_rejects = "unknown"
+        last_gates = "unknown"
+        seven_day_net = 0.0
+        seven_day_count = 0
+        for idx, entry in enumerate(self.progress_entries):
+            if not isinstance(entry, dict):
+                continue
+            raw_mtime = entry.get("mtime")
+            parsed = None
+            if raw_mtime:
+                try:
+                    parsed = datetime.fromisoformat(str(raw_mtime))
+                except Exception:
+                    parsed = None
+            if parsed:
+                if parsed.date() == now.date():
+                    runs_today += 1
+                if (now - parsed).days <= 7:
+                    summary = entry.get("summary", {}) if isinstance(entry.get("summary", {}), dict) else {}
+                    net = summary.get("net_change")
+                    if isinstance(net, (int, float)):
+                        seven_day_net += float(net)
+                        seven_day_count += 1
+                if idx == 0:
+                    last_run_time = parsed.isoformat()
+            if idx == 0:
+                summary = entry.get("summary", {}) if isinstance(entry.get("summary", {}), dict) else {}
+                net = summary.get("net_change")
+                if isinstance(net, (int, float)):
+                    last_net_change = f"{net:+.2f}"
+                max_dd = summary.get("max_drawdown")
+                if isinstance(max_dd, (int, float)):
+                    last_max_dd = f"{max_dd:.2f}%"
+                rejects = summary.get("rejects_count")
+                if rejects in (None, ""):
+                    rejects = summary.get("reject_count")
+                if isinstance(rejects, (int, float)):
+                    last_rejects = str(rejects)
+                gates = summary.get("gates_triggered")
+                if isinstance(gates, (int, float)):
+                    last_gates = str(gates)
+                elif isinstance(gates, str):
+                    last_gates = gates
+
+        self.progress_growth_runs_today_var.set(f"Runs today: {runs_today} | Last run: {last_run_time}")
+        self.progress_growth_last_net_var.set(f"Last run net: {last_net_change}")
+        if seven_day_count:
+            self.progress_growth_seven_day_var.set(f"7-day net: {seven_day_net:+.2f}")
+        else:
+            self.progress_growth_seven_day_var.set("7-day net: insufficient history")
+        self.progress_growth_max_dd_var.set(f"Max drawdown (last): {last_max_dd}")
+        self.progress_growth_rejects_var.set(f"Rejects: {last_rejects}")
+        self.progress_growth_gates_var.set(f"Gates triggered: {last_gates}")
+
+        state = load_service_state()
+        heartbeat_age = None
+        heartbeat = state.get("last_heartbeat_ts") if isinstance(state, dict) else None
+        if heartbeat:
+            try:
+                ts = datetime.fromisoformat(str(heartbeat))
+                heartbeat_age = int((datetime.now(ts.tzinfo) - ts).total_seconds())
+            except Exception:
+                heartbeat_age = None
+        stop_reason = state.get("stop_reason") if isinstance(state, dict) else None
+        if heartbeat_age is not None and heartbeat_age < 180 and not stop_reason:
+            service_status = f"RUNNING (heartbeat {heartbeat_age}s)"
+        elif state:
+            age_text = f"{heartbeat_age}s" if heartbeat_age is not None else "unknown"
+            service_status = f"STOPPED (heartbeat {age_text})"
+        else:
+            service_status = "STOPPED (no state)"
+        self.progress_growth_service_var.set(f"Service: {service_status}")
+
+        kill_switch_paths = [SERVICE_KILL_SWITCH, get_kill_switch_path()]
+        kill_triggered = [str(path) for path in kill_switch_paths if path.exists()]
+        kill_status = "TRIPPED" if kill_triggered else "CLEAR"
+        self.progress_growth_kill_var.set(f"Kill switch: {kill_status}")
 
     def _load_progress_index(self) -> None:
         path = self.progress_index_path
@@ -994,12 +1124,17 @@ class App(tk.Tk):
             f"Progress index runs={len(self.progress_entries)} | generated_at={generated_ts or 'unknown'}"
         )
         self._render_progress_entries()
+        self._refresh_progress_diagnosis()
+        self._update_progress_growth_hud()
 
     def _progress_status_label(self, entry: dict[str, object]) -> str:
+        status = entry.get("status")
         if entry.get("still_writing"):
             return "IN_PROGRESS"
         if entry.get("parse_error"):
             return "PARSE_ERROR"
+        if status in ("OK", "MISSING"):
+            return str(status)
         has_equity = entry.get("has_equity_curve")
         has_summary = entry.get("has_summary_json")
         has_holdings = entry.get("has_holdings_json")
@@ -1153,7 +1288,52 @@ class App(tk.Tk):
         self.progress_holdings_text.configure(state=tk.DISABLED)
 
         self.progress_equity_ascii.configure(text=ascii_text)
-        self._draw_equity_canvas(equity_values, stats=equity_stats, drawdown_points=drawdowns)
+        curve_mode = self.progress_curve_mode_var.get()
+        curve_series: List[List[float]] = []
+        label_values: List[float] = []
+        if curve_mode == "Latest run curve":
+            curve_series = [equity_values] if equity_values else []
+            label_values = equity_values
+        elif curve_mode == "Last N runs (concat)":
+            recent = self._collect_recent_equity_series(int(self.progress_curve_runs_var.get()))
+            if recent:
+                combined: List[float] = []
+                for series in recent:
+                    combined.extend(series)
+                curve_series = [combined] if combined else []
+                label_values = combined
+        else:
+            curve_series = self._collect_recent_equity_series(int(self.progress_curve_runs_var.get()))
+            if equity_values:
+                label_values = equity_values
+            elif curve_series:
+                label_values = curve_series[0]
+
+        start_val = label_values[0] if label_values else None
+        end_val = label_values[-1] if label_values else None
+        if isinstance(start_val, (int, float)) and isinstance(end_val, (int, float)):
+            net_val = end_val - start_val
+            net_text = f"{net_val:+.2f}"
+            start_text = f"{start_val:.2f}"
+            end_text = f"{end_val:.2f}"
+        else:
+            net_text = "-"
+            start_text = "-"
+            end_text = "-"
+        max_dd = "-"
+        if isinstance(equity_stats, dict):
+            max_dd_val = equity_stats.get("max_drawdown")
+            if isinstance(max_dd_val, (int, float)):
+                max_dd = f"{max_dd_val:.2f}%"
+        self.progress_equity_stats_var.set(f"Start: {start_text} | End: {end_text} | Net: {net_text} | Max DD: {max_dd}")
+
+        drawdown_points = drawdowns if curve_mode == "Latest run curve" else None
+        self._draw_equity_canvas(
+            curve_series,
+            stats=equity_stats,
+            drawdown_points=drawdown_points,
+            label_values=label_values if label_values else None,
+        )
 
     def _open_progress_folder(self) -> None:
         folder = self.progress_index_path.parent
@@ -1234,6 +1414,21 @@ class App(tk.Tk):
         except Exception as exc:  # pragma: no cover - UI feedback
             messagebox.showerror("Progress", f"Failed to open equity curve: {exc}")
 
+    def _export_progress_chart(self) -> None:
+        if not hasattr(self, "progress_equity_canvas"):
+            return
+        entry = self.progress_selected_entry or (self.progress_entries[0] if self.progress_entries else None)
+        run_dir = entry.get("run_dir") if isinstance(entry, dict) else None
+        if not run_dir:
+            messagebox.showinfo("Progress", "Run directory not available for export")
+            return
+        chart_path = Path(str(run_dir)) / "chart.ps"
+        try:
+            self.progress_equity_canvas.postscript(file=str(chart_path))
+            messagebox.showinfo("Progress", f"Chart exported to {chart_path}")
+        except Exception as exc:  # pragma: no cover - UI feedback
+            messagebox.showerror("Progress", f"Failed to export chart: {exc}")
+
     def _build_progress_tab(self) -> None:
         banner = tk.Label(
             self.progress_tab,
@@ -1242,6 +1437,32 @@ class App(tk.Tk):
             anchor="w",
         )
         banner.pack(fill=tk.X, padx=6, pady=4)
+        diag_frame = tk.LabelFrame(self.progress_tab, text="Run-rate diagnosis (SIM-only)", padx=6, pady=6)
+        diag_frame.pack(fill=tk.X, padx=6, pady=4)
+        tk.Label(diag_frame, textvariable=self.progress_diag_status_var, anchor="w", font=("Helvetica", 12, "bold")).pack(
+            anchor="w"
+        )
+        tk.Label(
+            diag_frame,
+            textvariable=self.progress_diag_summary_var,
+            anchor="w",
+            justify=tk.LEFT,
+            wraplength=1000,
+        ).pack(anchor="w")
+
+        growth_frame = tk.LabelFrame(self.progress_tab, text="Growth HUD", padx=6, pady=6)
+        growth_frame.pack(fill=tk.X, padx=6, pady=4)
+        hud_font = ("Helvetica", 12, "bold")
+        tk.Label(growth_frame, textvariable=self.progress_growth_total_var, font=hud_font).grid(row=0, column=0, sticky="w", padx=6, pady=2)
+        tk.Label(growth_frame, textvariable=self.progress_growth_runs_today_var, font=hud_font).grid(row=0, column=1, sticky="w", padx=6, pady=2)
+        tk.Label(growth_frame, textvariable=self.progress_growth_last_net_var, font=hud_font).grid(row=1, column=0, sticky="w", padx=6, pady=2)
+        tk.Label(growth_frame, textvariable=self.progress_growth_seven_day_var, font=hud_font).grid(row=1, column=1, sticky="w", padx=6, pady=2)
+        tk.Label(growth_frame, textvariable=self.progress_growth_max_dd_var, font=hud_font).grid(row=2, column=0, sticky="w", padx=6, pady=2)
+        tk.Label(growth_frame, textvariable=self.progress_growth_rejects_var, font=hud_font).grid(row=2, column=1, sticky="w", padx=6, pady=2)
+        tk.Label(growth_frame, textvariable=self.progress_growth_gates_var, font=hud_font).grid(row=3, column=0, sticky="w", padx=6, pady=2)
+        tk.Label(growth_frame, textvariable=self.progress_growth_service_var, font=hud_font).grid(row=3, column=1, sticky="w", padx=6, pady=2)
+        tk.Label(growth_frame, textvariable=self.progress_growth_kill_var, font=hud_font).grid(row=4, column=0, sticky="w", padx=6, pady=2)
+
         status_label = tk.Label(self.progress_tab, textvariable=self.progress_status_var, anchor="w")
         status_label.pack(fill=tk.X, padx=6)
 
@@ -1315,10 +1536,29 @@ class App(tk.Tk):
         equity_frame = tk.Frame(detail_frame)
         equity_frame.pack(fill=tk.BOTH, expand=True, pady=4)
         tk.Label(equity_frame, text="Equity sparkline (ASCII + canvas)").pack(anchor="w")
+        controls = tk.Frame(equity_frame)
+        controls.pack(fill=tk.X, pady=2)
+        ttk.OptionMenu(
+            controls,
+            self.progress_curve_mode_var,
+            self.progress_curve_mode_var.get(),
+            "Latest run curve",
+            "Last N runs (concat)",
+            "Last N runs (overlay)",
+        ).pack(side=tk.LEFT, padx=4)
+        tk.Label(controls, text="Runs").pack(side=tk.LEFT)
+        tk.Spinbox(controls, from_=1, to=20, textvariable=self.progress_curve_runs_var, width=4).pack(
+            side=tk.LEFT, padx=4
+        )
+        tk.Button(controls, text="Export Chart", command=self._export_progress_chart).pack(side=tk.RIGHT, padx=4)
+        tk.Label(equity_frame, textvariable=self.progress_equity_stats_var, anchor="w").pack(anchor="w")
         self.progress_equity_ascii = tk.Label(equity_frame, font=("Courier", 10), anchor="w", justify=tk.LEFT)
         self.progress_equity_ascii.pack(fill=tk.X)
         self.progress_equity_canvas = tk.Canvas(equity_frame, height=140, bg="#f8fafc")
         self.progress_equity_canvas.pack(fill=tk.BOTH, expand=True)
+
+        self.progress_curve_mode_var.trace_add("write", lambda *_: self._render_progress_detail(self.progress_selected_entry))
+        self.progress_curve_runs_var.trace_add("write", lambda *_: self._render_progress_detail(self.progress_selected_entry))
 
         self._load_progress_index()
 
