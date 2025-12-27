@@ -195,6 +195,41 @@ def parse_iso_timestamp(value: object) -> datetime | None:
         return None
 
 
+def _last_kill_switch_event(logs_dir: Path) -> tuple[datetime | None, str]:
+    candidates: list[Path] = []
+    latest = latest_events_file()
+    if latest:
+        candidates.append(latest)
+    train_events = logs_dir / "events_train.jsonl"
+    if train_events.exists():
+        candidates.append(train_events)
+
+    last_ts: datetime | None = None
+    last_source = ""
+    for path in candidates:
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except Exception:
+            continue
+        for line in reversed(lines):
+            try:
+                event = json.loads(line)
+            except Exception:
+                continue
+            if not isinstance(event, dict):
+                continue
+            if str(event.get("event_type")) not in {"KILL_SWITCH", "TRAIN_STOPPED_KILL_SWITCH"}:
+                continue
+            ts = parse_iso_timestamp(event.get("ts_utc"))
+            if ts is None:
+                continue
+            if last_ts is None or ts > last_ts:
+                last_ts = ts
+                last_source = path.name
+                break
+    return last_ts, last_source
+
+
 def run_supervisor_command(commands: Sequence[str]) -> subprocess.CompletedProcess:
     return subprocess.run(
         [sys.executable, str(SUPERVISOR_SCRIPT), *commands],
@@ -453,6 +488,8 @@ class App(tk.Tk):
         self.policy_history_entries: list[dict[str, object]] = []
         self.hud_mode_detail_var = tk.StringVar(value="Status: unknown")
         self.hud_kill_switch_var = tk.StringVar(value="Kill switch: unknown")
+        self.hud_kill_switch_detail_var = tk.StringVar(value="Kill switch paths: -")
+        self.hud_kill_switch_trip_var = tk.StringVar(value="Last trip: -")
         self.hud_data_health_var = tk.StringVar(value="Data health: unknown")
         self.hud_stage_var = tk.StringVar(value="Stage: -")
         self.hud_run_id_var = tk.StringVar(value="Run: (none)")
@@ -536,6 +573,42 @@ class App(tk.Tk):
 
     def _handle_stop(self) -> None:
         self._run_supervisor_async(["stop"])
+
+    def _handle_clear_kill_switch(self) -> None:
+        dialog = tk.Toplevel(self)
+        dialog.title("Clear Kill Switch (SIM-only)")
+        dialog.grab_set()
+
+        tk.Label(
+            dialog,
+            text="Type CLEAR to confirm removing kill switch files (SIM-only).",
+            justify=tk.LEFT,
+            wraplength=520,
+        ).pack(anchor="w", padx=10, pady=10)
+
+        entry_var = tk.StringVar()
+        entry = tk.Entry(dialog, textvariable=entry_var, width=20)
+        entry.pack(anchor="w", padx=10)
+        entry.focus_set()
+
+        button_frame = tk.Frame(dialog)
+        button_frame.pack(pady=10)
+        confirm_btn = tk.Button(button_frame, text="Clear Kill Switch", state=tk.DISABLED)
+        confirm_btn.pack(side=tk.LEFT, padx=5)
+        tk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+
+        def _on_change(*_args: object) -> None:
+            if entry_var.get().strip().upper() == "CLEAR":
+                confirm_btn.configure(state=tk.NORMAL)
+            else:
+                confirm_btn.configure(state=tk.DISABLED)
+
+        def _on_confirm() -> None:
+            dialog.destroy()
+            self._run_supervisor_async(["clear-kill-switch"])
+
+        entry_var.trace_add("write", _on_change)
+        confirm_btn.configure(command=_on_confirm)
 
     def _show_kill_switch_prompt(self, kill_switch: Path) -> None:
         dialog = tk.Toplevel(self)
@@ -1201,8 +1274,35 @@ class App(tk.Tk):
         color = lamp_colors.get(snapshot.mode, "#555")
         self.hud_mode_lamp.configure(text=snapshot.mode, bg=color)
         self.hud_mode_detail_var.set(f"Status: {snapshot.mode_detail}")
-        kill_paths = ", ".join(snapshot.kill_switch_paths) or "(none)"
-        self.hud_kill_switch_var.set(f"Kill switch: {snapshot.kill_switch} | {kill_paths}")
+        kill_paths = [Path(p) for p in snapshot.kill_switch_paths]
+        detected = [str(p) for p in kill_paths if p.exists()]
+        kill_paths_text = ", ".join(detected) if detected else "(none)"
+        self.hud_kill_switch_var.set(f"Kill switch: {snapshot.kill_switch}")
+        self.hud_kill_switch_detail_var.set(f"Detected paths: {kill_paths_text}")
+        last_event_ts, last_event_source = _last_kill_switch_event(LOGS_DIR)
+        last_trip_ts = None
+        last_trip_source = ""
+        if last_event_ts:
+            last_trip_ts = last_event_ts
+            last_trip_source = f"events:{last_event_source}" if last_event_source else "events"
+        if last_trip_ts is None and detected:
+            mtimes = []
+            for path in kill_paths:
+                if not path.exists():
+                    continue
+                try:
+                    mtimes.append(path.stat().st_mtime)
+                except OSError:
+                    continue
+            if mtimes:
+                last_trip_ts = datetime.fromtimestamp(max(mtimes), tz=timezone.utc)
+                last_trip_source = "mtime"
+        if last_trip_ts:
+            self.hud_kill_switch_trip_var.set(
+                f"Last trip: {last_trip_ts.isoformat()} (source: {last_trip_source or 'unknown'})"
+            )
+        else:
+            self.hud_kill_switch_trip_var.set("Last trip: unknown (source: none)")
         data_text = f"Data health: {snapshot.data_health}"
         if snapshot.data_health_detail:
             data_text += f" ({snapshot.data_health_detail})"
@@ -1433,6 +1533,8 @@ class App(tk.Tk):
                 break
             if not isinstance(entry, dict):
                 continue
+            if entry.get("run_complete") is False:
+                continue
             if window_hours is not None:
                 parsed = ensure_aware_utc(parse_iso_timestamp(entry.get("mtime")))
                 if not parsed or (now - parsed) > timedelta(hours=window_hours):
@@ -1464,6 +1566,11 @@ class App(tk.Tk):
         runs_total = len(self.progress_entries)
         self.progress_growth_total_var.set(f"Total runs: {runs_total}")
         now = utc_now()
+        complete_entries = [
+            entry
+            for entry in self.progress_entries
+            if isinstance(entry, dict) and entry.get("run_complete") is True
+        ]
         runs_today = 0
         last_run_time = "unknown"
         last_net_change = "unknown"
@@ -1491,6 +1598,14 @@ class App(tk.Tk):
                 continue
             if parsed.date() == now.date():
                 runs_today += 1
+            if idx == 0:
+                last_run_time = parsed.isoformat()
+
+        for idx, entry in enumerate(complete_entries):
+            raw_mtime = entry.get("mtime")
+            parsed = ensure_aware_utc(parse_iso_timestamp(raw_mtime))
+            if parsed is None:
+                continue
             if (now - parsed).days <= 7:
                 summary = entry.get("summary", {}) if isinstance(entry.get("summary", {}), dict) else {}
                 net = summary.get("net_change")
@@ -1512,8 +1627,6 @@ class App(tk.Tk):
                     if latest_cash_end is None:
                         latest_cash_end = cash_points[-1]
                     oldest_cash_start = cash_points[0]
-            if idx == 0:
-                last_run_time = parsed.isoformat()
             if idx == 0:
                 summary = entry.get("summary", {}) if isinstance(entry.get("summary", {}), dict) else {}
                 net = summary.get("net_change")
@@ -1568,6 +1681,14 @@ class App(tk.Tk):
                     xp = judge_summary.get("xp")
                     if isinstance(xp, (int, float)):
                         previous_judge_xp = float(xp)
+
+        if not complete_entries:
+            if self.progress_entries:
+                first = self.progress_entries[0]
+                if isinstance(first, dict):
+                    last_missing_reason = first.get("missing_reason") or "no_complete_runs"
+            last_net_change = f"missing ({last_missing_reason or 'no_complete_runs'})"
+            last_cash_delta = f"missing ({last_missing_reason or 'no_complete_runs'})"
 
         self.progress_growth_runs_today_var.set(f"Runs today: {runs_today} | Last run: {last_run_time}")
         self.progress_growth_last_net_var.set(f"Last run net: {last_net_change}")
@@ -1678,6 +1799,8 @@ class App(tk.Tk):
 
     def _progress_status_label(self, entry: dict[str, object]) -> str:
         status = entry.get("status")
+        if entry.get("run_complete") is False:
+            return "INCOMPLETE"
         if entry.get("still_writing"):
             return "IN_PROGRESS"
         if entry.get("parse_error"):
@@ -1692,10 +1815,20 @@ class App(tk.Tk):
         return "OK"
 
     def _progress_missing_reason(self, entry: dict[str, object]) -> str:
+        parts: list[str] = []
         missing = entry.get("missing_reason")
         if isinstance(missing, str) and missing:
-            return missing
-        return "none"
+            parts.append(missing)
+        missing_artifacts = entry.get("missing_artifacts") if isinstance(entry.get("missing_artifacts"), list) else []
+        if missing_artifacts:
+            parts.append(f"artifacts={','.join(str(item) for item in missing_artifacts)}")
+        missing_paths = entry.get("missing_paths") if isinstance(entry.get("missing_paths"), list) else []
+        if missing_paths:
+            parts.append(f"paths={','.join(str(item) for item in missing_paths)}")
+        next_action = entry.get("next_action")
+        if isinstance(next_action, str) and next_action:
+            parts.append(f"next={next_action}")
+        return " | ".join(parts) if parts else "none"
 
     def _render_progress_entries(self) -> None:
         if not hasattr(self, "progress_tree"):
@@ -1791,16 +1924,17 @@ class App(tk.Tk):
         if entry:
             summary = entry.get("summary", {}) if isinstance(entry, dict) else {}
             preview = summary.get("raw_preview") if isinstance(summary, dict) else None
+            missing_hint = self._progress_missing_reason(entry) if isinstance(entry, dict) else "summary_unavailable"
             if summary:
                 summary_text = preview or json.dumps(summary, ensure_ascii=False, indent=2)
             else:
                 summary_path = entry.get("summary_path")
-                summary_text = entry.get("missing_reason", "summary_unavailable")
+                summary_text = missing_hint
                 if summary_path:
                     try:
                         summary_text = Path(str(summary_path)).read_text(encoding="utf-8")
                     except Exception:
-                        summary_text = entry.get("missing_reason", "summary_unavailable")
+                        summary_text = missing_hint
 
             holdings_snapshot = entry.get("holdings_snapshot", {}) if isinstance(entry, dict) else {}
             holdings = entry.get("holdings_preview", []) if isinstance(entry, dict) else []
@@ -1812,7 +1946,7 @@ class App(tk.Tk):
             elif holdings:
                 holdings_text = "\n".join(f"{item.get('symbol', '-')}: {item.get('qty', 0)}" for item in holdings)
             else:
-                holdings_text = entry.get("missing_reason", "holdings_unavailable")
+                holdings_text = missing_hint
 
             equity_points = entry.get("equity_points", []) if isinstance(entry, dict) else []
             equity_values = [float(p.get("equity", 0.0)) for p in equity_points if isinstance(p, dict)]
@@ -2540,6 +2674,9 @@ class App(tk.Tk):
             PROGRESS_JUDGE_LATEST_PATH, fallback=LEGACY_PROGRESS_JUDGE_LATEST_PATH
         )
         recommendation = payload.get("recommendation", "INSUFFICIENT_DATA")
+        source = payload.get("source") if isinstance(payload.get("source"), dict) else {}
+        source_mode = source.get("mode", "unknown")
+        source_path = source.get("path", "")
         scores = payload.get("scores") if isinstance(payload.get("scores"), dict) else {}
         drivers = payload.get("drivers") if isinstance(payload.get("drivers"), list) else []
         not_improving = payload.get("not_improving_reasons") if isinstance(payload.get("not_improving_reasons"), list) else []
@@ -2552,7 +2689,9 @@ class App(tk.Tk):
         trend_dir = trend.get("direction", "unknown")
         trend_window = trend.get("window", 0)
 
-        self.progress_truth_status_var.set(f"Truthful Progress: {recommendation}")
+        self.progress_truth_status_var.set(
+            f"Truthful Progress: {recommendation} (source: {source_mode}{' ' + source_path if source_path else ''})"
+        )
         self.progress_truth_score_do_nothing_var.set(f"Score vs DoNothing: {score_do_nothing}")
         self.progress_truth_score_buy_hold_var.set(f"Score vs Buy&Hold: {score_buy_hold}")
         self.progress_truth_trend_var.set(f"Trend (last {trend_window}): {trend_dir}")
@@ -2563,6 +2702,15 @@ class App(tk.Tk):
         self.progress_truth_action_var.set(
             f"Suggested action: {', '.join(actions) if actions else 'No action suggestions'}"
         )
+        if payload.get("status") == "missing":
+            missing_artifacts = payload.get("missing_artifacts", [])
+            searched = payload.get("searched_paths", [])
+            missing_text = ", ".join(str(item) for item in missing_artifacts) if missing_artifacts else "-"
+            searched_text = ", ".join(str(item) for item in searched) if searched else "-"
+            self.progress_truth_action_var.set(
+                f"Suggested action: {', '.join(actions) if actions else 'No action suggestions'} | "
+                f"Missing: {missing_text} | Looked: {searched_text}"
+            )
         evidence_ids = evidence.get("run_ids") if isinstance(evidence, dict) else []
         if isinstance(evidence_ids, list) and evidence_ids:
             self.progress_truth_evidence_var.set(f"Evidence runs: {', '.join([str(rid) for rid in evidence_ids])}")
@@ -2580,11 +2728,23 @@ class App(tk.Tk):
         def _format_status(label: str, payload: dict[str, object]) -> str:
             created = payload.get("created_utc") or payload.get("generated_ts") or "-"
             reason = payload.get("missing_reason")
+            source = payload.get("source") if isinstance(payload.get("source"), dict) else {}
+            source_mode = source.get("mode", "unknown")
+            source_path = source.get("path", "")
             if payload.get("status") == "missing":
-                return f"{label}: missing ({reason})"
+                missing_artifacts = payload.get("missing_artifacts", [])
+                searched = payload.get("searched_paths", [])
+                missing_text = ", ".join(str(item) for item in missing_artifacts) if missing_artifacts else "-"
+                searched_text = ", ".join(str(item) for item in searched) if searched else "-"
+                next_actions = payload.get("suggested_next_actions", [])
+                next_text = ", ".join(str(item) for item in next_actions) if next_actions else "-"
+                return (
+                    f"{label}: missing ({reason}) | source={source_mode} {source_path} | "
+                    f"missing={missing_text} | looked={searched_text} | next={next_text}"
+                )
             if reason:
-                return f"{label}: {created} (missing fields: {reason})"
-            return f"{label}: {created}"
+                return f"{label}: {created} (missing fields: {reason}) | source={source_mode} {source_path}"
+            return f"{label}: {created} | source={source_mode} {source_path}"
 
         self.engine_status_tournament_var.set(
             _format_status("Last tournament updated", status.get("tournament", {}))
@@ -2601,6 +2761,9 @@ class App(tk.Tk):
         entries = load_policy_history(POLICY_REGISTRY_PATH, events_path=events_path)
         self.policy_history_entries = entries
         latest_payload = load_policy_history_latest(LATEST_POLICY_HISTORY_PATH)
+        source = latest_payload.get("source") if isinstance(latest_payload.get("source"), dict) else {}
+        source_mode = source.get("mode", "unknown")
+        source_path = source.get("path", "")
         last_decision = latest_payload.get("last_decision") if isinstance(latest_payload, dict) else {}
         decision_ts = ""
         decision_value = ""
@@ -2609,10 +2772,20 @@ class App(tk.Tk):
             decision_value = str(last_decision.get("decision") or "")
         policy_version = latest_payload.get("policy_version") if isinstance(latest_payload, dict) else None
         if latest_payload.get("status") == "missing":
-            self.policy_history_status_var.set("Policy History: latest artifact missing")
+            missing_artifacts = latest_payload.get("missing_artifacts", [])
+            searched = latest_payload.get("searched_paths", [])
+            next_actions = latest_payload.get("suggested_next_actions", [])
+            missing_text = ", ".join(str(item) for item in missing_artifacts) if missing_artifacts else "-"
+            searched_text = ", ".join(str(item) for item in searched) if searched else "-"
+            next_text = ", ".join(str(item) for item in next_actions) if next_actions else "-"
+            self.policy_history_status_var.set(
+                "Policy History: latest artifact missing | "
+                f"source={source_mode} {source_path} | missing={missing_text} | looked={searched_text} | next={next_text}"
+            )
         else:
             self.policy_history_status_var.set(
-                f"Policy History: current={policy_version or 'unknown'} | last decision={decision_value or 'unknown'} @ {decision_ts or '-'}"
+                f"Policy History: current={policy_version or 'unknown'} | last decision={decision_value or 'unknown'} @ {decision_ts or '-'} | "
+                f"source={source_mode} {source_path}"
             )
         if hasattr(self, "policy_tree"):
             self.policy_tree.delete(*self.policy_tree.get_children())
@@ -3069,6 +3242,11 @@ class App(tk.Tk):
         tk.Button(top_frame, text="Stop", command=self._handle_stop).pack(
             side=tk.LEFT, padx=5
         )
+        tk.Button(
+            top_frame,
+            text="Clear Kill Switch (SIM-only)",
+            command=self._handle_clear_kill_switch,
+        ).pack(side=tk.LEFT, padx=5)
 
         self.run_log = ScrolledText(self.run_tab, height=10, wrap=tk.WORD)
         self.run_log.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
@@ -3092,6 +3270,8 @@ class App(tk.Tk):
         status_col.pack(side=tk.LEFT, padx=6)
         tk.Label(status_col, textvariable=self.hud_mode_detail_var, anchor="w").pack(anchor="w")
         tk.Label(status_col, textvariable=self.hud_kill_switch_var, anchor="w").pack(anchor="w")
+        tk.Label(status_col, textvariable=self.hud_kill_switch_detail_var, anchor="w").pack(anchor="w")
+        tk.Label(status_col, textvariable=self.hud_kill_switch_trip_var, anchor="w").pack(anchor="w")
         self.hud_data_health_label = tk.Label(status_col, textvariable=self.hud_data_health_var, anchor="w")
         self.hud_data_health_label.pack(anchor="w")
 

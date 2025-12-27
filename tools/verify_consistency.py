@@ -16,6 +16,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from tools.git_baseline_probe import probe_baseline
+from tools.run_py import pick_python
 TOOLS_DIR = ROOT / "tools"
 README_PATH = ROOT / "README.md"
 LOGS_DIR = ROOT / "Logs"
@@ -455,11 +456,15 @@ def _py_compile_targets() -> List[Path]:
         "verify_pr16_gate.py",
         "verify_pr19_gate.py",
         "verify_pr20_gate.py",
+        "verify_pr21_gate.py",
         "verify_ui_time_math.py",
         "git_baseline_probe.py",
         "ui_parsers.py",
         "strategy_pool.py",
         "promotion_gate_v2.py",
+        "verify_kill_switch_recovery.py",
+        "verify_run_completeness_contract.py",
+        "verify_latest_artifacts.py",
     ]:
         target = TOOLS_DIR / name
         if target.exists():
@@ -467,11 +472,11 @@ def _py_compile_targets() -> List[Path]:
     return targets
 
 
-def check_py_compile() -> List[CheckResult]:
+def check_py_compile(python_exec: str) -> List[CheckResult]:
     targets = _py_compile_targets()
     args = [str(p) for p in targets]
     result = subprocess.run(
-        [sys.executable, "-m", "py_compile", *args],
+        [python_exec, "-m", "py_compile", *args],
         cwd=ROOT,
         capture_output=True,
         text=True,
@@ -503,7 +508,11 @@ def _training_blockers(env: dict[str, str | bool]) -> List[str]:
     return reasons
 
 
-def _run_quick_verifiers(missing_deps: List[str], env: dict[str, str | bool]) -> List[CheckResult]:
+def _run_quick_verifiers(
+    missing_deps: List[str],
+    env: dict[str, str | bool],
+    python_exec: str,
+) -> List[CheckResult]:
     quick = [
         TOOLS_DIR / "verify_smoke.py",
         TOOLS_DIR / "verify_e2e_qa_loop.py",
@@ -539,7 +548,7 @@ def _run_quick_verifiers(missing_deps: List[str], env: dict[str, str | bool]) ->
                 )
             )
             continue
-        cmd = [sys.executable, str(script)]
+        cmd = [python_exec, str(script)]
         if script.name == "verify_smoke.py":
             cmd.append("--allow-kill-switch-move")
         proc = subprocess.run(
@@ -644,6 +653,7 @@ def main() -> int:
     missing_deps = detect_missing_deps()
     env = _detect_environment()
     baseline_info = probe_baseline()
+    python_exec = pick_python(print_marker=True)
     _print_header(env, missing_deps, baseline_info)
 
     p0_checks: List[Callable[[], List[CheckResult]]] = [
@@ -653,14 +663,14 @@ def main() -> int:
         check_ascii_markers,
         check_sim_safety_pack_assets,
         check_sim_tournament_presence,
-        check_py_compile,
+        lambda: check_py_compile(python_exec),
         check_events_schema,
         check_status_json,
         check_read_only_guard,
     ]
     optional_checks: List[Callable[[], List[CheckResult]]] = [
         lambda: check_readme_cli_consistency(missing_deps),
-        lambda: _run_quick_verifiers(missing_deps, env),
+        lambda: _run_quick_verifiers(missing_deps, env, python_exec),
     ]
 
     all_results: List[CheckResult] = []
@@ -719,7 +729,7 @@ def main() -> int:
     print(summary_marker)
     if has_failures:
         print("FAIL: consistency issues detected")
-        print("Next step: .\\.venv\\Scripts\\python.exe tools/verify_consistency.py")
+    print("Next step: python tools/verify_consistency.py")
     return 1 if has_failures else 0
 
 

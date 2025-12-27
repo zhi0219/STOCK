@@ -70,6 +70,40 @@ def _seed_progress_index(base: Path) -> Path:
         ),
         encoding="utf-8",
     )
+    (run_dir / "run_meta.json").write_text(
+        json.dumps(
+            {
+                "run_id": "run_002",
+                "stop_reason": "completed",
+                "steps_completed": 2,
+                "trades": 1,
+                "rejects": {},
+                "gates_triggered": [],
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    (run_dir / "run_complete.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "created_utc": "2024-01-02T00:02:00+00:00",
+                "run_id": "run_002",
+                "status": "complete",
+                "artifacts": {
+                    "equity_curve.csv": str(run_dir / "equity_curve.csv"),
+                    "summary.json": str(run_dir / "summary.json"),
+                    "holdings.json": str(run_dir / "holdings.json"),
+                    "run_meta.json": str(run_dir / "run_meta.json"),
+                },
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
     payload = build_progress_index(runs_root)
     output_path = runs_root / "progress_index.json"
     write_progress_index(payload, output_path)

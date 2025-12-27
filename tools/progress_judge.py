@@ -358,6 +358,9 @@ def main(argv: list[str] | None = None) -> int:
         "issues": issues,
     }
     _atomic_write(LATEST_PATH, latest_payload)
+    safe_stamp = created_utc.replace(":", "").replace("-", "").replace("T", "_").replace("Z", "")
+    versioned_path = PROGRESS_JUDGE_DIR / f"progress_judge_{safe_stamp}.json"
+    _atomic_write(versioned_path, latest_payload)
 
     status = "PASS" if not issues else "FAIL"
     summary = _summary_line(status, args.runs_root, runs_scanned, issues, recommendation)

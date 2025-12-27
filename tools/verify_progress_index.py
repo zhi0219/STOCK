@@ -57,6 +57,42 @@ def _write_sample_run(base: Path) -> Path:
         ),
         encoding="utf-8",
     )
+    run_meta = run_dir / "run_meta.json"
+    run_meta.write_text(
+        json.dumps(
+            {
+                "run_id": "run_001",
+                "stop_reason": "completed",
+                "steps_completed": 2,
+                "trades": 2,
+                "rejects": {},
+                "gates_triggered": [],
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    run_complete = run_dir / "run_complete.json"
+    run_complete.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "created_utc": "2024-01-01T00:01:00+00:00",
+                "run_id": "run_001",
+                "status": "complete",
+                "artifacts": {
+                    "equity_curve.csv": str(equity),
+                    "summary.json": str(summary_json),
+                    "holdings.json": str(holdings),
+                    "run_meta.json": str(run_meta),
+                },
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
     return run_dir
 
 

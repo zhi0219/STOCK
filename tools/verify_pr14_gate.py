@@ -79,6 +79,32 @@ def _synthesize_runs(root: Path) -> List[Path]:
         _write_json(run_dir / "summary.json", _summary_payload(run_dir.name, 100.0, 102.0 + idx))
         (run_dir / "holdings.json").write_text('{"positions": {}, "cash_usd": 1000}', encoding="utf-8")
         (run_dir / "orders_sim.jsonl").write_text('{"symbol":"SIM","pnl":0.0}', encoding="utf-8")
+        _write_json(
+            run_dir / "run_meta.json",
+            {
+                "run_id": run_dir.name,
+                "stop_reason": "cooldown",
+                "steps_completed": 3,
+                "trades": 1,
+                "rejects": {},
+                "gates_triggered": [],
+            },
+        )
+        _write_json(
+            run_dir / "run_complete.json",
+            {
+                "schema_version": 1,
+                "created_utc": "2024-01-01T00:10:00Z",
+                "run_id": run_dir.name,
+                "status": "complete",
+                "artifacts": {
+                    "equity_curve.csv": str(run_dir / "equity_curve.csv"),
+                    "summary.json": str(run_dir / "summary.json"),
+                    "holdings.json": str(run_dir / "holdings.json"),
+                    "run_meta.json": str(run_dir / "run_meta.json"),
+                },
+            },
+        )
     return run_dirs
 
 

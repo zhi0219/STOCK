@@ -66,6 +66,8 @@ python tools/verify_pr19_gate.py
 - `Logs\\train_runs\\_latest\\tournament_latest.json`
 - `Logs\\train_runs\\_latest\\candidates_latest.json`
 
+UI 会在最新指针缺失时回扫版本化产物（如 run 目录内 `tournament.json` / `promotion_decision.json` / `progress_judge_*.json`），并在面板中标注实际来源路径。
+
 Rollback（只读安全）：回退到合并前提交并重启服务；如需清理最新指针，仅删除 `Logs\\train_runs\\_latest\\` 下文件即可（不会触及历史训练产物）。
 
 ## PR20 — Throughput + Auto-refresh + Run-rate Diagnostics（SIM-only）
@@ -90,13 +92,31 @@ UI 位置：
 
 Rollback（只读安全）：回退到合并前提交并重启服务；如需清理 throughput 报告，仅删除 `Logs\\train_service\\throughput_diagnose_latest.txt`。
 
+## PR21 — Kill-switch Recovery + Run Completeness + Latest Pointer Fallback（SIM-only）
+
+PR21 强化 kill-switch 恢复路径、run 完整性契约与 latest 指针回扫机制，确保 UI 自解释且可审计。
+
+PR21 gate（PowerShell 复制即用）：
+
+```
+python tools/verify_pr21_gate.py
+```
+
+Fallback：
+
+```
+python tools/verify_pr21_gate.py
+```
+
+Gate 组合：repo hygiene / consistency / kill-switch recovery / run completeness / latest pointer verifier（SIM-only）。
+
 ## PowerShell 状态一眼读懂
 
 - 输出中包含 `*_SUMMARY` / `*_HEADER` 这类 marker 行，直接看这些行即可判断 PASS / DEGRADED / FAIL。
 - 推荐复制即用命令（Windows / PowerShell）：
   ```powershell
-  .\.venv\Scripts\python.exe .\tools\verify_consistency.py
-  .\.venv\Scripts\python.exe .\tools\verify_repo_hygiene.py
+  python tools/verify_consistency.py
+  python tools/verify_repo_hygiene.py
   ```
 - 不要把 `git clean -fd` 当成日常手段；训练/验收产物默认落在 `Logs/train_runs/` 等安全目录，由内置的 retention sweep 处理。
 
@@ -234,6 +254,7 @@ cd $HOME\Desktop\STOCK
 ```
 .\.venv\Scripts\python.exe .\tools\supervisor.py start
 .\.venv\Scripts\python.exe .\tools\supervisor.py stop
+.\.venv\Scripts\python.exe .\tools\supervisor.py clear-kill-switch
 ```
 
 - 一键验收：
@@ -265,8 +286,10 @@ cd $HOME\Desktop\STOCK
   页签内可点击 **Generate index** / **Refresh view**，以及直接打开 run 目录、`summary.md` 或 `equity_curve.csv`。
 
 - 产物位置：最新一条训练通常在 `Logs\\train_runs\\<日期>\\<run_id>\\`，包含 `summary.md`、`equity_curve.csv`、`orders_sim.jsonl` 等产物（UI 会用 holdings 预览和 equity 曲线渲染）。
+- 每个 run 完成后会写入 `run_meta.json` 与 `run_complete.json`（完整性契约：仅当 `summary.json` / `holdings.json` / `equity_curve.csv` / `run_meta.json` 全部落盘后才写入）。
 
 - 一键停机：创建 `config.yaml` 的 `risk_guards.kill_switch_path` 指向的文件（默认 `Data\\KILL_SWITCH`）即可停止训练/服务进程；删除后可恢复运行。
+- 恢复路径：Run Tab 提供 **Clear Kill Switch (SIM-only)**，会删除 `Logs/train_service/KILL_SWITCH` 与 `Data/KILL_SWITCH` 并写入事件审计；CLI 对应 `supervisor.py clear-kill-switch`。
 
 ## Progress UI contract
 
@@ -278,7 +301,7 @@ cd $HOME\Desktop\STOCK
 - 核心产物：每个 run 目录会写入 `summary.json` 和 `holdings.json`，UI 优先读取 JSON（`summary.md` 仍用于人工阅读）。
 - Status 列含义：
   - `OK`：summary/holdings/equity 曲线均可读，字段齐全。
-  - `MISSING_FILES`：缺少 `summary.json` / `holdings.json` / `equity_curve.csv` 中的至少一个。
+  - `INCOMPLETE`：缺少 `run_complete.json` 或必需产物尚未写齐（被剔除出 Last run net 等指标）。
   - `PARSE_ERROR`：文件存在但无法解析/字段缺失（保持 fail-closed，不猜测）。
   - `IN_PROGRESS`：检测到 `.tmp` 或 0 字节文件，说明仍在写入。
 - Missing reason：列出缺失或解析失败的具体原因（例如 `summary_json_missing;holdings_json_missing`）。

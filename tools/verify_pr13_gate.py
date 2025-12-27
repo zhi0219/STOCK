@@ -79,6 +79,32 @@ def _synthesize_runs(root: Path) -> List[Path]:
     _write_equity_curve(run_dirs[0] / "equity_curve.csv", [100, 101, 102])
     _write_json(run_dirs[0] / "summary.json", _summary_payload(100, 102))
     _write_json(run_dirs[0] / "holdings.json", _holdings_payload())
+    _write_json(
+        run_dirs[0] / "run_meta.json",
+        {
+            "run_id": run_dirs[0].name,
+            "stop_reason": "cooldown",
+            "steps_completed": 3,
+            "trades": 0,
+            "rejects": {},
+            "gates_triggered": [],
+        },
+    )
+    _write_json(
+        run_dirs[0] / "run_complete.json",
+        {
+            "schema_version": 1,
+            "created_utc": "2024-01-01T00:10:00Z",
+            "run_id": run_dirs[0].name,
+            "status": "complete",
+            "artifacts": {
+                "equity_curve.csv": str(run_dirs[0] / "equity_curve.csv"),
+                "summary.json": str(run_dirs[0] / "summary.json"),
+                "holdings.json": str(run_dirs[0] / "holdings.json"),
+                "run_meta.json": str(run_dirs[0] / "run_meta.json"),
+            },
+        },
+    )
 
     _write_json(run_dirs[1] / "summary.json", _summary_payload(100, 99))
     _write_json(run_dirs[1] / "holdings.json", _holdings_payload())
