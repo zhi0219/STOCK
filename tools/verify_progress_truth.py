@@ -42,6 +42,30 @@ def _seed_runs(base: Path) -> Path:
         encoding="utf-8",
     )
 
+    summary_json = run_dir / "summary.json"
+    summary_json.write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "policy_version": "v1",
+                "start_equity": 10000.0,
+                "end_equity": 10123.0,
+                "net_change": 123.0,
+                "max_drawdown": 0.1,
+                "turnover": 4,
+                "rejects_count": 0,
+                "gates_triggered": [],
+                "stop_reason": "completed",
+                "timestamps": {"start": "2024-02-02T00:00:00Z", "end": "2024-02-02T00:05:00Z"},
+                "parse_warnings": [],
+                "run_id": "run_011",
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
     orders = run_dir / "orders_sim.jsonl"
     orders.write_text(
         "\n".join(
