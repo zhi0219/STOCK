@@ -40,12 +40,72 @@ from pathlib import Path
 import json
 import os
 import platform
+import re
 import subprocess
 from datetime import datetime, timezone
 
 artifacts_dir = Path("artifacts")
 log_file = artifacts_dir / "gates.log"
 summary_path = artifacts_dir / "proof_summary.json"
+job_summary_path = artifacts_dir / "ci_job_summary.md"
+
+def sanitize_excerpt(text: str) -> str:
+    if not text:
+        return text
+    redacted = text
+    redacted = re.sub(
+        r'(?i)\b(token|secret|password|api[_-]?key)\b\s*[:=]\s*([^\s,"\']+)',
+        lambda m: f"{m.group(1)}=<REDACTED>",
+        redacted,
+    )
+    redacted = re.sub(
+        r'(?i)("?(token|secret|password|api[_-]?key)"?\s*[:=]\s*")([^"]+)(")',
+        lambda m: f'{m.group(1)}<REDACTED>{m.group(4)}',
+        redacted,
+    )
+    return redacted
+
+def resolve_max_log_bytes() -> int:
+    raw_bytes = os.environ.get("CI_MAX_LOG_BYTES")
+    raw_kb = os.environ.get("CI_MAX_LOG_KB")
+    if raw_bytes:
+        try:
+            return int(raw_bytes)
+        except ValueError:
+            return 2 * 1024 * 1024
+    if raw_kb:
+        try:
+            return int(raw_kb) * 1024
+        except ValueError:
+            return 2048 * 1024
+    return 2048 * 1024
+
+max_log_bytes = resolve_max_log_bytes()
+log_bytes_original = 0
+log_bytes_final = 0
+log_truncated = False
+
+if log_file.exists():
+    log_bytes_original = log_file.stat().st_size
+    if log_bytes_original > max_log_bytes:
+        marker = b"\n===LOG_TRUNCATED===\n"
+        head_len = max_log_bytes // 2
+        tail_len = max_log_bytes - head_len - len(marker)
+        if tail_len < 0:
+            head_len = max(0, max_log_bytes - len(marker))
+            tail_len = 0
+        with log_file.open("rb") as handle:
+            head = handle.read(head_len)
+            if tail_len > 0 and log_bytes_original > tail_len:
+                handle.seek(-tail_len, os.SEEK_END)
+                tail = handle.read(tail_len)
+            else:
+                tail = b""
+        log_file.write_bytes(head + marker + tail)
+        log_truncated = True
+        log_bytes_final = log_file.stat().st_size
+    else:
+        log_bytes_final = log_bytes_original
 
 try:
     git_commit = (
@@ -62,6 +122,7 @@ error_excerpt = ""
 if log_file.exists() and status == "FAIL":
     lines = log_file.read_text(encoding="utf-8", errors="replace").splitlines()
     error_excerpt = "\n".join(lines[-80:])
+    error_excerpt = sanitize_excerpt(error_excerpt)
 
 files = []
 if artifacts_dir.exists():
@@ -72,6 +133,9 @@ if artifacts_dir.exists():
 summary_path_str = str(summary_path)
 if summary_path_str not in files:
     files.append(summary_path_str)
+job_summary_path_str = str(job_summary_path)
+if job_summary_path_str not in files:
+    files.append(job_summary_path_str)
 
 summary = {
     "ts_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -80,6 +144,10 @@ summary = {
     "runner": os.environ.get("CI_GATES_RUNNER", ""),
     "failing_gate": failing_gate,
     "error_excerpt": error_excerpt,
+    "log_truncated": log_truncated,
+    "log_bytes_original": log_bytes_original,
+    "log_bytes_final": log_bytes_final,
+    "max_log_bytes": max_log_bytes,
     "environment": {
         "python_version": platform.python_version(),
         "os": platform.platform(),
@@ -88,6 +156,35 @@ summary = {
     "files": files,
 }
 
+artifacts_list = "\n".join(f"- `{item}`" for item in files)
+summary_lines = [
+    "# CI Gates Summary",
+    "",
+    f"- **overall_status**: `{status}`",
+    f"- **runner**: `{os.environ.get('CI_GATES_RUNNER', '')}`",
+    f"- **git_commit**: `{git_commit}`",
+    f"- **ts_utc**: `{summary['ts_utc']}`",
+    f"- **failing_gate**: `{failing_gate}`" if status == "FAIL" else "- **failing_gate**: `n/a`",
+    f"- **error_excerpt**:\n\n```\n{error_excerpt}\n```" if status == "FAIL" and error_excerpt else "- **error_excerpt**: `n/a`",
+    f"- **log_truncated**: `{log_truncated}`",
+    f"- **log_bytes_original**: `{log_bytes_original}`",
+    f"- **log_bytes_final**: `{log_bytes_final}`",
+    f"- **max_log_bytes**: `{max_log_bytes}`",
+    "",
+    "## Artifacts",
+    artifacts_list or "- (none)",
+]
+job_summary_content = "\n".join(summary_lines).strip() + "\n"
+job_summary_path.write_text(job_summary_content, encoding="utf-8")
+
+step_summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+if step_summary_path:
+    try:
+        with Path(step_summary_path).open("a", encoding="utf-8") as handle:
+            handle.write(job_summary_content)
+    except Exception:
+        pass
+
 summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
 PY
 }
@@ -95,6 +192,14 @@ PY
 trap 'write_summary $?' EXIT
 
 echo "===CI_GATES_START==="
+
+if [[ "${CI_LOG_SPAM_DEMO:-0}" == "1" ]]; then
+  echo "===CI_LOG_SPAM_DEMO_START==="
+  for i in $(seq 1 500); do
+    printf 'CI_LOG_SPAM_DEMO line %04d: harmless filler for truncation demo\n' "${i}"
+  done
+  echo "===CI_LOG_SPAM_DEMO_END==="
+fi
 
 if ls tools/verify_pr*_gate.py >/dev/null 2>&1; then
   mapfile -t pr_gates < <(ls tools/verify_pr*_gate.py 2>/dev/null | sort -V)

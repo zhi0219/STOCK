@@ -12,6 +12,16 @@ on:
         required: false
         default: false
         type: boolean
+      max_log_kb:
+        description: "Optional max log size in KB for truncation demo"
+        required: false
+        default: ""
+        type: number
+      log_spam:
+        description: "Emit harmless filler lines before gates to demo truncation"
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   gates:
@@ -37,6 +47,8 @@ jobs:
       - name: Run CI gates
         env:
           CI_FORCE_FAIL: ${{ github.event_name == 'workflow_dispatch' && inputs.force_fail && '1' || '0' }}
+          CI_MAX_LOG_KB: ${{ github.event_name == 'workflow_dispatch' && inputs.max_log_kb || '' }}
+          CI_LOG_SPAM_DEMO: ${{ github.event_name == 'workflow_dispatch' && inputs.log_spam && '1' || '0' }}
         run: |
           chmod +x ./scripts/ci_gates.sh
           ./scripts/ci_gates.sh
@@ -46,3 +58,4 @@ jobs:
         with:
           name: ci-gates-artifacts
           path: artifacts
+          retention-days: 14
