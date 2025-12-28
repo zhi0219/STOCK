@@ -9,6 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 CONSISTENCY_SUMMARY_RE = re.compile(r"CONSISTENCY_SUMMARY\\|status=([^|\\s]+)(?:\\|notes=([^|]*))?")
+EXCEPTION_RE = re.compile(r"(\\w+(?:Error|Exception)):\\s*(.+)")
 
 
 @dataclass
@@ -61,14 +62,22 @@ def _detect_pr_gate() -> str | None:
 
 
 def _detect_canonical_runner() -> str:
+    if (ROOT / "tools" / "verify_foundation.py").exists():
+        return "tools.verify_foundation"
     pr_gate = _detect_pr_gate()
     if pr_gate:
         return pr_gate
-    if (ROOT / "tools" / "verify_foundation.py").exists():
-        return "tools.verify_foundation"
     if (ROOT / "tools" / "verify_consistency.py").exists():
         return "tools.verify_consistency"
     raise FileNotFoundError("No canonical gate runner found.")
+
+
+def _format_exception(output: str) -> str:
+    matches = EXCEPTION_RE.findall(output)
+    if not matches:
+        return "unknown_exception"
+    exc_type, message = matches[-1]
+    return f"{exc_type}: {message.strip()}"
 
 
 def _check_module_consistency() -> CheckOutcome:
@@ -110,8 +119,22 @@ def _check_module_runner(module: str) -> CheckOutcome:
     cmd = [sys.executable, "-m", module]
     rc, output = _run(cmd)
     if rc != 0:
-        return CheckOutcome("module_runner", "FAIL", f"runner={module}", rc, output)
+        reason = f"runner={module};exc={_format_exception(output)}"
+        return CheckOutcome("module_runner", "FAIL", reason, rc, output)
     return CheckOutcome("module_runner", "PASS", None, rc, output)
+
+
+def _check_module_import(module: str, name: str) -> CheckOutcome:
+    cmd = [
+        sys.executable,
+        "-c",
+        "import importlib; importlib.import_module('" + module + "')",
+    ]
+    rc, output = _run(cmd)
+    if rc != 0:
+        reason = f"module={module};exc={_format_exception(output)}"
+        return CheckOutcome(name, "FAIL", reason, rc, output)
+    return CheckOutcome(name, "PASS", None, rc, output)
 
 
 def _format_reasons(results: list[CheckOutcome]) -> str:
@@ -136,6 +159,8 @@ def main() -> int:
         results = [
             _check_module_consistency(),
             _check_path_consistency(),
+            _check_module_import("tools.verify_pr23_gate", "module_import_pr23_gate"),
+            _check_module_import(runner, "module_import_runner"),
             _check_module_runner(runner),
         ]
         has_failures = any(r.status == "FAIL" for r in results)

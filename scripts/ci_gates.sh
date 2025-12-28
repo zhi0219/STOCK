@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "${ROOT}"
+
 artifacts_dir="artifacts"
 log_file="${artifacts_dir}/gates.log"
 
@@ -8,13 +11,24 @@ status="PASS"
 rc=0
 failing_gate=""
 runner=""
+runner_module=""
+runner_module_exists="0"
 
 mkdir -p "${artifacts_dir}"
 : > "${log_file}"
 
 exec > >(tee -a "${log_file}") 2>&1
 
-export PYTHONPATH="${PWD}"
+export PYTHONPATH="${ROOT}${PYTHONPATH:+:$PYTHONPATH}"
+
+python3 - <<'PY'
+from __future__ import annotations
+import os
+import sys
+
+root = os.environ.get("PYTHONPATH", "").split(":")[0]
+print(f"CI_ROOT|root={root}|python={sys.version.split()[0]}|sys_path0={sys.path[0]}")
+PY
 
 write_summary() {
   local exit_code=${1}
@@ -31,6 +45,8 @@ write_summary() {
   export CI_GATES_STATUS="${summary_status}"
   export CI_GATES_FAILING_GATE="${summary_failing_gate}"
   export CI_GATES_RUNNER="${runner}"
+  export CI_GATES_RUNNER_MODULE="${runner_module}"
+  export CI_GATES_RUNNER_MODULE_EXISTS="${runner_module_exists}"
 
   python3 tools/action_center_report.py --output "${artifacts_dir}/action_center_report.json" || true
 
@@ -143,6 +159,8 @@ summary = {
     "overall_status": status,
     "runner": os.environ.get("CI_GATES_RUNNER", ""),
     "failing_gate": failing_gate,
+    "runner_module": os.environ.get("CI_GATES_RUNNER_MODULE", ""),
+    "runner_module_exists": os.environ.get("CI_GATES_RUNNER_MODULE_EXISTS", "0"),
     "error_excerpt": error_excerpt,
     "log_truncated": log_truncated,
     "log_bytes_original": log_bytes_original,
@@ -162,6 +180,8 @@ summary_lines = [
     "",
     f"- **overall_status**: `{status}`",
     f"- **runner**: `{os.environ.get('CI_GATES_RUNNER', '')}`",
+    f"- **runner_module**: `{os.environ.get('CI_GATES_RUNNER_MODULE', '')}`",
+    f"- **runner_module_exists**: `{os.environ.get('CI_GATES_RUNNER_MODULE_EXISTS', '0')}`",
     f"- **git_commit**: `{git_commit}`",
     f"- **ts_utc**: `{summary['ts_utc']}`",
     f"- **failing_gate**: `{failing_gate}`" if status == "FAIL" else "- **failing_gate**: `n/a`",
@@ -214,16 +234,41 @@ if [[ ${import_contract_exit} -ne 0 ]]; then
 fi
 
 if [[ ${rc} -eq 0 ]]; then
-  if ls tools/verify_pr*_gate.py >/dev/null 2>&1; then
+  if [[ -f tools/verify_foundation.py ]]; then
+    runner_module="tools.verify_foundation"
+    runner="python3 -m ${runner_module}"
+  elif ls tools/verify_pr*_gate.py >/dev/null 2>&1; then
     mapfile -t pr_gates < <(ls tools/verify_pr*_gate.py 2>/dev/null | sort -V)
     last_index=$(( ${#pr_gates[@]} - 1 ))
     pr_gate_file="${pr_gates[$last_index]}"
     pr_gate_name="$(basename "${pr_gate_file}" .py)"
-    runner="python3 -m tools.${pr_gate_name}"
-  elif [[ -f tools/verify_foundation.py ]]; then
-    runner="python3 -m tools.verify_foundation"
+    runner_module="tools.${pr_gate_name}"
+    runner="python3 -m ${runner_module}"
   elif [[ -f tools/verify_consistency.py ]]; then
-    runner="python3 -m tools.verify_consistency"
+    runner_module="tools.verify_consistency"
+    runner="python3 -m ${runner_module}"
+  fi
+fi
+
+if [[ -n "${runner_module}" ]]; then
+  python3 - <<PY
+from __future__ import annotations
+import importlib.util
+module_name = "${runner_module}"
+spec = importlib.util.find_spec(module_name)
+print(f"CI_GATE_RUNNER_MODULE_CHECK|module={module_name}|exists={int(spec is not None)}")
+PY
+  if python3 - <<PY
+from __future__ import annotations
+import importlib.util
+module_name = "${runner_module}"
+spec = importlib.util.find_spec(module_name)
+raise SystemExit(0 if spec is not None else 1)
+PY
+  then
+    runner_module_exists="1"
+  else
+    runner_module_exists="0"
   fi
 fi
 
@@ -233,6 +278,11 @@ if [[ ${rc} -eq 0 ]]; then
     failing_gate="runner_detection"
     rc=1
     echo "No canonical gate runner found."
+  elif [[ "${runner_module_exists}" == "0" ]]; then
+    status="FAIL"
+    failing_gate="runner_module_missing"
+    rc=1
+    echo "Canonical gate runner module missing: ${runner_module}"
   else
     set +e
     ${runner}
