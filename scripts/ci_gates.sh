@@ -14,6 +14,8 @@ mkdir -p "${artifacts_dir}"
 
 exec > >(tee -a "${log_file}") 2>&1
 
+export PYTHONPATH="${PWD}"
+
 write_summary() {
   local exit_code=${1}
   local summary_status="${status}"
@@ -29,6 +31,8 @@ write_summary() {
   export CI_GATES_STATUS="${summary_status}"
   export CI_GATES_FAILING_GATE="${summary_failing_gate}"
   export CI_GATES_RUNNER="${runner}"
+
+  python3 tools/action_center_report.py --output "${artifacts_dir}/action_center_report.json" || true
 
   python3 - <<'PY'
 from __future__ import annotations
