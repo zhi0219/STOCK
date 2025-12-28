@@ -10,18 +10,34 @@ The CI entrypoint is:
 
 This script discovers the canonical gate runner, executes it, and emits auditable artifacts under `artifacts/`.
 
+## Job Summary
+
+When running in GitHub Actions, the script also appends the job summary to the **Summary** tab via `GITHUB_STEP_SUMMARY`. The same content is always written to `artifacts/ci_job_summary.md`.
+
+## Log truncation
+
+Logs are capped by `CI_MAX_LOG_KB` (default: `2048`). If `artifacts/gates.log` exceeds the limit, it is truncated to include the head and tail with a `===LOG_TRUNCATED===` marker in between. The proof summary records `log_truncated`, `log_bytes_original`, `log_bytes_final`, and `max_log_bytes`.
+
 ## Artifacts
 
 CI always writes and uploads the following files under `artifacts/`:
 
-- `artifacts/gates.log` (full gate output)
+- `artifacts/gates.log` (gate output, bounded by truncation)
 - `artifacts/proof_summary.json` (machine-readable summary)
 - `artifacts/action_center_report.json` (Action Center report)
+- `artifacts/ci_job_summary.md` (human-readable CI summary)
 
 If present, it also copies:
 
 - `run_complete.json`
 - any `*_latest.json` pointers
+
+## Manual demo inputs (workflow_dispatch)
+
+The **CI Gates** workflow supports optional inputs for safe demonstrations:
+
+- `max_log_kb`: override the log cap in KB for that run.
+- `log_spam`: emit harmless `CI_LOG_SPAM_DEMO` filler lines before gates to help exercise truncation.
 
 ## Forced-fail demonstration (manual)
 
