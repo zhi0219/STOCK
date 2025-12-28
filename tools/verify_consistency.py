@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Callable, Iterable, List, Tuple
 
 ROOT = Path(__file__).resolve().parent.parent
-if str(ROOT) not in sys.path:
+if __package__ in (None, "") and str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from tools.git_baseline_probe import probe_baseline

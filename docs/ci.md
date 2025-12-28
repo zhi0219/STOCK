@@ -10,6 +10,22 @@ The CI entrypoint is:
 
 This script discovers the canonical gate runner, executes it, and emits auditable artifacts under `artifacts/`.
 
+## Canonical invocation
+
+Gate runners are invoked in module mode to ensure `import tools...` resolves consistently:
+
+```
+python -m tools.<gate_runner>
+```
+
+Local path-mode invocations remain supported on a best-effort basis:
+
+```
+python tools/<script>.py
+```
+
+Module mode avoids `ModuleNotFoundError` when CI executes tools directly.
+
 ## Job Summary
 
 When running in GitHub Actions, the script also appends the job summary to the **Summary** tab via `GITHUB_STEP_SUMMARY`. The same content is always written to `artifacts/ci_job_summary.md`.

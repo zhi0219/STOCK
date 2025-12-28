@@ -201,30 +201,48 @@ if [[ "${CI_LOG_SPAM_DEMO:-0}" == "1" ]]; then
   echo "===CI_LOG_SPAM_DEMO_END==="
 fi
 
-if ls tools/verify_pr*_gate.py >/dev/null 2>&1; then
-  mapfile -t pr_gates < <(ls tools/verify_pr*_gate.py 2>/dev/null | sort -V)
-  last_index=$(( ${#pr_gates[@]} - 1 ))
-  runner="python3 ${pr_gates[$last_index]}"
-elif [[ -f tools/verify_foundation.py ]]; then
-  runner="python3 tools/verify_foundation.py"
-elif [[ -f tools/verify_consistency.py ]]; then
-  runner="python3 tools/verify_consistency.py"
+import_contract_runner="python3 -m tools.verify_import_contract"
+set +e
+${import_contract_runner}
+import_contract_exit=$?
+set -e
+
+if [[ ${import_contract_exit} -ne 0 ]]; then
+  status="FAIL"
+  failing_gate="verify_import_contract"
+  rc=${import_contract_exit}
 fi
 
-if [[ -z "${runner}" ]]; then
-  status="FAIL"
-  failing_gate="runner_detection"
-  rc=1
-  echo "No canonical gate runner found."
-else
-  set +e
-  ${runner}
-  runner_exit=$?
-  set -e
-  if [[ ${runner_exit} -ne 0 ]]; then
+if [[ ${rc} -eq 0 ]]; then
+  if ls tools/verify_pr*_gate.py >/dev/null 2>&1; then
+    mapfile -t pr_gates < <(ls tools/verify_pr*_gate.py 2>/dev/null | sort -V)
+    last_index=$(( ${#pr_gates[@]} - 1 ))
+    pr_gate_file="${pr_gates[$last_index]}"
+    pr_gate_name="$(basename "${pr_gate_file}" .py)"
+    runner="python3 -m tools.${pr_gate_name}"
+  elif [[ -f tools/verify_foundation.py ]]; then
+    runner="python3 -m tools.verify_foundation"
+  elif [[ -f tools/verify_consistency.py ]]; then
+    runner="python3 -m tools.verify_consistency"
+  fi
+fi
+
+if [[ ${rc} -eq 0 ]]; then
+  if [[ -z "${runner}" ]]; then
     status="FAIL"
-    failing_gate="${runner}"
-    rc=${runner_exit}
+    failing_gate="runner_detection"
+    rc=1
+    echo "No canonical gate runner found."
+  else
+    set +e
+    ${runner}
+    runner_exit=$?
+    set -e
+    if [[ ${runner_exit} -ne 0 ]]; then
+      status="FAIL"
+      failing_gate="${runner}"
+      rc=${runner_exit}
+    fi
   fi
 fi
 

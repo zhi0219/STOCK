@@ -2,12 +2,23 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Any
 
-from action_center_report import ACTION_DEFINITIONS, CONFIRM_TOKENS, confirm_token_is_valid
-
 ROOT = Path(__file__).resolve().parent.parent
+if __package__ in (None, "") and str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+if __package__ in (None, ""):
+    from tools.action_center_report import (  # type: ignore[import-not-found]
+        ACTION_DEFINITIONS,
+        CONFIRM_TOKENS,
+        confirm_token_is_valid,
+    )
+else:
+    from .action_center_report import ACTION_DEFINITIONS, CONFIRM_TOKENS, confirm_token_is_valid
+
 
 
 class GateError(Exception):
@@ -105,7 +116,7 @@ def _check_ci_artifact_listing() -> None:
 
 def _check_imports_resolve() -> None:
     try:
-        import action_center_report  # noqa: F401
+        import tools.action_center_report  # noqa: F401
     except Exception as exc:  # pragma: no cover - static gate
         raise GateError(f"failed to import action_center_report: {exc}") from exc
 
