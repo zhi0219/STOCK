@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List
 
+from tools.paths import to_repo_relative
+
 ROOT = Path(__file__).resolve().parent.parent
 RUNS_ROOT = ROOT / "Logs" / "train_runs"
 
@@ -89,6 +91,7 @@ def evaluate_promotion_gate(
     baselines: List[Dict[str, object]],
     run_id: str,
     config: GateConfig | None = None,
+    stress_report: Dict[str, object] | None = None,
 ) -> Dict[str, object]:
     config = config or GateConfig()
     ts = _now()
@@ -122,7 +125,51 @@ def evaluate_promotion_gate(
 
     decisions = _recent_decisions(candidate_id, config.window_count - 1)
     window_passes = sum(1 for entry in decisions if entry.get("decision") == "APPROVE")
-    current_pass = bool(safety_pass and beat_baselines)
+    stress_ok = True
+    stress_failures: List[str] = []
+    stress_status = None
+    stress_evidence: Dict[str, object] = {}
+    if not stress_report:
+        stress_ok = False
+        stress_failures.append("stress_report_missing")
+        required_steps.append("run_stress_harness")
+    else:
+        stress_status = stress_report.get("status")
+        scenarios = stress_report.get("scenarios") if isinstance(stress_report.get("scenarios"), list) else []
+        if not scenarios:
+            stress_ok = False
+            stress_failures.append("stress_scenarios_missing")
+            required_steps.append("run_stress_harness")
+        baseline_pass = bool(stress_report.get("baseline_pass"))
+        stress_pass = bool(stress_report.get("stress_pass"))
+        if not baseline_pass:
+            stress_ok = False
+            stress_failures.append("stress_baseline_failed")
+        if not stress_pass:
+            stress_ok = False
+            stress_failures.append("stress_scenarios_failed")
+        if stress_status not in {"PASS", "FAIL"}:
+            stress_ok = False
+            stress_failures.append("stress_status_missing")
+        if stress_status == "FAIL":
+            stress_ok = False
+        report_failures = stress_report.get("fail_reasons")
+        if isinstance(report_failures, list) and report_failures:
+            stress_failures.extend(str(item) for item in report_failures)
+        evidence = stress_report.get("evidence")
+        if isinstance(evidence, dict):
+            stress_evidence = {
+                key: to_repo_relative(Path(str(value)))
+                if isinstance(value, str)
+                else value
+                for key, value in evidence.items()
+            }
+
+    if stress_failures:
+        reasons.append("stress_constraints_failed")
+        required_steps.append("improve_stress_metrics")
+
+    current_pass = bool(safety_pass and beat_baselines and stress_ok)
     total_passes = window_passes + (1 if current_pass else 0)
     if total_passes < config.window_passes_required:
         reasons.append("insufficient_window_wins")
@@ -160,6 +207,9 @@ def evaluate_promotion_gate(
         "auto_promote_eligible": auto_eligible,
         "auto_promote_required_consecutive": config.auto_promote_consecutive,
         "safety_failures": safety_failures,
+        "stress_status": stress_status,
+        "stress_failures": stress_failures,
+        "stress_evidence": stress_evidence,
     }
 
 
@@ -172,6 +222,7 @@ def parse_args(argv: List[str]) -> object:
     )
     parser.add_argument("--candidate", help="Path to candidate metrics JSON")
     parser.add_argument("--baselines", help="Path to baselines metrics JSON")
+    parser.add_argument("--stress-report", dest="stress_report", help="Path to stress report JSON")
     parser.add_argument("--run-id", dest="run_id", default="manual", help="Run ID for evidence")
     return parser.parse_args(argv)
 
@@ -180,6 +231,7 @@ def main(argv: List[str] | None = None) -> int:
     args = parse_args(argv or __import__("sys").argv[1:])
     candidate = {}
     baselines: List[Dict[str, object]] = []
+    stress_report: Dict[str, object] | None = None
     if args.candidate:
         candidate_path = Path(args.candidate)
         if candidate_path.exists():
@@ -190,7 +242,13 @@ def main(argv: List[str] | None = None) -> int:
             payload = json.loads(baselines_path.read_text(encoding="utf-8"))
             if isinstance(payload, list):
                 baselines = payload
-    decision = evaluate_promotion_gate(candidate or None, baselines, str(args.run_id))
+    if args.stress_report:
+        stress_path = Path(args.stress_report)
+        if stress_path.exists():
+            stress_payload = json.loads(stress_path.read_text(encoding="utf-8"))
+            if isinstance(stress_payload, dict):
+                stress_report = stress_payload
+    decision = evaluate_promotion_gate(candidate or None, baselines, str(args.run_id), stress_report=stress_report)
     print(json.dumps(decision, ensure_ascii=False, indent=2))
     return 0 if decision.get("decision") == "APPROVE" else 1
 

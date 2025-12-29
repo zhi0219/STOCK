@@ -95,7 +95,24 @@ def _write_promotion_artifacts(
     (run_dir / "promotion_recommendation.json").write_text(
         json.dumps(recommendation, ensure_ascii=False, indent=2), encoding="utf-8"
     )
-    decision = evaluate_promotion_gate(best_candidate, baselines, run_dir.name, GateConfig())
+    stress_report = {
+        "schema_version": 1,
+        "status": "PASS",
+        "baseline_pass": True,
+        "stress_pass": True,
+        "fail_reasons": [],
+        "scenarios": [
+            {"scenario": "BASELINE", "pass": True},
+            {"scenario": "STRESS_A", "pass": True},
+        ],
+    }
+    decision = evaluate_promotion_gate(
+        best_candidate,
+        baselines,
+        run_dir.name,
+        GateConfig(),
+        stress_report=stress_report,
+    )
     (run_dir / "promotion_decision.json").write_text(
         json.dumps(decision, ensure_ascii=False, indent=2), encoding="utf-8"
     )
@@ -110,12 +127,24 @@ def _negative_tests() -> List[str]:
     failures: List[str] = []
     baselines = [{"candidate_id": "baseline_do_nothing", "score": 10.0}]
     candidate_low = {"candidate_id": "candidate_low", "score": -5.0, "max_drawdown_pct": 1.0, "turnover": 0, "reject_rate": 0.0}
-    decision_low = evaluate_promotion_gate(candidate_low, baselines, "neg_low", GateConfig())
+    decision_low = evaluate_promotion_gate(
+        candidate_low,
+        baselines,
+        "neg_low",
+        GateConfig(),
+        stress_report={"status": "PASS", "baseline_pass": True, "stress_pass": True, "scenarios": [{"pass": True}]},
+    )
     if decision_low.get("decision") != "REJECT":
         failures.append("baseline_win_reject_missing")
 
     candidate_risky = {"candidate_id": "candidate_risky", "score": 50.0, "max_drawdown_pct": 50.0, "turnover": 2, "reject_rate": 0.0}
-    decision_risky = evaluate_promotion_gate(candidate_risky, baselines, "neg_risk", GateConfig())
+    decision_risky = evaluate_promotion_gate(
+        candidate_risky,
+        baselines,
+        "neg_risk",
+        GateConfig(),
+        stress_report={"status": "PASS", "baseline_pass": True, "stress_pass": True, "scenarios": [{"pass": True}]},
+    )
     if decision_risky.get("decision") != "REJECT":
         failures.append("risk_reject_missing")
     return failures

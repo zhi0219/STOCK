@@ -56,6 +56,8 @@ PR28_TOURNAMENT_RESULT_LATEST_PATH = LATEST_DIR / "tournament_result_latest.json
 PR28_JUDGE_RESULT_LATEST_PATH = LATEST_DIR / "judge_result_latest.json"
 PR28_PROMOTION_DECISION_LATEST_PATH = LATEST_DIR / "promotion_decision_latest.json"
 PR28_PROMOTION_HISTORY_LATEST_PATH = LATEST_DIR / "promotion_history_latest.json"
+LATEST_STRESS_REPORT_PATH = LATEST_DIR / "stress_report_latest.json"
+FRICTION_POLICY_PATH = ROOT / "Data" / "friction_policy.json"
 XP_SNAPSHOT_DIR = ROOT / "Logs" / "train_runs" / "progress_xp"
 XP_SNAPSHOT_LATEST_PATH = XP_SNAPSHOT_DIR / "xp_snapshot_latest.json"
 UI_SMOKE_LATEST_PATH = ROOT / "Logs" / "ui_smoke_latest.json"
@@ -167,6 +169,7 @@ if str(ROOT) not in sys.path:
 
 from tools.git_baseline_probe import probe_baseline
 from tools.paths import policy_registry_runtime_path
+from tools.paths import to_repo_relative
 from tools.train_service import CADENCE_PRESETS
 from tools.ui_parsers import (
     load_decision_cards,
@@ -554,6 +557,11 @@ class App(tk.Tk):
         self.progress_truth_not_improving_var = tk.StringVar(value="Not improving because: -")
         self.progress_truth_action_var = tk.StringVar(value="Suggested action: -")
         self.progress_truth_evidence_var = tk.StringVar(value="Evidence: -")
+        self.progress_friction_policy_var = tk.StringVar(value="Friction policy: -")
+        self.progress_friction_detail_var = tk.StringVar(value="Friction settings: -")
+        self.progress_stress_status_var = tk.StringVar(value="Stress status: -")
+        self.progress_stress_reject_var = tk.StringVar(value="Stress reject reasons: -")
+        self.progress_stress_evidence_var = tk.StringVar(value="Stress evidence: -")
         self.progress_diag_status_var = tk.StringVar(value="Diagnosis: -")
         self.progress_diag_summary_var = tk.StringVar(value="Progress diagnosis will appear here.")
         self.progress_growth_total_var = tk.StringVar(value="Total runs: -")
@@ -2005,6 +2013,7 @@ class App(tk.Tk):
                     self.progress_status_var.set("Progress index refreshed from disk")
                     self._load_progress_index()
                     self._refresh_truthful_progress()
+                    self._refresh_friction_status()
                     self._refresh_xp_snapshot()
                     self._refresh_engine_status()
                     self._refresh_policy_history()
@@ -2025,6 +2034,7 @@ class App(tk.Tk):
         self._load_progress_index()
         self._refresh_action_center_report()
         self._refresh_truthful_progress()
+        self._refresh_friction_status()
         self._refresh_xp_snapshot()
         self._refresh_engine_status()
         self._refresh_policy_history()
@@ -3181,6 +3191,32 @@ class App(tk.Tk):
             wraplength=1000,
             fg="#6b7280",
         ).pack(anchor="w")
+        friction_frame = tk.LabelFrame(self.progress_tab, text="Execution Friction + Stress (SIM-only)", padx=6, pady=6)
+        friction_frame.pack(fill=tk.X, padx=6, pady=4)
+        tk.Label(friction_frame, textvariable=self.progress_friction_policy_var, anchor="w").pack(anchor="w")
+        tk.Label(
+            friction_frame,
+            textvariable=self.progress_friction_detail_var,
+            anchor="w",
+            justify=tk.LEFT,
+            wraplength=1000,
+        ).pack(anchor="w")
+        tk.Label(friction_frame, textvariable=self.progress_stress_status_var, anchor="w").pack(anchor="w")
+        tk.Label(
+            friction_frame,
+            textvariable=self.progress_stress_reject_var,
+            anchor="w",
+            justify=tk.LEFT,
+            wraplength=1000,
+        ).pack(anchor="w")
+        tk.Label(
+            friction_frame,
+            textvariable=self.progress_stress_evidence_var,
+            anchor="w",
+            justify=tk.LEFT,
+            wraplength=1000,
+            fg="#6b7280",
+        ).pack(anchor="w")
         xp_frame = tk.LabelFrame(self.progress_tab, text="Truthful XP (SIM-only)", padx=6, pady=6)
         xp_frame.pack(fill=tk.X, padx=6, pady=4)
         tk.Label(xp_frame, textvariable=self.progress_xp_status_var, font=("Helvetica", 13, "bold")).pack(
@@ -3468,6 +3504,7 @@ class App(tk.Tk):
         self._refresh_proof_lamps()
         self._load_progress_index()
         self._refresh_truthful_progress()
+        self._refresh_friction_status()
         self._refresh_xp_snapshot()
         self._refresh_engine_status()
         self._refresh_policy_history()
@@ -3526,6 +3563,64 @@ class App(tk.Tk):
             self.progress_truth_evidence_var.set(f"Evidence runs: {', '.join([str(rid) for rid in evidence_ids])}")
         else:
             self.progress_truth_evidence_var.set("Evidence runs: none")
+
+    def _refresh_friction_status(self) -> None:
+        policy_payload = {}
+        if FRICTION_POLICY_PATH.exists():
+            try:
+                policy_payload = json.loads(FRICTION_POLICY_PATH.read_text(encoding="utf-8"))
+            except Exception:
+                policy_payload = {}
+        policy_path_text = to_repo_relative(FRICTION_POLICY_PATH)
+        if policy_payload:
+            fee_trade = policy_payload.get("fee_per_trade", "-")
+            fee_share = policy_payload.get("fee_per_share", "-")
+            spread = policy_payload.get("spread_bps", "-")
+            slippage = policy_payload.get("slippage_bps", "-")
+            latency = policy_payload.get("latency_ms", "-")
+            partial_prob = policy_payload.get("partial_fill_prob", "-")
+            max_fraction = policy_payload.get("max_fill_fraction", "-")
+            self.progress_friction_policy_var.set(f"Friction policy: {policy_path_text}")
+            self.progress_friction_detail_var.set(
+                "Friction settings: "
+                f"fee_per_trade={fee_trade} fee_per_share={fee_share} | "
+                f"spread_bps={spread} slippage_bps={slippage} | "
+                f"latency_ms={latency} | partial_fill_prob={partial_prob} max_fill_fraction={max_fraction}"
+            )
+        else:
+            self.progress_friction_policy_var.set(f"Friction policy: missing ({policy_path_text})")
+            self.progress_friction_detail_var.set("Friction settings: -")
+
+        stress_payload = {}
+        if LATEST_STRESS_REPORT_PATH.exists():
+            try:
+                stress_payload = json.loads(LATEST_STRESS_REPORT_PATH.read_text(encoding="utf-8"))
+            except Exception:
+                stress_payload = {}
+        if not stress_payload:
+            self.progress_stress_status_var.set(
+                f"Stress status: missing ({to_repo_relative(LATEST_STRESS_REPORT_PATH)})"
+            )
+            self.progress_stress_reject_var.set("Stress reject reasons: stress_report_missing")
+            self.progress_stress_evidence_var.set("Stress evidence: -")
+            return
+
+        status = stress_payload.get("status", "UNKNOWN")
+        run_id = stress_payload.get("run_id", "-")
+        self.progress_stress_status_var.set(f"Stress status: {status} (run_id={run_id})")
+        fail_reasons = stress_payload.get("fail_reasons", [])
+        if isinstance(fail_reasons, list) and fail_reasons:
+            self.progress_stress_reject_var.set(
+                f"Stress reject reasons: {', '.join(str(item) for item in fail_reasons)}"
+            )
+        else:
+            self.progress_stress_reject_var.set("Stress reject reasons: none")
+        evidence = stress_payload.get("evidence", {})
+        if isinstance(evidence, dict) and evidence:
+            evidence_parts = [f\"{key}={value}\" for key, value in evidence.items()]
+            self.progress_stress_evidence_var.set(f\"Stress evidence: {', '.join(evidence_parts)}\")
+        else:
+            self.progress_stress_evidence_var.set(\"Stress evidence: -\")
 
     def _refresh_xp_snapshot(self) -> None:
         payload = load_xp_snapshot_latest(XP_SNAPSHOT_LATEST_PATH)

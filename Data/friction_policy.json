@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "fee_per_trade": 0.25,
+  "fee_per_share": 0.0,
+  "spread_bps": 1.0,
+  "slippage_bps": 3.0,
+  "latency_ms": 400,
+  "partial_fill_prob": 0.0,
+  "max_fill_fraction": 1.0
+}

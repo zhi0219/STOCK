@@ -8,6 +8,8 @@ from typing import Dict, List, Optional, Tuple
 
 import yaml
 
+from tools.execution_friction import apply_friction, load_friction_policy
+
 ROOT = Path(__file__).resolve().parent.parent
 UTC = timezone.utc
 
@@ -207,6 +209,7 @@ class SimAutopilot:
         logs_dir: Optional[Path] = None,
         risk_overrides: Optional[Dict[str, object]] = None,
         policy_version: str | None = None,
+        friction_policy: Optional[Dict[str, float | int]] = None,
     ) -> None:
         self.root = Path(__file__).resolve().parent.parent
         self.config_path = config_path or (self.root / "config.yaml")
@@ -221,7 +224,13 @@ class SimAutopilot:
             risk_cfg.update(risk_overrides)
         self.state = RiskState(mode=str(risk_cfg.get("mode", "NORMAL")).upper())
         self.risk_engine = RiskEngine(risk_cfg, cfg or {}, self.state)
-        self.sim_fill = {"slippage_bps": 3.0, "fee_usd": 0.25, "latency_sec": 0.4}
+        self.friction_policy = friction_policy or load_friction_policy()
+        self.sim_fill = {
+            "slippage_bps": float(self.friction_policy.get("slippage_bps", 0.0)),
+            "spread_bps": float(self.friction_policy.get("spread_bps", 0.0)),
+            "fee_usd": float(self.friction_policy.get("fee_per_trade", 0.0)),
+            "latency_sec": float(self.friction_policy.get("latency_ms", 0.0)) / 1000.0,
+        }
 
     def _load_config(self) -> Dict[str, object]:
         if not self.config_path.exists():
@@ -260,12 +269,12 @@ class SimAutopilot:
         except Exception:
             return 1
 
-    def _write_order(self, intent: Dict[str, object], now_ts: datetime) -> int:
+    def _write_order(self, intent: Dict[str, object], now_ts: datetime, sim_fill: Optional[Dict[str, object]] = None) -> int:
         line_no = self._order_line_no()
         record = dict(intent)
         record.setdefault("ts_utc", now_ts.isoformat())
         record.setdefault("policy_version", self.policy_version)
-        record["sim_fill"] = dict(self.sim_fill)
+        record["sim_fill"] = dict(sim_fill or self.sim_fill)
         with self.orders_path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(record, ensure_ascii=False) + "\n")
         return line_no
@@ -291,11 +300,17 @@ class SimAutopilot:
         self.state.evidence_notes.append(evidence)
         self._append_event(event)
 
-    def process_intent(self, intent: Dict[str, object], status: Optional[Dict[str, object]] = None, now_ts: Optional[datetime] = None) -> Tuple[str, Optional[str]]:
+    def process_intent(
+        self,
+        intent: Dict[str, object],
+        status: Optional[Dict[str, object]] = None,
+        now_ts: Optional[datetime] = None,
+        sim_fill: Optional[Dict[str, object]] = None,
+    ) -> Tuple[str, Optional[str]]:
         now_ts = now_ts or _now()
         decision, reason = self.risk_engine.evaluate(intent, status, now_ts)
         if decision == "ALLOW":
-            line_no = self._write_order(intent, now_ts)
+            line_no = self._write_order(intent, now_ts, sim_fill=sim_fill)
             pnl = float(intent.get("pnl") or 0.0)
             self.state.register_fill(pnl)
             self.state.last_exec_ts = now_ts
@@ -384,10 +399,17 @@ def run_step(
         logs_dir = ROOT / logs_dir
     logs_dir = logs_dir.expanduser().resolve()
     risk_overrides = cfg.get("risk_overrides") or {}
+    friction_policy = cfg.get("friction_policy")
+    friction_policy_path = cfg.get("friction_policy_path")
+    if not isinstance(friction_policy, dict):
+        friction_policy = load_friction_policy(Path(friction_policy_path)) if friction_policy_path else load_friction_policy()
 
     policy_version = str(cfg.get("policy_version", "baseline"))
     autopilot = SimAutopilot(
-        logs_dir=logs_dir, risk_overrides=risk_overrides, policy_version=policy_version
+        logs_dir=logs_dir,
+        risk_overrides=risk_overrides,
+        policy_version=policy_version,
+        friction_policy=friction_policy,
     )
     autopilot.state = _risk_state_from_dict(sim_state.get("risk_state"))
     autopilot.risk_engine.state = autopilot.state
@@ -448,26 +470,46 @@ def run_step(
     decision: str | None = None
     reason: str | None = None
     if intent:
-        decision, reason = autopilot.process_intent(intent, status=status, now_ts=now_ts)
+        fill_seed = None
+        if cfg.get("friction_seed") is not None:
+            try:
+                fill_seed = int(cfg.get("friction_seed")) + int(sim_state.get("friction_fill_count", 0))
+            except Exception:
+                fill_seed = int(cfg.get("friction_seed"))
+        fill_result = apply_friction(intent, quotes_snapshot, friction_policy, rng_seed=fill_seed)
+        fill_qty = float(fill_result.get("fill_qty", 0.0))
+        fill_price = float(fill_result.get("fill_price", float(intent.get("price") or price)))
+        fee_usd = float(fill_result.get("fee_usd", 0.0))
+        if fill_qty < 0:
+            avg_cost = cost_basis.get(symbol, last_price or price)
+            intent["pnl"] = (fill_price - avg_cost) * abs(fill_qty) - fee_usd
+        else:
+            intent["pnl"] = -fee_usd
+        decision, reason = autopilot.process_intent(intent, status=status, now_ts=now_ts, sim_fill=fill_result)
         if decision == "ALLOW":
-            qty = float(intent.get("qty") or 0.0)
-            if qty != 0:
-                cash -= qty * price
-                positions[symbol] = positions.get(symbol, 0.0) + qty
+            if fill_qty != 0:
+                cash -= fill_qty * fill_price
+                cash -= fee_usd
+                positions[symbol] = positions.get(symbol, 0.0) + fill_qty
                 if positions[symbol] != 0:
                     prev_cost = cost_basis.get(symbol, last_price or price)
-                    if qty > 0:
+                    if fill_qty > 0:
                         total_qty = positions[symbol]
-                        cost_basis[symbol] = (prev_cost * (total_qty - qty) + price * qty) / total_qty
+                        cost_basis[symbol] = (prev_cost * (total_qty - fill_qty) + fill_price * fill_qty) / total_qty
                 else:
                     positions.pop(symbol, None)
                     cost_basis.pop(symbol, None)
+                sim_state["friction_fill_count"] = int(sim_state.get("friction_fill_count", 0)) + 1
             emitted_events.append(
                 {
                     "event_type": "SIM_INTENT",
                     "symbol": symbol,
                     "decision": decision,
                     "reason": reason,
+                    "fill_qty": fill_qty,
+                    "fill_price": fill_price,
+                    "fee_usd": fee_usd,
+                    "sim_fill": fill_result,
                 }
             )
         else:
