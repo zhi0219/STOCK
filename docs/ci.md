@@ -25,12 +25,15 @@ CI always writes and uploads the following files under `artifacts/`:
 - `artifacts/gates.log` (gate output, bounded by truncation)
 - `artifacts/proof_summary.json` (machine-readable summary)
 - `artifacts/action_center_report.json` (Action Center report)
+- `artifacts/action_center_apply_result.json` (Action Center apply result)
 - `artifacts/ci_job_summary.md` (human-readable CI summary)
 
 If present, it also copies:
 
 - `run_complete.json`
 - any `*_latest.json` pointers
+
+Step summary excerpts are written to `artifacts/ci_job_summary.md` and mirrored into the GitHub Actions **Summary** tab via `GITHUB_STEP_SUMMARY`.
 
 ## Manual demo inputs (workflow_dispatch)
 

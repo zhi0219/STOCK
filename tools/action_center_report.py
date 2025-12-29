@@ -18,7 +18,7 @@ RUNS_DIR = LOGS_DIR / "train_runs"
 LATEST_DIR = RUNS_DIR / "_latest"
 PROGRESS_INDEX_PATH = RUNS_DIR / "progress_index.json"
 STATE_PATH = LOGS_DIR / "train_service" / "state.json"
-DEFAULT_OUTPUT = LOGS_DIR / "action_center_report.json"
+DEFAULT_OUTPUT = ROOT / "artifacts" / "action_center_report.json"
 SUPERVISOR_SCRIPT = ROOT / "tools" / "supervisor.py"
 PROGRESS_INDEX_SCRIPT = ROOT / "tools" / "progress_index.py"
 
@@ -334,6 +334,46 @@ def _build_recommended_actions(action_evidence: dict[str, set[str]] | None = Non
     return recommended_actions
 
 
+def _severity_rank(severity: str) -> int:
+    order = {"HIGH": 3, "WARN": 2, "INFO": 1, "OK": 0}
+    return order.get(severity.upper(), 0)
+
+
+def _build_action_rows(issues: list[dict[str, Any]], now: datetime) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for action_id, action in ACTION_DEFINITIONS.items():
+        matching = [
+            issue
+            for issue in issues
+            if isinstance(issue, dict) and action_id in issue.get("recommended_actions", [])
+        ]
+        severity = "INFO"
+        summary = "No active issues detected."
+        if matching:
+            ranked = sorted(
+                matching,
+                key=lambda entry: _severity_rank(str(entry.get("severity", "INFO"))),
+                reverse=True,
+            )
+            top = ranked[0]
+            severity = str(top.get("severity", "INFO")).upper()
+            summary = str(top.get("summary", summary))
+        recommended_command = (
+            f"python -m tools.action_center_apply --action-id {action_id} "
+            f"--confirm {action['confirmation_token']}"
+        )
+        rows.append(
+            {
+                "action_id": action_id,
+                "severity": severity,
+                "summary": summary,
+                "recommended_command": recommended_command,
+                "last_seen_ts_utc": now.isoformat(),
+            }
+        )
+    return rows
+
+
 def build_report() -> dict[str, Any]:
     now = _now()
     environment_notes: list[dict[str, str]] = []
@@ -553,6 +593,7 @@ def build_report() -> dict[str, Any]:
         "environment_notes": environment_notes,
         "detected_issues": issues,
         "recommended_actions": _build_recommended_actions(action_evidence),
+        "action_rows": _build_action_rows(issues, now),
     }
 
 
@@ -607,6 +648,7 @@ def main() -> int:
             ],
             "detected_issues": [],
             "recommended_actions": _build_recommended_actions(),
+            "action_rows": _build_action_rows([], _now()),
         }
         write_report(fallback, output_path)
         print(str(exc))
