@@ -53,6 +53,14 @@ Evidence and events:
 - Apply also writes `artifacts/action_center_apply_result.json`.
 - Apply attempts append to `Logs/events_YYYY-MM-DD.jsonl`.
 
+## Storage health actions (SAFE)
+
+When storage health is flagged by Doctor, the Action Center may recommend:
+
+- `RUN_RETENTION_REPORT` (generate `retention_report.json`)
+- `PRUNE_OLD_RUNS_SAFE` (conservative prune with safety checks)
+- `REBUILD_RECENT_INDEX` (refresh `Logs/train_runs/recent_runs_index.json`)
+
 ## CI forced-fail demo
 
 When `CI_FORCE_FAIL=1` is used for the workflow dispatch demo, the Action Center still writes `artifacts/action_center_report.json` and records a `CI_FORCE_FAIL` issue in the report so the evidence pack remains complete.

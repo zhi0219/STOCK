@@ -314,6 +314,13 @@ if [[ "${PR33_FORCE_FAIL:-0}" == "1" ]]; then
   rc=1
 fi
 
+if [[ "${PR34_FORCE_FAIL:-0}" == "1" ]]; then
+  echo "PR34_FORCE_FAIL enabled; forcing failure after gates."
+  status="FAIL"
+  failing_gate="PR34_FORCE_FAIL"
+  rc=1
+fi
+
 echo "===CI_GATES_END==="
 
 find . -path "./artifacts" -prune -o -type f -name "run_complete.json" -print0 | \

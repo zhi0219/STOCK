@@ -33,6 +33,9 @@ ACTION_ENSURE_RUNTIME_DIRS = "ENSURE_RUNTIME_DIRS"
 ACTION_DIAG_RUNTIME_WRITE = "DIAG_RUNTIME_WRITE"
 ACTION_ABS_PATH_SANITIZE_HINT = "ABS_PATH_SANITIZE_HINT"
 ACTION_ENABLE_GIT_HOOKS = "ENABLE_GIT_HOOKS"
+ACTION_RUN_RETENTION_REPORT = "RUN_RETENTION_REPORT"
+ACTION_PRUNE_OLD_RUNS_SAFE = "PRUNE_OLD_RUNS_SAFE"
+ACTION_REBUILD_RECENT_INDEX = "REBUILD_RECENT_INDEX"
 
 IMPORT_CHECK_MODULES = ("tools.action_center_report", "tools.action_center_apply", "tools.doctor_report")
 
@@ -152,6 +155,23 @@ def _load_import_contract_result() -> dict[str, Any] | None:
     return payload if isinstance(payload, dict) else None
 
 
+def _load_retention_report() -> tuple[dict[str, Any] | None, list[str]]:
+    candidates = [
+        RUNTIME_DIR / "retention_report.json",
+        ARTIFACTS_DIR / "retention_report.json",
+    ]
+    for path in candidates:
+        if not path.exists():
+            continue
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return None, [to_repo_relative(path)]
+        if isinstance(payload, dict):
+            return payload, [to_repo_relative(path)]
+    return None, []
+
+
 def _run_import_sanity_check(modules: Iterable[str]) -> dict[str, Any]:
     failures: list[str] = []
     for module in modules:
@@ -256,6 +276,45 @@ def build_report() -> dict[str, Any]:
             }
         )
 
+    retention_payload, retention_paths = _load_retention_report()
+    storage_health = {
+        "status": "PASS",
+        "reasons": [],
+        "evidence_paths_rel": retention_paths,
+    }
+    if retention_payload is None:
+        storage_health["status"] = "ISSUE"
+        storage_health["reasons"] = ["retention_report_missing_or_invalid"]
+    else:
+        safety = retention_payload.get("safety_checks", {}) if isinstance(
+            retention_payload.get("safety_checks"), dict
+        ) else {}
+        candidates = retention_payload.get("candidates", [])
+        if not safety.get("latest_pointers_protected", True) or not safety.get(
+            "required_files_present", True
+        ):
+            storage_health["status"] = "BLOCKED"
+            storage_health["reasons"] = ["retention_safety_checks_failed"]
+        elif isinstance(candidates, list) and candidates:
+            storage_health["status"] = "ISSUE"
+            storage_health["reasons"] = ["retention_candidates_present"]
+
+    if storage_health["status"] != "PASS":
+        issues.append(
+            {
+                "id": "STORAGE_HEALTH",
+                "severity": "WARN" if storage_health["status"] == "ISSUE" else "HIGH",
+                "summary": f"Storage health {storage_health['status']}: "
+                f"{', '.join(storage_health.get('reasons', []))}.",
+                "evidence_paths_rel": storage_health.get("evidence_paths_rel", []),
+                "suggested_actions": [
+                    ACTION_RUN_RETENTION_REPORT,
+                    ACTION_PRUNE_OLD_RUNS_SAFE,
+                    ACTION_REBUILD_RECENT_INDEX,
+                ],
+            }
+        )
+
     if os.environ.get("PR30_INJECT_ISSUES") == "1":
         injected = [
             (ACTION_GEN_DOCTOR_REPORT, "Injected doctor report issue."),
@@ -289,12 +348,13 @@ def build_report() -> dict[str, Any]:
         "venv_detected": venv_detected,
         "kill_switch_present": kill_switch_present,
         "runtime_write_health": runtime_write_health,
-        "repo_hygiene_summary": {
-            "status": hygiene.get("status", "UNKNOWN"),
-            "tracked_modified_count": counts.get("tracked_modified", 0),
-            "untracked_count": counts.get("untracked", 0),
-            "runtime_artifact_count": counts.get("runtime_artifacts", 0),
-        },
+            "repo_hygiene_summary": {
+                "status": hygiene.get("status", "UNKNOWN"),
+                "tracked_modified_count": counts.get("tracked_modified", 0),
+                "untracked_count": counts.get("untracked", 0),
+                "runtime_artifact_count": counts.get("runtime_artifacts", 0),
+            },
+        "storage_health": storage_health,
         "issues": issues,
     }
     return report

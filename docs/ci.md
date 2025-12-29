@@ -9,7 +9,7 @@ The CI entrypoint is:
 ```
 
 This script discovers the canonical gate runner, executes it, and emits auditable artifacts under `artifacts/`.
-For PR33, the canonical runner is `tools/verify_pr33_gate.py`.
+For PR34, the canonical runner is `tools/verify_pr34_gate.py`.
 
 ## Job Summary
 
@@ -34,6 +34,10 @@ CI always writes and uploads the following files under `artifacts/`:
 - `artifacts/repo_hygiene.json` (repo hygiene scan output)
 - `artifacts/Logs/train_runs/_pr33_gate/_latest/replay_index_latest.json` (PR33 replay index)
 - `artifacts/Logs/train_runs/_pr33_gate/_latest/decision_cards_latest.jsonl` (PR33 decision cards)
+- `artifacts/retention_report.json` (retention report)
+- `artifacts/retention_prune_plan.json` (retention prune plan)
+- `artifacts/retention_prune_result.json` (retention prune result)
+- `artifacts/Logs/train_runs/recent_runs_index.json` (recent runs index)
 
 If present, it also copies:
 
@@ -59,18 +63,18 @@ To trigger a controlled failure for evidence-pack validation, run the workflow m
 1. Open the **CI Gates** workflow in GitHub Actions.
 2. Select **Run workflow** and set `force_fail` to `true`.
 
-This sets `CI_FORCE_FAIL=1` only for that manual run, causing the gates to fail after execution while still producing and uploading the evidence pack. The PR31 gate also supports `PR31_FORCE_FAIL=1` for local evidence-pack validation. PR33 adds `PR33_FORCE_FAIL=1` to fail after replay artifacts are emitted.
+This sets `CI_FORCE_FAIL=1` only for that manual run, causing the gates to fail after execution while still producing and uploading the evidence pack. The PR31 gate also supports `PR31_FORCE_FAIL=1` for local evidence-pack validation. PR33 adds `PR33_FORCE_FAIL=1` to fail after replay artifacts are emitted. PR34 adds `PR34_FORCE_FAIL=1` to fail after retention artifacts are emitted.
 
-## PR33 gate (local)
+## PR34 gate (local)
 
-Run the PR33 gate locally using module mode:
+Run the PR34 gate locally using module mode:
 
 ```
-python -m tools.verify_pr33_gate
+python -m tools.verify_pr34_gate
 ```
 
 To confirm fail-closed behavior while still emitting artifacts:
 
 ```
-PR33_FORCE_FAIL=1 ./scripts/ci_gates.sh
+PR34_FORCE_FAIL=1 ./scripts/ci_gates.sh
 ```

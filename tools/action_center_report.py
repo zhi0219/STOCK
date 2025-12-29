@@ -25,6 +25,7 @@ DOCTOR_DIAG_OUTPUT = ROOT / "artifacts" / "doctor_runtime_write.json"
 ABS_PATH_HINT_OUTPUT = ROOT / "artifacts" / "abs_path_sanitize_hint.json"
 SUPERVISOR_SCRIPT = ROOT / "tools" / "supervisor.py"
 PROGRESS_INDEX_SCRIPT = ROOT / "tools" / "progress_index.py"
+RECENT_RUNS_INDEX_SCRIPT = ROOT / "tools" / "recent_runs_index.py"
 
 LATEST_POINTERS = [
     "candidates_latest.json",
@@ -45,6 +46,9 @@ CONFIRM_TOKENS = {
     "DIAG_RUNTIME_WRITE": "DIAG",
     "ABS_PATH_SANITIZE_HINT": "SANITIZE",
     "ENABLE_GIT_HOOKS": "HOOKS",
+    "RUN_RETENTION_REPORT": "REPORT",
+    "PRUNE_OLD_RUNS_SAFE": "PRUNE",
+    "REBUILD_RECENT_INDEX": "INDEX",
 }
 
 ACTION_DEFINITIONS = {
@@ -116,6 +120,27 @@ ACTION_DEFINITIONS = {
         "confirmation_token": CONFIRM_TOKENS["ENABLE_GIT_HOOKS"],
         "safety_notes": "SIM-only. Best-effort enable githooks for repo hygiene.",
         "effect_summary": "Runs scripts/enable_githooks.* if available.",
+        "risk_level": "SAFE",
+    },
+    "RUN_RETENTION_REPORT": {
+        "title": "Run retention report",
+        "confirmation_token": CONFIRM_TOKENS["RUN_RETENTION_REPORT"],
+        "safety_notes": "SIM-only. Generates retention report for storage health evidence.",
+        "effect_summary": "Runs python -m tools.retention_engine report.",
+        "risk_level": "SAFE",
+    },
+    "PRUNE_OLD_RUNS_SAFE": {
+        "title": "Prune old runs (safe)",
+        "confirmation_token": CONFIRM_TOKENS["PRUNE_OLD_RUNS_SAFE"],
+        "safety_notes": "SIM-only. Conservative retention prune with safety checks.",
+        "effect_summary": "Runs python -m tools.retention_engine prune --mode safe.",
+        "risk_level": "SAFE",
+    },
+    "REBUILD_RECENT_INDEX": {
+        "title": "Rebuild recent runs index",
+        "confirmation_token": CONFIRM_TOKENS["REBUILD_RECENT_INDEX"],
+        "safety_notes": "SIM-only. Rebuilds Logs/train_runs/recent_runs_index.json.",
+        "effect_summary": "Runs python -m tools.recent_runs_index.",
         "risk_level": "SAFE",
     },
 }
@@ -453,6 +478,69 @@ def _execute_enable_githooks() -> ActionExecutionResult:
     return ActionExecutionResult("ENABLE_GIT_HOOKS", success, message, details)
 
 
+def _execute_retention_report() -> ActionExecutionResult:
+    proc = _run_command([sys.executable, "-m", "tools.retention_engine", "report"])
+    details = {
+        "command": _sanitize_command(list(proc.args)),
+        "returncode": proc.returncode,
+        "stdout": proc.stdout,
+        "stderr": proc.stderr,
+    }
+    changes = []
+    from tools.retention_engine import RETENTION_REPORT_RUNTIME, RETENTION_REPORT_ARTIFACTS
+
+    if RETENTION_REPORT_RUNTIME.exists():
+        changes.append(_relpath(RETENTION_REPORT_RUNTIME))
+    if RETENTION_REPORT_ARTIFACTS.exists():
+        changes.append(_relpath(RETENTION_REPORT_ARTIFACTS))
+    details["changes_made"] = changes
+    success = proc.returncode == 0
+    message = "retention report generated" if success else "retention report failed"
+    return ActionExecutionResult("RUN_RETENTION_REPORT", success, message, details)
+
+
+def _execute_retention_prune_safe() -> ActionExecutionResult:
+    proc = _run_command([sys.executable, "-m", "tools.retention_engine", "prune", "--mode", "safe"])
+    details = {
+        "command": _sanitize_command(list(proc.args)),
+        "returncode": proc.returncode,
+        "stdout": proc.stdout,
+        "stderr": proc.stderr,
+    }
+    from tools.retention_engine import PRUNE_PLAN_RUNTIME, PRUNE_RESULT_RUNTIME
+
+    changes = []
+    if PRUNE_PLAN_RUNTIME.exists():
+        changes.append(_relpath(PRUNE_PLAN_RUNTIME))
+    if PRUNE_RESULT_RUNTIME.exists():
+        changes.append(_relpath(PRUNE_RESULT_RUNTIME))
+    details["changes_made"] = changes
+    success = proc.returncode == 0
+    message = "retention prune completed" if success else "retention prune failed"
+    return ActionExecutionResult("PRUNE_OLD_RUNS_SAFE", success, message, details)
+
+
+def _execute_rebuild_recent_index() -> ActionExecutionResult:
+    proc = _run_command([sys.executable, str(RECENT_RUNS_INDEX_SCRIPT)])
+    details = {
+        "command": _sanitize_command(list(proc.args)),
+        "returncode": proc.returncode,
+        "stdout": proc.stdout,
+        "stderr": proc.stderr,
+    }
+    index_path = RUNS_DIR / "recent_runs_index.json"
+    latest_path = RUNS_DIR / "_latest" / "recent_runs_index_latest.json"
+    changes = []
+    if index_path.exists():
+        changes.append(_relpath(index_path))
+    if latest_path.exists():
+        changes.append(_relpath(latest_path))
+    details["changes_made"] = changes
+    success = proc.returncode == 0
+    message = "recent runs index rebuilt" if success else "recent runs index rebuild failed"
+    return ActionExecutionResult("REBUILD_RECENT_INDEX", success, message, details)
+
+
 def _execute_action(action_id: str) -> ActionExecutionResult:
     if action_id == "CLEAR_KILL_SWITCH":
         return _execute_clear_kill_switch()
@@ -474,6 +562,12 @@ def _execute_action(action_id: str) -> ActionExecutionResult:
         return _execute_abs_path_sanitize_hint()
     if action_id == "ENABLE_GIT_HOOKS":
         return _execute_enable_githooks()
+    if action_id == "RUN_RETENTION_REPORT":
+        return _execute_retention_report()
+    if action_id == "PRUNE_OLD_RUNS_SAFE":
+        return _execute_retention_prune_safe()
+    if action_id == "REBUILD_RECENT_INDEX":
+        return _execute_rebuild_recent_index()
     raise ValueError(f"Unknown action_id: {action_id}")
 
 

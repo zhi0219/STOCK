@@ -393,6 +393,19 @@ def write_replay_artifacts(
     atomic_write_json(replay_index_path, index_payload)
     atomic_write_json(replay_index_latest_path, index_payload)
 
+    try:
+        from tools.recent_runs_index import build_recent_runs_index, write_recent_runs_index
+
+        runs_root = run_dir.parent
+        recent_payload = build_recent_runs_index(runs_root=runs_root)
+        write_recent_runs_index(
+            recent_payload,
+            runs_root / "recent_runs_index.json",
+            runs_root / "_latest" / "recent_runs_index_latest.json",
+        )
+    except Exception:
+        pass
+
     return ReplayOutputs(
         run_dir=run_dir,
         replay_index=replay_index_path,
