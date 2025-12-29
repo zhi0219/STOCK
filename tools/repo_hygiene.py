@@ -39,6 +39,12 @@ RUNTIME_REGISTRY_PATHS = {
     "logs/policy_registry.json",
 }
 
+SEED_PATHS = {
+    "Data/policy_registry.seed.json",
+    "Data/friction_policy.json",
+    "Data/retention_policy.json",
+}
+
 SAFE_DELETE_ROOTS = [
     repo_root() / "Logs",
     repo_root() / "Reports",
@@ -79,9 +85,15 @@ def _is_runtime_path(path: str) -> bool:
     return any(normalized.startswith(prefix) for prefix in RUNTIME_PREFIXES)
 
 
+def _is_seed_path(path: str) -> bool:
+    return _normalize_path(path) in SEED_PATHS
+
+
 def _classify(path: str, is_tracked: bool) -> str:
     if _is_runtime_path(path):
         return "RUNTIME_ARTIFACT"
+    if is_tracked and _is_seed_path(path):
+        return "SEED_CHANGE"
     if is_tracked:
         return "CODE_CHANGE"
     return "UNKNOWN"
@@ -90,6 +102,8 @@ def _classify(path: str, is_tracked: bool) -> str:
 def classify_for_doctor(path: str, is_tracked: bool) -> str:
     if _is_runtime_path(path):
         return "SAFE_RUNTIME_ARTIFACT"
+    if is_tracked and _is_seed_path(path):
+        return "SAFE_SEED_CHANGE"
     return "UNKNOWN"
 
 
@@ -151,6 +165,9 @@ def scan_repo() -> Dict[str, object]:
         "runtime_artifacts": sum(
             1 for entry in tracked_modified + untracked + ignored if entry["classification"] == "RUNTIME_ARTIFACT"
         ),
+        "seed_changes": sum(
+            1 for entry in tracked_modified + untracked + ignored if entry["classification"] == "SEED_CHANGE"
+        ),
         "code_changes": sum(
             1 for entry in tracked_modified + untracked + ignored if entry["classification"] == "CODE_CHANGE"
         ),
@@ -182,6 +199,7 @@ def _summary_line(summary: Dict[str, object]) -> str:
             f"untracked={counts.get('untracked', 0)}",
             f"ignored={counts.get('ignored', 0)}",
             f"runtime_artifacts={counts.get('runtime_artifacts', 0)}",
+            f"seed_changes={counts.get('seed_changes', 0)}",
             f"code_changes={counts.get('code_changes', 0)}",
             f"unknown={counts.get('unknown', 0)}",
         ]

@@ -39,6 +39,7 @@ from tools.strategy_pool import select_candidates, write_strategy_pool_manifest
 from tools.progress_index import build_progress_index, write_progress_index
 from tools import progress_judge
 from tools.stress_harness import evaluate_stress
+from tools.paths import no_lookahead_latest_dir, walk_forward_latest_dir
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_INPUT = ROOT / "Data" / "quotes.csv"
@@ -75,6 +76,16 @@ class RetentionResult:
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _safe_read_json(path: Path) -> Dict[str, object] | None:
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    return payload if isinstance(payload, dict) else None
 
 
 def _iter_rows(quotes: List[Dict[str, object]]) -> Iterable[Dict[str, object]]:
@@ -1141,7 +1152,7 @@ def main(argv: List[str] | None = None) -> int:
     _atomic_write_json(run_dir / "candidates.json", candidates_payload)
     _atomic_copy_json(run_dir / "candidates.json", LATEST_CANDIDATES)
 
-    gate_config = GateConfig()
+    gate_config = GateConfig(require_walk_forward=True)
     stress_report = evaluate_stress(
         quotes,
         policy_version,
@@ -1195,12 +1206,21 @@ def main(argv: List[str] | None = None) -> int:
     }
     _atomic_write_json(run_dir / "promotion_recommendation.json", recommendation)
 
+    walk_forward_result = _safe_read_json(
+        walk_forward_latest_dir() / "walk_forward_result_latest.json"
+    )
+    no_lookahead_audit = _safe_read_json(
+        no_lookahead_latest_dir() / "no_lookahead_audit_latest.json"
+    )
+
     decision_payload = evaluate_promotion_gate(
         best_candidate,
         baseline_entries,
         run_id,
         gate_config,
         stress_report=stress_report,
+        walk_forward_result=walk_forward_result,
+        no_lookahead_audit=no_lookahead_audit,
     )
     decision_payload = {
         "schema_version": 1,

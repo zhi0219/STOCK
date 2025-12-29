@@ -354,6 +354,13 @@ if [[ "${PR31_FORCE_FAIL:-0}" == "1" ]]; then
   rc=1
 fi
 
+if [[ "${PR32_FORCE_FAIL:-0}" == "1" ]]; then
+  echo "PR32_FORCE_FAIL enabled; forcing failure after gates."
+  status="FAIL"
+  failing_gate="PR32_FORCE_FAIL"
+  rc=1
+fi
+
 if [[ "${PR33_FORCE_FAIL:-0}" == "1" ]]; then
   echo "PR33_FORCE_FAIL enabled; forcing failure after gates."
   status="FAIL"

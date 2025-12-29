@@ -68,6 +68,8 @@ def compute_xp_snapshot(
     promotion: dict[str, Any] | None,
     promotion_history: dict[str, Any] | None,
     promotion_history_events: list[dict[str, Any]] | None,
+    walk_forward_result: dict[str, Any] | None,
+    no_lookahead_audit: dict[str, Any] | None,
     doctor_report: dict[str, Any] | None,
     repo_hygiene: dict[str, Any] | None,
     evidence_paths: dict[str, Path | None],
@@ -212,6 +214,23 @@ def compute_xp_snapshot(
     else:
         add_insufficient("stability_history_unavailable", -5, [evidence_paths.get("promotion_history")])
 
+    if walk_forward_result and isinstance(walk_forward_result, dict):
+        wf_status = str(walk_forward_result.get("status") or "UNKNOWN")
+        wf_passes = int(walk_forward_result.get("window_passes") or 0)
+        wf_required = int(walk_forward_result.get("window_passes_required") or 0)
+        wf_points = 10 if wf_status == "PASS" and wf_passes >= wf_required else -10
+        wf_value = f\"{wf_status} {wf_passes}/{wf_required}\" if wf_required else wf_status
+        add_item(
+            key="stability_walk_forward",
+            label="Stability: walk-forward windows",
+            value=wf_value,
+            points=wf_points,
+            evidence=[evidence_paths.get("walk_forward"), evidence_paths.get("walk_forward_windows")],
+            notes="Uses walk-forward evaluation window pass rate.",
+        )
+    else:
+        add_insufficient("missing_walk_forward_result", -8, [evidence_paths.get("walk_forward")])
+
     if doctor_report and isinstance(doctor_report, dict):
         kill_switch_present = bool(doctor_report.get("kill_switch_present"))
         kill_points = -15 if kill_switch_present else 5
@@ -269,6 +288,9 @@ def compute_xp_snapshot(
         "promotion_decision": _safe_relpath(evidence_paths.get("promotion")),
         "promotion_history_latest": _safe_relpath(evidence_paths.get("promotion_history")),
         "promotion_history": _safe_relpath(evidence_paths.get("promotion_history_jsonl")),
+        "walk_forward_result": _safe_relpath(evidence_paths.get("walk_forward")),
+        "walk_forward_windows": _safe_relpath(evidence_paths.get("walk_forward_windows")),
+        "no_lookahead_audit": _safe_relpath(evidence_paths.get("no_lookahead_audit")),
         "doctor_report": _safe_relpath(evidence_paths.get("doctor_report")),
         "repo_hygiene": _safe_relpath(evidence_paths.get("repo_hygiene")),
     }

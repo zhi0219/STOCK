@@ -11,6 +11,9 @@ XP is derived exclusively from these artifacts:
   - `Logs/train_runs/_latest/judge_result_latest.json`
   - `Logs/train_runs/_latest/promotion_decision_latest.json`
   - `Logs/train_runs/_latest/promotion_history_latest.json` (and its `history_path` JSONL when present)
+- Walk-forward evaluation:
+  - `Logs/runtime/walk_forward/_latest/walk_forward_result_latest.json`
+  - `Logs/runtime/walk_forward/_latest/walk_forward_windows_latest.jsonl`
 - Doctor report (safety evidence):
   - `artifacts/doctor_report.json`
 - Repo hygiene (optional, if present):
@@ -87,6 +90,15 @@ Points:
 - Repo hygiene status **PASS** → `+5`, else `-10`
 
 Missing safety evidence adds `INSUFFICIENT_DATA` penalties.
+
+### 5) Walk-forward stability
+
+Source: `walk_forward_result_latest.json`
+
+- PASS with sufficient window passes → `+10` points
+- FAIL or insufficient windows → `-10` points
+
+Missing walk-forward evidence adds an `INSUFFICIENT_DATA` penalty.
 
 ## Level function (v1)
 

@@ -63,8 +63,16 @@ def build_plan(max_status_lines: int = MAX_STATUS_LINES) -> dict[str, Any]:
     git_available = error is None
     summary = repo_hygiene.scan_repo() if git_available else {"tracked_modified": [], "untracked": [], "ignored": []}
     entries = _collect_entries(summary)
-    safe_entries = [entry for entry in entries if entry["classification"] == "RUNTIME_ARTIFACT"]
-    unknown_entries = [entry for entry in entries if entry["classification"] != "RUNTIME_ARTIFACT"]
+    safe_entries = [
+        entry
+        for entry in entries
+        if entry["classification"] in {"RUNTIME_ARTIFACT", "SEED_CHANGE"}
+    ]
+    unknown_entries = [
+        entry
+        for entry in entries
+        if entry["classification"] not in {"RUNTIME_ARTIFACT", "SEED_CHANGE"}
+    ]
 
     safe_tracked = [entry["path"] for entry in safe_entries if entry["bucket"] == "tracked_modified"]
     safe_untracked = [entry["path"] for entry in safe_entries if entry["bucket"] == "untracked"]

@@ -20,6 +20,8 @@ class GateConfig:
     window_count: int = 3
     window_passes_required: int = 2
     auto_promote_consecutive: int = 3
+    require_walk_forward: bool = False
+    require_no_lookahead: bool = False
 
 
 def _now() -> str:
@@ -92,6 +94,8 @@ def evaluate_promotion_gate(
     run_id: str,
     config: GateConfig | None = None,
     stress_report: Dict[str, object] | None = None,
+    walk_forward_result: Dict[str, object] | None = None,
+    no_lookahead_audit: Dict[str, object] | None = None,
 ) -> Dict[str, object]:
     config = config or GateConfig()
     ts = _now()
@@ -169,7 +173,73 @@ def evaluate_promotion_gate(
         reasons.append("stress_constraints_failed")
         required_steps.append("improve_stress_metrics")
 
-    current_pass = bool(safety_pass and beat_baselines and stress_ok)
+    walk_forward_ok = True
+    walk_forward_status = None
+    walk_forward_failures: List[str] = []
+    walk_forward_evidence: Dict[str, object] = {}
+    if walk_forward_result is None:
+        walk_forward_status = "MISSING"
+        if config.require_walk_forward:
+            walk_forward_ok = False
+            walk_forward_failures.append("walk_forward_missing")
+            required_steps.append("run_walk_forward_eval")
+    else:
+        walk_forward_status = str(walk_forward_result.get("status") or "UNKNOWN")
+        window_passes = int(walk_forward_result.get("window_passes") or 0)
+        window_required = int(walk_forward_result.get("window_passes_required") or 0)
+        if walk_forward_status != "PASS":
+            walk_forward_ok = False
+            walk_forward_failures.append(f"walk_forward_status:{walk_forward_status}")
+        if window_required and window_passes < window_required:
+            walk_forward_ok = False
+            walk_forward_failures.append(
+                f"walk_forward_windows:{window_passes}/{window_required}"
+            )
+        evidence = {
+            "result_path": walk_forward_result.get("result_path"),
+            "windows_path": walk_forward_result.get("windows_path"),
+        }
+        walk_forward_evidence = {
+            key: to_repo_relative(Path(str(value)))
+            if isinstance(value, str)
+            else value
+            for key, value in evidence.items()
+            if value
+        }
+        if walk_forward_failures:
+            required_steps.append("improve_walk_forward_windows")
+
+    no_lookahead_ok = True
+    no_lookahead_status = None
+    no_lookahead_issues: List[str] = []
+    no_lookahead_evidence: Dict[str, object] = {}
+    if no_lookahead_audit is None:
+        no_lookahead_status = "MISSING"
+        if config.require_no_lookahead:
+            no_lookahead_ok = False
+            no_lookahead_issues.append("no_lookahead_missing")
+            required_steps.append("run_no_lookahead_audit")
+    else:
+        no_lookahead_status = str(no_lookahead_audit.get("status") or "UNKNOWN")
+        issues = no_lookahead_audit.get("issues")
+        if isinstance(issues, list):
+            no_lookahead_issues = [str(item) for item in issues]
+        if no_lookahead_status != "PASS":
+            no_lookahead_ok = False
+        evidence_path = no_lookahead_audit.get("result_path")
+        if isinstance(evidence_path, str):
+            no_lookahead_evidence = {
+                "result_path": to_repo_relative(Path(evidence_path)),
+            }
+        if no_lookahead_issues:
+            required_steps.append("resolve_no_lookahead_issues")
+
+    if walk_forward_failures:
+        reasons.append("walk_forward_constraints_failed")
+    if no_lookahead_issues and config.require_no_lookahead:
+        reasons.append("no_lookahead_constraints_failed")
+
+    current_pass = bool(safety_pass and beat_baselines and stress_ok and walk_forward_ok and no_lookahead_ok)
     total_passes = window_passes + (1 if current_pass else 0)
     if total_passes < config.window_passes_required:
         reasons.append("insufficient_window_wins")
@@ -210,6 +280,12 @@ def evaluate_promotion_gate(
         "stress_status": stress_status,
         "stress_failures": stress_failures,
         "stress_evidence": stress_evidence,
+        "walk_forward_status": walk_forward_status,
+        "walk_forward_failures": walk_forward_failures,
+        "walk_forward_evidence": walk_forward_evidence,
+        "no_lookahead_status": no_lookahead_status,
+        "no_lookahead_issues": no_lookahead_issues,
+        "no_lookahead_evidence": no_lookahead_evidence,
     }
 
 
