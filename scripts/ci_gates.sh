@@ -149,6 +149,10 @@ compile_log_path = artifacts_dir / "compile_check.log"
 compile_result: dict[str, object] | None = None
 compile_status = "UNKNOWN"
 compile_exception = None
+compile_error_location = None
+compile_error_file = None
+compile_error_line = None
+compile_error_code = None
 compile_excerpt = ""
 if compile_result_path.exists():
     try:
@@ -162,6 +166,11 @@ if isinstance(compile_result, dict):
     compile_exception = compile_result.get("exception_summary") or compile_result.get(
         "exception"
     )
+    compile_error_location = compile_result.get("error_location")
+    if isinstance(compile_error_location, dict):
+        compile_error_file = compile_error_location.get("file")
+        compile_error_line = compile_error_location.get("line")
+        compile_error_code = compile_error_location.get("code")
 if compile_log_path.exists():
     compile_lines = compile_log_path.read_text(encoding="utf-8", errors="replace").splitlines()
     compile_excerpt = "\n".join(compile_lines[-60:])
@@ -193,6 +202,11 @@ summary = {
     },
     "compile_check_status": compile_status,
     "compile_check_exception": compile_exception,
+    "compile_check_error_location": {
+        "file": compile_error_file,
+        "line": compile_error_line,
+        "code": compile_error_code,
+    },
     "compile_check_excerpt": compile_excerpt,
     "log_truncated": log_truncated,
     "log_bytes_original": log_bytes_original,
@@ -224,6 +238,9 @@ summary_lines = [
     else "- **import_contract_traceback_excerpt**: `n/a`",
     f"- **compile_check_status**: `{compile_status}`",
     f"- **compile_check_exception**: `{compile_exception or 'none'}`",
+    f"- **compile_check_error_file**: `{compile_error_file or 'n/a'}`",
+    f"- **compile_check_error_line**: `{compile_error_line or 'n/a'}`",
+    f"- **compile_check_error_code**: `{compile_error_code or 'n/a'}`",
     f"- **compile_check_excerpt**:\n\n```\n{compile_excerpt}\n```"
     if compile_excerpt
     else "- **compile_check_excerpt**: `n/a`",

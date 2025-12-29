@@ -219,7 +219,7 @@ def compute_xp_snapshot(
         wf_passes = int(walk_forward_result.get("window_passes") or 0)
         wf_required = int(walk_forward_result.get("window_passes_required") or 0)
         wf_points = 10 if wf_status == "PASS" and wf_passes >= wf_required else -10
-        wf_value = f\"{wf_status} {wf_passes}/{wf_required}\" if wf_required else wf_status
+        wf_value = f"{wf_status} {wf_passes}/{wf_required}" if wf_required else wf_status
         add_item(
             key="stability_walk_forward",
             label="Stability: walk-forward windows",
