@@ -2661,15 +2661,6 @@ class App(tk.Tk):
         except Exception:
             return {}
         return payload if isinstance(payload, dict) else {}
-            try:
-                os.startfile(str(ARTIFACTS_DIR))  # type: ignore[attr-defined]
-            except Exception as exc:  # pragma: no cover - UI feedback
-                messagebox.showerror("Action Center", f"Failed to open folder: {exc}")
-            return
-        messagebox.showinfo(
-            "Action Center",
-            f"Evidence pack available at {ARTIFACTS_DIR}. Open manually on this platform.",
-        )
 
     def _selected_progress_entry(self) -> dict[str, object] | None:
         if not hasattr(self, "progress_tree"):
@@ -3617,10 +3608,10 @@ class App(tk.Tk):
             self.progress_stress_reject_var.set("Stress reject reasons: none")
         evidence = stress_payload.get("evidence", {})
         if isinstance(evidence, dict) and evidence:
-            evidence_parts = [f\"{key}={value}\" for key, value in evidence.items()]
-            self.progress_stress_evidence_var.set(f\"Stress evidence: {', '.join(evidence_parts)}\")
+            evidence_parts = [f"{key}={value}" for key, value in evidence.items()]
+            self.progress_stress_evidence_var.set(f"Stress evidence: {', '.join(evidence_parts)}")
         else:
-            self.progress_stress_evidence_var.set(\"Stress evidence: -\")
+            self.progress_stress_evidence_var.set("Stress evidence: -")
 
     def _refresh_xp_snapshot(self) -> None:
         payload = load_xp_snapshot_latest(XP_SNAPSHOT_LATEST_PATH)

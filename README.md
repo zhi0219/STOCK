@@ -229,8 +229,22 @@ cd $HOME\Desktop\STOCK
 - 打开 UI：
 
 ```
-.\.venv\Scripts\python.exe .\tools\ui_app.py
+.\.venv\Scripts\python.exe -m tools.ui_app
 ```
+
+- Windows（PowerShell，repo root）：
+
+```powershell
+cd C:\DONE\MONEY\STOCK
+.\.venv\Scripts\python.exe -m tools.ui_app
+```
+
+- 模块模式是推荐入口；如需路径模式可用：
+  ```powershell
+  .\.venv\Scripts\python.exe .\tools\ui_app.py
+  ```
+
+- 可选：如需用 `code -g` 打开文件，请先在 VS Code 里安装 **Shell Command: Install 'code' command in PATH**（仅影响该命令）。
 
 - 如果提示 KILL_SWITCH present：在弹窗点 Remove & Start 即可恢复运行（或保留文件以保持紧急停机）。
 
@@ -280,7 +294,7 @@ cd $HOME\Desktop\STOCK
 - 打开 UI 并切换到 **Progress (SIM-only)** 页签：
 
   ```powershell
-  .\\.venv\\Scripts\\python.exe .\\tools\\ui_app.py
+  .\\.venv\\Scripts\\python.exe -m tools.ui_app
   ```
 
   页签内可点击 **Generate index** / **Refresh view**，以及直接打开 run 目录、`summary.md` 或 `equity_curve.csv`。
@@ -389,7 +403,7 @@ The injector writes to `.\Data\quotes.csv` with `source=SELF_TEST_INJECT` so the
 ## Dashboard（图形化）
 - 启动 UI（含 Dashboard/Events 表格）：
   ```powershell
-  .\.venv\Scripts\python.exe .\tools\ui_app.py
+  .\.venv\Scripts\python.exe -m tools.ui_app
   ```
 - 一键验收 dashboard 模型：
   ```powershell

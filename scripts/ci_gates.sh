@@ -144,6 +144,29 @@ if import_contract_traceback_path.exists():
     import_contract_excerpt = "\n".join(trace_lines[-60:])
     import_contract_excerpt = sanitize_excerpt(import_contract_excerpt)
 
+compile_result_path = artifacts_dir / "compile_check_result.json"
+compile_log_path = artifacts_dir / "compile_check.log"
+compile_result: dict[str, object] | None = None
+compile_status = "UNKNOWN"
+compile_exception = None
+compile_excerpt = ""
+if compile_result_path.exists():
+    try:
+        compile_result = json.loads(
+            compile_result_path.read_text(encoding="utf-8", errors="replace")
+        )
+    except Exception:
+        compile_result = {"status": "UNKNOWN"}
+if isinstance(compile_result, dict):
+    compile_status = str(compile_result.get("status", "UNKNOWN"))
+    compile_exception = compile_result.get("exception_summary") or compile_result.get(
+        "exception"
+    )
+if compile_log_path.exists():
+    compile_lines = compile_log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    compile_excerpt = "\n".join(compile_lines[-60:])
+    compile_excerpt = sanitize_excerpt(compile_excerpt)
+
 files = []
 if artifacts_dir.exists():
     for path in sorted(artifacts_dir.rglob("*")):
@@ -168,6 +191,9 @@ summary = {
         "result": import_contract_result,
         "traceback_excerpt": import_contract_excerpt,
     },
+    "compile_check_status": compile_status,
+    "compile_check_exception": compile_exception,
+    "compile_check_excerpt": compile_excerpt,
     "log_truncated": log_truncated,
     "log_bytes_original": log_bytes_original,
     "log_bytes_final": log_bytes_final,
@@ -196,6 +222,11 @@ summary_lines = [
     f"- **import_contract_traceback_excerpt**:\n\n```\n{import_contract_excerpt}\n```"
     if import_contract_excerpt
     else "- **import_contract_traceback_excerpt**: `n/a`",
+    f"- **compile_check_status**: `{compile_status}`",
+    f"- **compile_check_exception**: `{compile_exception or 'none'}`",
+    f"- **compile_check_excerpt**:\n\n```\n{compile_excerpt}\n```"
+    if compile_excerpt
+    else "- **compile_check_excerpt**: `n/a`",
     f"- **log_truncated**: `{log_truncated}`",
     f"- **log_bytes_original**: `{log_bytes_original}`",
     f"- **log_bytes_final**: `{log_bytes_final}`",
@@ -250,38 +281,54 @@ if [[ -z "${runner}" ]]; then
   rc=1
   echo "No canonical gate runner found."
 else
-  import_contract_module="${gate_script%.py}"
-  import_contract_module="${import_contract_module#./}"
-  import_contract_module="${import_contract_module//\//.}"
+  preflight_gate="tools/verify_pr36_gate.py"
 
-  set +e
-  python3 tools/verify_import_contract.py \
-    --module "${import_contract_module}" \
-    --artifacts-dir "${artifacts_dir}"
-  import_contract_exit=$?
-  set -e
-
-  if [[ -f "import_contract_result.json" ]]; then
-    cp "import_contract_result.json" "${artifacts_dir}/" || true
-  fi
-  if [[ -f "import_contract_traceback.txt" ]]; then
-    cp "import_contract_traceback.txt" "${artifacts_dir}/" || true
-  fi
-
-  if [[ ${import_contract_exit} -ne 0 ]]; then
-    status="FAIL"
-    failing_gate="import_contract"
-    rc=${import_contract_exit}
-    echo "Import contract failed; skipping gate runner."
-  else
+  if [[ -f "${preflight_gate}" && "${gate_script}" != "${preflight_gate}" ]]; then
     set +e
-    ${runner}
-    runner_exit=$?
+    python3 "${preflight_gate}"
+    preflight_exit=$?
     set -e
-    if [[ ${runner_exit} -ne 0 ]]; then
+    if [[ ${preflight_exit} -ne 0 ]]; then
       status="FAIL"
-      failing_gate="${runner}"
-      rc=${runner_exit}
+      failing_gate="python3 ${preflight_gate}"
+      rc=${preflight_exit}
+    fi
+  fi
+
+  if [[ ${rc} -eq 0 ]]; then
+    import_contract_module="${gate_script%.py}"
+    import_contract_module="${import_contract_module#./}"
+    import_contract_module="${import_contract_module//\//.}"
+
+    set +e
+    python3 tools/verify_import_contract.py \
+      --module "${import_contract_module}" \
+      --artifacts-dir "${artifacts_dir}"
+    import_contract_exit=$?
+    set -e
+
+    if [[ -f "import_contract_result.json" ]]; then
+      cp "import_contract_result.json" "${artifacts_dir}/" || true
+    fi
+    if [[ -f "import_contract_traceback.txt" ]]; then
+      cp "import_contract_traceback.txt" "${artifacts_dir}/" || true
+    fi
+
+    if [[ ${import_contract_exit} -ne 0 ]]; then
+      status="FAIL"
+      failing_gate="import_contract"
+      rc=${import_contract_exit}
+      echo "Import contract failed; skipping gate runner."
+    else
+      set +e
+      ${runner}
+      runner_exit=$?
+      set -e
+      if [[ ${runner_exit} -ne 0 ]]; then
+        status="FAIL"
+        failing_gate="${runner}"
+        rc=${runner_exit}
+      fi
     fi
   fi
 fi
@@ -325,6 +372,13 @@ if [[ "${PR35_FORCE_FAIL:-0}" == "1" ]]; then
   echo "PR35_FORCE_FAIL enabled; forcing failure after gates."
   status="FAIL"
   failing_gate="PR35_FORCE_FAIL"
+  rc=1
+fi
+
+if [[ "${PR36_FORCE_FAIL:-0}" == "1" ]]; then
+  echo "PR36_FORCE_FAIL enabled; forcing failure after gates."
+  status="FAIL"
+  failing_gate="PR36_FORCE_FAIL"
   rc=1
 fi
 
