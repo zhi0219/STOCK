@@ -55,3 +55,7 @@ Logs/*.tmp
 # runtime artifacts
 Logs/policy_registry.json
 
+
+# runtime artifacts
+Logs/policy_registry.json
+
