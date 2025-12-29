@@ -16,8 +16,14 @@ CONFIRM_TOKEN = "DELETE-RUNTIME"
 RUNTIME_PREFIXES = [
     "Logs/",
     "Logs/runtime/",
+    "Logs/train_runs/",
+    "Logs/train_service/",
+    "Logs/tournament_runs/",
     "logs/",
     "logs/runtime/",
+    "logs/train_runs/",
+    "logs/train_service/",
+    "logs/tournament_runs/",
     "Reports/",
     "reports/",
     "evidence_packs/",
@@ -25,6 +31,13 @@ RUNTIME_PREFIXES = [
     "qa_answers/",
     "artifacts/",
 ]
+
+RUNTIME_REGISTRY_PATHS = {
+    "Logs/runtime/policy_registry.json",
+    "Logs/policy_registry.json",
+    "logs/runtime/policy_registry.json",
+    "logs/policy_registry.json",
+}
 
 SAFE_DELETE_ROOTS = [
     repo_root() / "Logs",
@@ -52,8 +65,18 @@ def _parse_status_path(line: str) -> str:
     return _normalize_path(path)
 
 
+def _is_latest_pointer(path: str) -> bool:
+    name = Path(path).name.lower()
+    return "_latest" in name or name.endswith("latest.json")
+
+
 def _is_runtime_path(path: str) -> bool:
-    return any(path.startswith(prefix) for prefix in RUNTIME_PREFIXES)
+    normalized = _normalize_path(path)
+    if normalized in RUNTIME_REGISTRY_PATHS:
+        return True
+    if _is_latest_pointer(normalized):
+        return True
+    return any(normalized.startswith(prefix) for prefix in RUNTIME_PREFIXES)
 
 
 def _classify(path: str, is_tracked: bool) -> str:
@@ -64,7 +87,21 @@ def _classify(path: str, is_tracked: bool) -> str:
     return "UNKNOWN"
 
 
-def _collect_git_status(include_ignored: bool = True) -> list[str]:
+def classify_for_doctor(path: str, is_tracked: bool) -> str:
+    if _is_runtime_path(path):
+        return "SAFE_RUNTIME_ARTIFACT"
+    return "UNKNOWN"
+
+
+def normalize_path(path: str) -> str:
+    return _normalize_path(path)
+
+
+def is_runtime_path(path: str) -> bool:
+    return _is_runtime_path(path)
+
+
+def git_status_porcelain(include_ignored: bool = True) -> tuple[list[str], str | None]:
     cmd = ["git", "status", "--porcelain", "--untracked-files=all"]
     if include_ignored:
         cmd.append("--ignored=matching")
@@ -77,8 +114,13 @@ def _collect_git_status(include_ignored: bool = True) -> list[str]:
         errors="replace",
     )
     if result.returncode != 0:
-        return []
-    return [line.rstrip("\n") for line in result.stdout.splitlines() if line.strip()]
+        return [], f"git status failed ({result.returncode})"
+    return [line.rstrip("\n") for line in result.stdout.splitlines() if line.strip()], None
+
+
+def _collect_git_status(include_ignored: bool = True) -> list[str]:
+    lines, _error = git_status_porcelain(include_ignored=include_ignored)
+    return lines
 
 
 def _build_entry(path: str, classification: str) -> Dict[str, str]:
@@ -186,6 +228,18 @@ def _remove_runtime_paths(paths: list[str], roots: list[Path]) -> None:
             shutil.rmtree(candidate, ignore_errors=True)
         elif candidate.exists():
             candidate.unlink()
+
+
+def restore_tracked(paths: list[str]) -> None:
+    _restore_tracked(paths)
+
+
+def remove_runtime_paths(paths: list[str], roots: list[Path]) -> None:
+    _remove_runtime_paths(paths, roots)
+
+
+def safe_delete_roots() -> list[Path]:
+    return list(SAFE_DELETE_ROOTS)
 
 
 def fix_repo(mode: str, aggressive: bool, confirm_token: str | None) -> Dict[str, object]:

@@ -21,6 +21,11 @@ Run a safe fix (restores tracked runtime artifacts and removes only untracked ru
 python -m tools.repo_hygiene fix --mode safe
 ```
 
+Action Center (SIM-only) also exposes **Fix Git Red (Safe)** and writes:
+
+- `artifacts/git_hygiene_fix_plan.json`
+- `artifacts/git_hygiene_fix_result.json`
+
 Aggressive cleanup (optional) deletes only `Logs/runtime/` and `artifacts/` and requires an explicit confirmation token:
 
 ```

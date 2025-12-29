@@ -232,6 +232,9 @@ cd $HOME\Desktop\STOCK
 .\.venv\Scripts\python.exe -m tools.ui_app
 ```
 
+- 推荐入口（canonical）：`python -m tools.ui_app`。
+- 零输入启动（自动定位 repo root）：`.\scripts\windows_launch_ui.ps1` 或 `python -m tools.launch_ui`。
+
 - Windows（PowerShell，repo root）：
 
 ```powershell

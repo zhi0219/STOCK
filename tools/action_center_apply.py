@@ -22,6 +22,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from tools import action_center_report
+from tools import git_hygiene_fix
 from tools.paths import to_repo_relative
 
 
@@ -309,10 +310,21 @@ def main(argv: list[str] | None = None) -> int:
             return finalize(4)
 
         if args.dry_run:
+            if action_id == "FIX_GIT_RED_SAFE":
+                plan = git_hygiene_fix.build_plan()
+                git_hygiene_fix.write_plan(plan)
+                result = git_hygiene_fix.apply_fix(plan, dry_run=True)
+                git_hygiene_fix.write_result(result)
+                summary["changes_made"] = [
+                    to_repo_relative(git_hygiene_fix.PLAN_PATH),
+                    to_repo_relative(git_hygiene_fix.RESULT_PATH),
+                ]
+                summary["message"] = "Dry run completed; git hygiene plan/result written."
+            else:
+                summary["message"] = "Dry run completed; no mutations executed."
             _log_line(handle, "ACTION_CENTER_APPLY_DRY_RUN no mutations executed.")
             summary["status"] = "DRY_RUN"
             summary["overall_status"] = "PASS"
-            summary["message"] = "Dry run completed; no mutations executed."
             _write_event(
                 "ACTION_CENTER_APPLY_DRY_RUN",
                 "Action Center apply dry-run completed.",
