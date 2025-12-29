@@ -1,17 +1,26 @@
 from __future__ import annotations
 
+import argparse
 import json
 import os
 from pathlib import Path
-from typing import Any
-
-from action_center_report import ACTION_DEFINITIONS, CONFIRM_TOKENS, confirm_token_is_valid
+from typing import Any, Iterable
 
 ROOT = Path(__file__).resolve().parent.parent
 
 
 class GateError(Exception):
     pass
+
+
+def _load_action_center_defs() -> tuple[dict[str, dict[str, Any]], dict[str, str], Any]:
+    from tools import action_center_report
+
+    return (
+        action_center_report.ACTION_DEFINITIONS,
+        action_center_report.CONFIRM_TOKENS,
+        action_center_report.confirm_token_is_valid,
+    )
 
 
 def _load_json(path: Path) -> dict[str, Any] | None:
@@ -75,17 +84,18 @@ def _check_report_if_present() -> None:
 
 
 def _check_confirmation_gates() -> None:
+    action_definitions, confirm_tokens, confirm_token_is_valid = _load_action_center_defs()
     expected_ids = {
         "ACTION_CLEAR_KILL_SWITCH",
         "ACTION_REBUILD_PROGRESS_INDEX",
         "ACTION_RESTART_SERVICES_SIM_ONLY",
     }
-    if set(ACTION_DEFINITIONS.keys()) != expected_ids:
+    if set(action_definitions.keys()) != expected_ids:
         raise GateError("action definitions missing required action ids")
-    for action_id, token in CONFIRM_TOKENS.items():
-        if action_id not in ACTION_DEFINITIONS:
+    for action_id, token in confirm_tokens.items():
+        if action_id not in action_definitions:
             raise GateError(f"missing action definition for {action_id}")
-        if token != ACTION_DEFINITIONS[action_id]["confirmation_token"]:
+        if token != action_definitions[action_id]["confirmation_token"]:
             raise GateError(f"confirmation token mismatch for {action_id}")
         if confirm_token_is_valid("", token):
             raise GateError(f"empty token accepted for {action_id}")
@@ -105,17 +115,33 @@ def _check_ci_artifact_listing() -> None:
 
 def _check_imports_resolve() -> None:
     try:
-        import action_center_report  # noqa: F401
+        from tools import action_center_report  # noqa: F401
     except Exception as exc:  # pragma: no cover - static gate
         raise GateError(f"failed to import action_center_report: {exc}") from exc
 
 
+def _parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="PR23 gate: validate Action Center contract and CI evidence bindings."
+    )
+    parser.add_argument(
+        "--self-check",
+        action="store_true",
+        help="Run a minimal self-check (no file IO) and exit.",
+    )
+    return parser.parse_args(list(argv) if argv is not None else None)
+
+
 def main() -> int:
+    args = _parse_args()
     try:
+        _check_imports_resolve()
+        if args.self_check:
+            print("PR23 gate self-check ok")
+            return 0
         _check_report_if_present()
         _check_confirmation_gates()
         _check_ci_artifact_listing()
-        _check_imports_resolve()
     except GateError as exc:
         print(f"PR23 gate failed: {exc}")
         return 1
