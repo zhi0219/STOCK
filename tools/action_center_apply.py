@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import sys
+import re
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,6 +22,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from tools import action_center_report
+from tools.paths import to_repo_relative
 
 
 def _now() -> datetime:
@@ -45,7 +47,7 @@ def _write_event(event_type: str, message: str, severity: str = "INFO", **extra:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(payload, ensure_ascii=False) + "\n")
-    payload["events_path"] = path.as_posix()
+    payload["events_path"] = to_repo_relative(path)
     return payload
 
 
@@ -100,9 +102,19 @@ def _sim_only_guard() -> tuple[bool, list[str]]:
 def _excerpt(text: str, limit: int = 2000) -> str:
     if not text:
         return ""
+    text = _sanitize_text(text)
     if len(text) <= limit:
         return text
     return text[:limit] + "...(truncated)"
+
+
+def _sanitize_text(text: str) -> str:
+    if not text:
+        return text
+    root_text = str(ROOT.resolve())
+    redacted = text.replace(root_text, "<repo_root>")
+    redacted = re.sub(r"[A-Za-z]:\\\\[^\s\"']+", "<win_path_redacted>", redacted)
+    return redacted
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
@@ -127,6 +139,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Safe action id to apply.",
     )
     parser.add_argument("--confirm", default="", help="Typed confirmation token for the selected action")
+    parser.add_argument(
+        "--ui-confirmed",
+        action="store_true",
+        help="UI-only confirmation (checkbox + press-and-hold).",
+    )
     parser.add_argument("--dry-run", action="store_true", help="No mutations (evidence only)")
     parser.add_argument(
         "--evidence-dir",
@@ -153,44 +170,70 @@ def main(argv: list[str] | None = None) -> int:
     result_path = Path(args.result_path)
     action_id = args.action_id
     expected_token = action_center_report.CONFIRM_TOKENS.get(action_id, "")
+    ts_utc = _now().isoformat()
+    action_definition = action_center_report.ACTION_DEFINITIONS.get(action_id, {})
+    risk_level = str(action_definition.get("risk_level", "SAFE")).upper()
+    linked_doctor_report = None
+    doctor_path = ROOT / "artifacts" / "doctor_report.json"
+    if doctor_path.exists():
+        linked_doctor_report = to_repo_relative(doctor_path)
 
     summary: dict[str, Any] = {
         "schema_version": 1,
-        "ts_utc": _now().isoformat(),
+        "ts_utc": ts_utc,
         "action_id": action_id,
+        "risk_level": risk_level,
+        "ui_confirmed": bool(args.ui_confirmed),
         "dry_run": bool(args.dry_run),
         "status": "UNKNOWN",
+        "overall_status": "UNKNOWN",
         "message": "",
-        "evidence_dir": evidence_dir.as_posix(),
+        "evidence_dir": to_repo_relative(evidence_dir),
         "events_path": None,
-        "action_definition": action_center_report.ACTION_DEFINITIONS.get(action_id, {}),
+        "action_definition": action_definition,
         "sim_guard": {"allowed": None, "reasons": []},
+        "preconditions_checked": [],
+        "changes_made": [],
+        "linked_doctor_report": linked_doctor_report,
     }
 
     result_payload: dict[str, Any] = {
-        "schema_version": 1,
+        "schema_version": 2,
         "marker": "ACTION_CENTER_APPLY_RESULT",
-        "ts_utc": summary["ts_utc"],
+        "ts_utc": ts_utc,
         "action_id": action_id,
+        "risk_level": risk_level,
+        "ui_confirmed": bool(args.ui_confirmed),
         "dry_run": bool(args.dry_run),
+        "overall_status": "UNKNOWN",
         "status": "UNKNOWN",
         "message": "",
         "evidence_dir": summary["evidence_dir"],
         "events_path": None,
-        "action_definition": summary["action_definition"],
+        "preconditions_checked": [],
+        "changes_made": [],
+        "error_excerpt": "",
+        "linked_doctor_report": linked_doctor_report,
+        "action_definition": action_definition,
         "sim_guard": summary["sim_guard"],
         "stdout_excerpt": "",
         "stderr_excerpt": "",
     }
+
+    plan_path = ROOT / "artifacts" / "action_center_apply_plan.json"
 
     def finalize(exit_code: int) -> int:
         _write_json(summary_path, summary)
         result_payload.update(
             {
                 "status": summary.get("status"),
+                "overall_status": summary.get("overall_status"),
                 "message": summary.get("message"),
                 "events_path": summary.get("events_path"),
                 "sim_guard": summary.get("sim_guard"),
+                "preconditions_checked": summary.get("preconditions_checked", []),
+                "changes_made": summary.get("changes_made", []),
+                "linked_doctor_report": summary.get("linked_doctor_report"),
             }
         )
         _write_json(result_path, result_payload)
@@ -203,42 +246,64 @@ def main(argv: list[str] | None = None) -> int:
             "Action Center apply attempt recorded.",
             action_id=action_id,
             dry_run=bool(args.dry_run),
-            evidence_dir=evidence_dir.as_posix(),
+            evidence_dir=to_repo_relative(evidence_dir),
             marker="ACTION_CENTER_APPLY",
         )
         summary["events_path"] = event.get("events_path")
         result_payload["events_path"] = summary["events_path"]
 
-        if not action_center_report.confirm_token_is_valid(args.confirm, expected_token):
-            _log_line(handle, "ACTION_CENTER_APPLY_REJECTED invalid confirmation token.")
-            summary["status"] = "REJECTED"
-            summary["message"] = "Confirmation token rejected."
-            _write_event(
-                "ACTION_CENTER_APPLY_REJECTED",
-                "Action Center apply rejected (invalid confirmation).",
-                severity="ERROR",
-                action_id=action_id,
-                dry_run=bool(args.dry_run),
-                expected_token=expected_token,
-                marker="ACTION_CENTER_APPLY",
+        preconditions: list[dict[str, Any]] = []
+        token_ok = action_center_report.confirm_token_is_valid(args.confirm, expected_token)
+        preconditions.append(
+            {"name": "confirmation_token", "status": "PASS" if token_ok else "FAIL", "detail": expected_token}
+        )
+        if risk_level in {"CAUTION", "DANGEROUS"}:
+            ui_ok = bool(args.ui_confirmed)
+            preconditions.append(
+                {"name": "ui_confirmed", "status": "PASS" if ui_ok else "FAIL", "detail": risk_level}
             )
-            return finalize(3)
+        else:
+            preconditions.append({"name": "ui_confirmed", "status": "PASS", "detail": risk_level})
 
         allowed, reasons = _sim_only_guard()
         summary["sim_guard"] = {"allowed": allowed, "reasons": reasons}
-        result_payload["sim_guard"] = summary["sim_guard"]
-        if not allowed:
-            reason_text = "; ".join(reasons) if reasons else "SIM-only guard blocked apply."
-            _log_line(handle, f"ACTION_CENTER_APPLY_REJECTED non-sim: {reason_text}")
-            summary["status"] = "REJECTED"
-            summary["message"] = "SIM-only guard rejected apply."
+        preconditions.append(
+            {"name": "sim_only_guard", "status": "PASS" if allowed else "FAIL", "detail": "; ".join(reasons)}
+        )
+
+        if not args.dry_run:
+            try:
+                action_center_report._ensure_not_ci()
+                preconditions.append({"name": "ci_guard", "status": "PASS", "detail": "not_ci"})
+            except RuntimeError as exc:
+                preconditions.append({"name": "ci_guard", "status": "FAIL", "detail": str(exc)})
+        else:
+            preconditions.append({"name": "ci_guard", "status": "PASS", "detail": "dry_run"})
+
+        summary["preconditions_checked"] = preconditions
+        plan_payload = {
+            "ts_utc": ts_utc,
+            "action_id": action_id,
+            "risk_level": risk_level,
+            "ui_confirmed": bool(args.ui_confirmed),
+            "dry_run": bool(args.dry_run),
+            "preconditions_checked": preconditions,
+            "linked_doctor_report": linked_doctor_report,
+        }
+        _write_json(plan_path, plan_payload)
+
+        if any(entry["status"] == "FAIL" for entry in preconditions):
+            _log_line(handle, "ACTION_CENTER_APPLY_REFUSED preconditions failed.")
+            summary["status"] = "REFUSED"
+            summary["overall_status"] = "REFUSED"
+            summary["message"] = "Preconditions failed; no changes applied."
+            result_payload["error_excerpt"] = _excerpt(summary["message"])
             _write_event(
-                "ACTION_CENTER_APPLY_REJECTED_NON_SIM",
-                "Action Center apply rejected (non-sim mode).",
+                "ACTION_CENTER_APPLY_REFUSED",
+                "Action Center apply refused (preconditions failed).",
                 severity="ERROR",
                 action_id=action_id,
                 dry_run=bool(args.dry_run),
-                reasons=reasons,
                 marker="ACTION_CENTER_APPLY",
             )
             return finalize(4)
@@ -246,6 +311,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.dry_run:
             _log_line(handle, "ACTION_CENTER_APPLY_DRY_RUN no mutations executed.")
             summary["status"] = "DRY_RUN"
+            summary["overall_status"] = "PASS"
             summary["message"] = "Dry run completed; no mutations executed."
             _write_event(
                 "ACTION_CENTER_APPLY_DRY_RUN",
@@ -257,27 +323,13 @@ def main(argv: list[str] | None = None) -> int:
             return finalize(0)
 
         try:
-            action_center_report._ensure_not_ci()
-        except RuntimeError as exc:
-            _log_line(handle, f"ACTION_CENTER_APPLY_BLOCKED {exc}")
-            summary["status"] = "BLOCKED"
-            summary["message"] = str(exc)
-            _write_event(
-                "ACTION_CENTER_APPLY_BLOCKED",
-                "Action Center apply blocked in CI.",
-                severity="ERROR",
-                action_id=action_id,
-                dry_run=False,
-                marker="ACTION_CENTER_APPLY",
-            )
-            return finalize(2)
-
-        try:
             result = action_center_report._execute_action(action_id)
         except Exception as exc:
             _log_line(handle, f"ACTION_CENTER_APPLY_FAILED unexpected error: {exc}")
             summary["status"] = "FAILED"
+            summary["overall_status"] = "FAIL"
             summary["message"] = f"Action execution failed: {exc}"
+            result_payload["error_excerpt"] = _excerpt(str(exc))
             _write_event(
                 "ACTION_CENTER_APPLY_FAILED",
                 "Action Center apply failed.",
@@ -290,6 +342,8 @@ def main(argv: list[str] | None = None) -> int:
             return finalize(1)
 
         summary["action_result"] = asdict(result)
+        changes = result.details.get("changes_made", []) if isinstance(result.details, dict) else []
+        summary["changes_made"] = list(changes) if isinstance(changes, list) else []
         if "stdout" in result.details:
             result_payload["stdout_excerpt"] = _excerpt(str(result.details.get("stdout", "")))
             result_payload["stderr_excerpt"] = _excerpt(str(result.details.get("stderr", "")))
@@ -306,6 +360,7 @@ def main(argv: list[str] | None = None) -> int:
         if result.success:
             _log_line(handle, "ACTION_CENTER_APPLY_SUCCESS action executed successfully.")
             summary["status"] = "SUCCESS"
+            summary["overall_status"] = "PASS"
             summary["message"] = result.message
             _write_event(
                 "ACTION_CENTER_APPLY_SUCCESS",
@@ -316,9 +371,15 @@ def main(argv: list[str] | None = None) -> int:
             )
             return finalize(0)
 
-        _log_line(handle, f"ACTION_CENTER_APPLY_FAILED {result.message}")
-        summary["status"] = "FAILED"
+        if isinstance(result.details, dict) and result.details.get("refused"):
+            summary["status"] = "REFUSED"
+            summary["overall_status"] = "REFUSED"
+        else:
+            summary["status"] = "FAILED"
+            summary["overall_status"] = "FAIL"
         summary["message"] = result.message
+        result_payload["error_excerpt"] = _excerpt(result.message)
+        _log_line(handle, f"ACTION_CENTER_APPLY_FAILED {result.message}")
         _write_event(
             "ACTION_CENTER_APPLY_FAILED",
             "Action Center apply failed.",

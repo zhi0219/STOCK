@@ -44,6 +44,7 @@ ACTION_CENTER_REPORT_PATH = ROOT / "artifacts" / "action_center_report.json"
 ACTION_CENTER_REPORT_MODULE = "tools.action_center_report"
 ACTION_CENTER_APPLY_MODULE = "tools.action_center_apply"
 ACTION_CENTER_APPLY_RESULT_PATH = ROOT / "artifacts" / "action_center_apply_result.json"
+DOCTOR_REPORT_PATH = ROOT / "artifacts" / "doctor_report.json"
 ARTIFACTS_DIR = ROOT / "artifacts"
 LATEST_DIR = ROOT / "Logs" / "train_runs" / "_latest"
 PROGRESS_JUDGE_LATEST_PATH = LATEST_DIR / "progress_judge_latest.json"
@@ -66,23 +67,75 @@ CADENCE_LABELS = {
     "Conservative": "conservative",
 }
 ACTION_CENTER_DEFAULTS = {
-    "ACTION_CLEAR_KILL_SWITCH": {
+    "CLEAR_KILL_SWITCH": {
         "title": "Clear Kill Switch (SIM-only)",
         "confirmation_token": "CLEAR",
         "safety_notes": "SIM-only. Removes local kill switch files and does not place trades.",
         "effect_summary": "Clears kill switch files via supervisor clear-kill-switch.",
+        "risk_level": "CAUTION",
     },
     "ACTION_REBUILD_PROGRESS_INDEX": {
         "title": "Rebuild Progress Index",
         "confirmation_token": "REBUILD",
         "safety_notes": "SIM-only. Regenerates Logs/train_runs/progress_index.json from local files.",
         "effect_summary": "Runs tools/progress_index.py to refresh the progress index.",
+        "risk_level": "CAUTION",
     },
     "ACTION_RESTART_SERVICES_SIM_ONLY": {
         "title": "Restart SIM Services",
         "confirmation_token": "RESTART",
         "safety_notes": "SIM-only. Restarts local supervisor-managed services; no broker access.",
         "effect_summary": "Stops and starts supervisor services (quotes/alerts).",
+        "risk_level": "CAUTION",
+    },
+    "GEN_DOCTOR_REPORT": {
+        "title": "Generate Doctor report",
+        "confirmation_token": "RUN",
+        "safety_notes": "SIM-only. Writes artifacts/doctor_report.json for diagnostics.",
+        "effect_summary": "Runs tools.doctor_report to capture health evidence.",
+        "risk_level": "SAFE",
+    },
+    "REPO_HYGIENE_FIX_SAFE": {
+        "title": "Repo hygiene fix (safe)",
+        "confirmation_token": "HYGIENE",
+        "safety_notes": "SIM-only. Restores tracked runtime artifacts and removes untracked runtime files.",
+        "effect_summary": "Runs python -m tools.repo_hygiene fix --mode safe.",
+        "risk_level": "CAUTION",
+    },
+    "CLEAR_STALE_TEMP": {
+        "title": "Clear stale temp files",
+        "confirmation_token": "CLEAN",
+        "safety_notes": "SIM-only. Deletes stale *.tmp files older than Doctor threshold.",
+        "effect_summary": "Removes stale temp files from Logs/runtime and Logs/.",
+        "risk_level": "CAUTION",
+    },
+    "ENSURE_RUNTIME_DIRS": {
+        "title": "Ensure runtime directories",
+        "confirmation_token": "MKDIR",
+        "safety_notes": "SIM-only. Creates runtime directories if missing.",
+        "effect_summary": "Creates Logs/runtime, Logs/train_service, and artifacts directories.",
+        "risk_level": "SAFE",
+    },
+    "DIAG_RUNTIME_WRITE": {
+        "title": "Diagnose runtime write",
+        "confirmation_token": "DIAG",
+        "safety_notes": "SIM-only. Re-runs runtime write checks and stores results.",
+        "effect_summary": "Writes artifacts/doctor_runtime_write.json for evidence.",
+        "risk_level": "SAFE",
+    },
+    "ABS_PATH_SANITIZE_HINT": {
+        "title": "Generate absolute-path sanitization hints",
+        "confirmation_token": "SANITIZE",
+        "safety_notes": "SIM-only. Writes a sanitized-paths guidance artifact.",
+        "effect_summary": "Writes artifacts/abs_path_sanitize_hint.json with guidance.",
+        "risk_level": "SAFE",
+    },
+    "ENABLE_GIT_HOOKS": {
+        "title": "Enable git hooks (best effort)",
+        "confirmation_token": "HOOKS",
+        "safety_notes": "SIM-only. Best-effort enable githooks for repo hygiene.",
+        "effect_summary": "Runs scripts/enable_githooks.* if available.",
+        "risk_level": "SAFE",
     },
 }
 
@@ -564,7 +617,10 @@ class App(tk.Tk):
         self.action_center_data_health_var = tk.StringVar(value="DATA_HEALTH: ISSUE")
         self.action_center_last_report_var = tk.StringVar(value="LAST_REPORT_TS_UTC: -")
         self.action_center_last_apply_var = tk.StringVar(value="LAST_APPLY_TS_UTC: -")
-        self.action_center_doctor_var = tk.StringVar(value="Doctor: idle")
+        self.action_center_doctor_status_var = tk.StringVar(value="DOCTOR_STATUS: -")
+        self.action_center_last_doctor_var = tk.StringVar(value="LAST_DOCTOR_TS_UTC: -")
+        self.action_center_evidence_path_var = tk.StringVar(value=str(ARTIFACTS_DIR))
+        self.action_center_show_advanced_var = tk.BooleanVar(value=False)
         self._scroll_frames: list[VerticalScrolledFrame] = []
         self._apply_cadence_preset_fields(CADENCE_LABELS.get(self.service_cadence_preset_var.get(), "micro"))
         self._build_ui()
@@ -2020,8 +2076,10 @@ class App(tk.Tk):
                     {
                         "action_id": action_id,
                         "severity": "INFO",
+                        "risk_level": action.get("risk_level", "SAFE"),
                         "summary": action.get("title", ""),
                         "recommended_command": command,
+                        "evidence_paths": action.get("related_evidence_paths", []),
                         "last_seen_ts_utc": payload.get("ts_utc", ""),
                     }
                 )
@@ -2031,21 +2089,33 @@ class App(tk.Tk):
         if not hasattr(self, "action_center_tree"):
             return
         self._action_center_actions = rows
+        show_advanced = bool(self.action_center_show_advanced_var.get())
+        visible_rows = [
+            row
+            for row in rows
+            if show_advanced or str(row.get("risk_level", "")).upper() != "DANGEROUS"
+        ]
         for item in self.action_center_tree.get_children():
             self.action_center_tree.delete(item)
-        for row in rows:
+        for row in visible_rows:
+            evidence = row.get("evidence_paths", [])
+            if isinstance(evidence, list):
+                evidence_text = ", ".join(str(entry) for entry in evidence)
+            else:
+                evidence_text = str(evidence)
             self.action_center_tree.insert(
                 "",
                 tk.END,
                 values=(
                     row.get("action_id", ""),
                     row.get("severity", ""),
+                    row.get("risk_level", ""),
                     row.get("summary", ""),
-                    row.get("recommended_command", ""),
+                    evidence_text,
                     row.get("last_seen_ts_utc", ""),
                 ),
             )
-        if rows:
+        if visible_rows:
             children = self.action_center_tree.get_children()
             self.action_center_tree.selection_set(children[0])
             self.action_center_tree.focus(children[0])
@@ -2085,6 +2155,95 @@ class App(tk.Tk):
 
         threading.Thread(target=runner, daemon=True).start()
 
+    def _run_doctor_report(self) -> None:
+        def runner() -> None:
+            cmd = [sys.executable, "-m", "tools.doctor_report", "--output", str(DOCTOR_REPORT_PATH)]
+            proc = subprocess.run(
+                cmd,
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                env=_utf8_env(),
+            )
+            result = RunResult(cmd, ROOT, proc.returncode, proc.stdout or "", proc.stderr or "")
+            self._verify_output_queue.put(result.format_lines())
+
+            def updater() -> None:
+                if proc.returncode == 0:
+                    messagebox.showinfo("Action Center", "Doctor report generated.")
+                else:
+                    messagebox.showerror("Action Center", proc.stderr or proc.stdout or "Doctor run failed.")
+                self._refresh_action_center_doctor()
+                self._refresh_action_center_report()
+
+            self._enqueue_ui(updater)
+
+        threading.Thread(target=runner, daemon=True).start()
+
+    def _apply_safe_actions(self) -> None:
+        if not self._action_center_report:
+            messagebox.showinfo("Action Center", "Generate or refresh actions first.")
+            return
+        actions = self._action_center_report.get("recommended_actions", [])
+        action_map: dict[str, dict[str, object]] = {}
+        if isinstance(actions, list):
+            for entry in actions:
+                if isinstance(entry, dict):
+                    action_map[str(entry.get("action_id", ""))] = entry
+        safe_action_ids = sorted(
+            action_id
+            for action_id, entry in action_map.items()
+            if str(entry.get("risk_level", "SAFE")).upper() == "SAFE"
+        )
+        if not safe_action_ids:
+            messagebox.showinfo("Action Center", "No SAFE actions available.")
+            return
+
+        def runner() -> None:
+            failures: list[str] = []
+            for action_id in safe_action_ids:
+                info = action_map.get(action_id, {})
+                token = str(info.get("confirmation_token", "")).strip()
+                cmd = [
+                    sys.executable,
+                    "-m",
+                    ACTION_CENTER_APPLY_MODULE,
+                    "--action-id",
+                    action_id,
+                    "--confirm",
+                    token,
+                    "--ui-confirmed",
+                ]
+                proc = subprocess.run(
+                    cmd,
+                    cwd=ROOT,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    env=_utf8_env(),
+                )
+                result = RunResult(cmd, ROOT, proc.returncode, proc.stdout or "", proc.stderr or "")
+                self._verify_output_queue.put(result.format_lines())
+                if proc.returncode != 0:
+                    failures.append(action_id)
+
+            def updater() -> None:
+                if failures:
+                    messagebox.showerror(
+                        "Action Center",
+                        f"Safe actions failed: {', '.join(failures)}",
+                    )
+                else:
+                    messagebox.showinfo("Action Center", "Safe actions completed.")
+                self._refresh_action_center_report()
+
+            self._enqueue_ui(updater)
+
+        threading.Thread(target=runner, daemon=True).start()
+
     def _apply_selected_action(self) -> None:
         action_id = self._selected_action_id()
         if not action_id:
@@ -2101,6 +2260,11 @@ class App(tk.Tk):
         token = str(action_info.get("confirmation_token", "")).strip()
         title = action_info.get("title", action_id)
         summary = action_info.get("effect_summary") or action_info.get("safety_notes") or ""
+        risk_level = str(action_info.get("risk_level", "SAFE")).upper()
+
+        if risk_level == "SAFE":
+            self._run_action_center_action(action_id, token, ui_confirmed=True)
+            return
 
         dialog = tk.Toplevel(self)
         dialog.title("Apply Selected Action")
@@ -2116,18 +2280,27 @@ class App(tk.Tk):
         if summary:
             tk.Label(dialog, text=summary, fg="gray", anchor="w", wraplength=520).pack(anchor="w", padx=10, pady=4)
 
-        tk.Label(dialog, text=f"Type {token} to confirm:", anchor="w").pack(anchor="w", padx=10, pady=(8, 2))
-        entry_var = tk.StringVar()
-        entry = tk.Entry(dialog, textvariable=entry_var, width=20)
-        entry.pack(anchor="w", padx=10)
-        entry.focus_set()
+        hold_seconds = 1.5 if risk_level == "CAUTION" else 3.0
+        hold_label = tk.Label(
+            dialog,
+            text=f"Press and hold Apply for {hold_seconds:.1f}s",
+            anchor="w",
+        )
+        hold_label.pack(anchor="w", padx=10, pady=(8, 2))
 
         ack_var = tk.BooleanVar(value=False)
+        ack_extra_var = tk.BooleanVar(value=False)
         tk.Checkbutton(
             dialog,
-            text="SIM-only / READ_ONLY acknowledged",
+            text="I understand (SIM-only / READ_ONLY)",
             variable=ack_var,
-        ).pack(anchor="w", padx=10, pady=6)
+        ).pack(anchor="w", padx=10, pady=4)
+        if risk_level == "DANGEROUS":
+            tk.Checkbutton(
+                dialog,
+                text="I accept the risk and want to proceed",
+                variable=ack_extra_var,
+            ).pack(anchor="w", padx=10, pady=4)
 
         button_frame = tk.Frame(dialog)
         button_frame.pack(pady=10)
@@ -2135,21 +2308,43 @@ class App(tk.Tk):
         confirm_btn.pack(side=tk.LEFT, padx=5)
         tk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
 
+        press_start: list[float] = []
+
+        def _can_apply() -> bool:
+            if not ack_var.get():
+                return False
+            if risk_level == "DANGEROUS" and not ack_extra_var.get():
+                return False
+            return True
+
         def _update_state(*_args: object) -> None:
-            if token and entry_var.get().strip() == token and ack_var.get():
-                confirm_btn.configure(state=tk.NORMAL)
+            confirm_btn.configure(state=tk.NORMAL if _can_apply() else tk.DISABLED)
+
+        def _on_press(_event=None) -> None:
+            press_start.clear()
+            press_start.append(time.monotonic())
+
+        def _on_release(_event=None) -> None:
+            if not _can_apply():
+                return
+            if not press_start:
+                return
+            duration = time.monotonic() - press_start[0]
+            if duration >= hold_seconds:
+                dialog.destroy()
+                self._run_action_center_action(action_id, token, ui_confirmed=True)
             else:
-                confirm_btn.configure(state=tk.DISABLED)
+                messagebox.showinfo(
+                    "Action Center",
+                    f"Hold Apply for at least {hold_seconds:.1f}s to confirm.",
+                )
 
-        def _on_confirm() -> None:
-            dialog.destroy()
-            self._run_action_center_action(action_id, entry_var.get().strip())
-
-        entry_var.trace_add("write", _update_state)
         ack_var.trace_add("write", _update_state)
-        confirm_btn.configure(command=_on_confirm)
+        ack_extra_var.trace_add("write", _update_state)
+        confirm_btn.bind("<ButtonPress-1>", _on_press)
+        confirm_btn.bind("<ButtonRelease-1>", _on_release)
 
-    def _run_action_center_action(self, action_id: str, token: str) -> None:
+    def _run_action_center_action(self, action_id: str, token: str, ui_confirmed: bool = False) -> None:
         def runner() -> None:
             cmd = [
                 sys.executable,
@@ -2160,6 +2355,8 @@ class App(tk.Tk):
                 "--confirm",
                 token,
             ]
+            if ui_confirmed:
+                cmd.append("--ui-confirmed")
             proc = subprocess.run(
                 cmd,
                 cwd=ROOT,
@@ -2205,6 +2402,15 @@ class App(tk.Tk):
                 f"Failed to open folder: {exc}\n\nPath: {ARTIFACTS_DIR}",
                 str(ARTIFACTS_DIR),
             )
+
+    def _copy_action_center_evidence_path(self) -> None:
+        path_text = str(ARTIFACTS_DIR)
+        try:
+            self.clipboard_clear()
+            self.clipboard_append(path_text)
+            messagebox.showinfo("Action Center", "Evidence path copied to clipboard.")
+        except Exception:  # pragma: no cover - UI feedback
+            self._show_copyable_text("Action Center", "Copy the path below:", path_text)
 
     def _copy_action_center_apply_command(self) -> None:
         action_id = self._selected_action_id()
@@ -2270,34 +2476,62 @@ class App(tk.Tk):
         if not hasattr(self, "action_center_doctor_box"):
             return
         rows: list[str] = []
-        rows.append(f"Repo root: {ROOT}")
-        rows.append(f"Python: {sys.executable} ({sys.version.split()[0]})")
-        venv = bool(os.environ.get("VIRTUAL_ENV") or (ROOT / ".venv").exists())
-        rows.append(f"Venv detected: {'YES' if venv else 'NO'}")
-        checks = {
-            "scripts/ci_gates.sh": ROOT / "scripts" / "ci_gates.sh",
-            "tools/__init__.py": ROOT / "tools" / "__init__.py",
-            "artifacts/": ROOT / "artifacts",
-        }
-        issues: list[str] = []
-        for label, path in checks.items():
-            exists = path.exists()
-            rows.append(f"{label}: {'OK' if exists else 'MISSING'}")
-            if not exists:
-                if label == "artifacts/":
-                    issues.append("mkdir artifacts")
-                elif label == "scripts/ci_gates.sh":
-                    issues.append("git checkout -- scripts/ci_gates.sh")
-                elif label == "tools/__init__.py":
-                    issues.append("git checkout -- tools/__init__.py")
-        if not venv:
-            issues.append("python -m venv .venv")
-        rows.append("")
-        if issues:
-            rows.append("Next commands:")
-            rows.extend(f"- {issue}" for issue in issues)
+        payload = self._load_json(DOCTOR_REPORT_PATH)
+        status = "ISSUE"
+        ts = "-"
+        if isinstance(payload, dict):
+            ts = str(payload.get("ts_utc") or "-")
+            runtime_health = payload.get("runtime_write_health", {})
+            runtime_status = ""
+            if isinstance(runtime_health, dict):
+                runtime_status = str(runtime_health.get("status", ""))
+            issues = payload.get("issues", [])
+            if runtime_status == "FAIL":
+                status = "BLOCKED"
+            elif isinstance(issues, list) and issues:
+                status = "ISSUE"
+            else:
+                status = "PASS"
         else:
-            rows.append("Next commands: none")
+            rows.append("Doctor report not found. Run Doctor to generate diagnostics.")
+
+        self.action_center_doctor_status_var.set(f"DOCTOR_STATUS: {status}")
+        self.action_center_last_doctor_var.set(f"LAST_DOCTOR_TS_UTC: {ts}")
+
+        if isinstance(payload, dict):
+            rows.append(f"Doctor report: {DOCTOR_REPORT_PATH}")
+            rows.append(f"ts_utc: {payload.get('ts_utc', '-')}")
+            rows.append(f"python: {payload.get('python_executable', '-')}")
+            rows.append(f"python_version: {payload.get('python_version', '-')}")
+            rows.append(f"venv_detected: {payload.get('venv_detected', '-')}")
+            rows.append(f"kill_switch_present: {payload.get('kill_switch_present', '-')}")
+            runtime_health = payload.get("runtime_write_health", {})
+            if isinstance(runtime_health, dict):
+                rows.append(f"runtime_write_health: {runtime_health.get('status', 'UNKNOWN')}")
+            hygiene = payload.get("repo_hygiene_summary", {})
+            if isinstance(hygiene, dict):
+                rows.append(
+                    "repo_hygiene_summary: "
+                    f"status={hygiene.get('status', '-')}, "
+                    f"tracked_modified={hygiene.get('tracked_modified_count', 0)}, "
+                    f"untracked={hygiene.get('untracked_count', 0)}, "
+                    f"runtime_artifacts={hygiene.get('runtime_artifact_count', 0)}"
+                )
+            issues = payload.get("issues", [])
+            rows.append("")
+            rows.append("Issues:")
+            if isinstance(issues, list) and issues:
+                for issue in issues:
+                    if not isinstance(issue, dict):
+                        continue
+                    summary = issue.get("summary", "")
+                    severity = issue.get("severity", "INFO")
+                    evidence = issue.get("evidence_paths_rel", [])
+                    rows.append(f"- [{severity}] {summary}")
+                    if isinstance(evidence, list) and evidence:
+                        rows.append(f"  evidence: {', '.join(str(item) for item in evidence)}")
+            else:
+                rows.append("- none")
 
         self.action_center_doctor_box.configure(state=tk.NORMAL)
         self.action_center_doctor_box.delete("1.0", tk.END)
@@ -4009,15 +4243,23 @@ class App(tk.Tk):
         tk.Label(status_frame, textvariable=self.action_center_status_marker_var, anchor="w").pack(
             side=tk.LEFT, padx=6
         )
+        tk.Label(status_frame, textvariable=self.action_center_doctor_status_var, anchor="w").pack(
+            side=tk.LEFT, padx=6
+        )
         tk.Label(status_frame, textvariable=self.action_center_data_health_var, anchor="w").pack(side=tk.LEFT, padx=6)
         tk.Label(status_frame, textvariable=self.action_center_last_report_var, anchor="w").pack(side=tk.LEFT, padx=6)
+        tk.Label(status_frame, textvariable=self.action_center_last_doctor_var, anchor="w").pack(
+            side=tk.LEFT, padx=6
+        )
         tk.Label(status_frame, textvariable=self.action_center_last_apply_var, anchor="w").pack(side=tk.LEFT, padx=6)
 
         controls = tk.Frame(self.action_center_tab)
         controls.pack(fill=tk.X, padx=6, pady=4)
-        tk.Button(controls, text="Generate Report", command=self._generate_action_center_report).pack(
+        tk.Button(controls, text="Run Doctor", command=self._run_doctor_report).pack(side=tk.LEFT, padx=4)
+        tk.Button(controls, text="Refresh Actions", command=self._generate_action_center_report).pack(
             side=tk.LEFT, padx=4
         )
+        tk.Button(controls, text="Fix All (Safe)", command=self._apply_safe_actions).pack(side=tk.LEFT, padx=4)
         tk.Button(controls, text="Open Evidence Pack Folder", command=self._open_evidence_pack_folder).pack(
             side=tk.LEFT, padx=4
         )
@@ -4027,20 +4269,38 @@ class App(tk.Tk):
         tk.Button(controls, text="Apply Selected Action", command=self._apply_selected_action).pack(
             side=tk.LEFT, padx=4
         )
+        tk.Checkbutton(
+            controls,
+            text="Show Advanced",
+            variable=self.action_center_show_advanced_var,
+            command=lambda: self._render_action_center_actions(self._action_center_actions),
+        ).pack(side=tk.LEFT, padx=4)
+
+        evidence_frame = tk.Frame(self.action_center_tab)
+        evidence_frame.pack(fill=tk.X, padx=6, pady=(0, 4))
+        tk.Label(evidence_frame, text="Evidence path:", anchor="w").pack(side=tk.LEFT, padx=4)
+        evidence_entry = tk.Entry(evidence_frame, textvariable=self.action_center_evidence_path_var, width=60)
+        evidence_entry.pack(side=tk.LEFT, padx=4, fill=tk.X, expand=True)
+        evidence_entry.configure(state="readonly")
+        tk.Button(evidence_frame, text="Copy Path", command=self._copy_action_center_evidence_path).pack(
+            side=tk.LEFT, padx=4
+        )
 
         list_frame = tk.LabelFrame(self.action_center_tab, text="Actions", padx=6, pady=6)
         list_frame.pack(fill=tk.BOTH, padx=6, pady=4, expand=True)
-        columns = ("id", "severity", "summary", "command", "last_seen")
+        columns = ("id", "severity", "risk", "summary", "evidence", "last_seen")
         self.action_center_tree = ttk.Treeview(list_frame, columns=columns, show="headings", height=8)
         self.action_center_tree.heading("id", text="ID")
         self.action_center_tree.heading("severity", text="Severity")
+        self.action_center_tree.heading("risk", text="Risk Level")
         self.action_center_tree.heading("summary", text="Summary")
-        self.action_center_tree.heading("command", text="Recommended Command")
+        self.action_center_tree.heading("evidence", text="Evidence Paths")
         self.action_center_tree.heading("last_seen", text="Last Seen (UTC)")
         self.action_center_tree.column("id", width=180, anchor="w")
         self.action_center_tree.column("severity", width=80, anchor="w")
-        self.action_center_tree.column("summary", width=320, anchor="w")
-        self.action_center_tree.column("command", width=420, anchor="w")
+        self.action_center_tree.column("risk", width=90, anchor="w")
+        self.action_center_tree.column("summary", width=280, anchor="w")
+        self.action_center_tree.column("evidence", width=420, anchor="w")
         self.action_center_tree.column("last_seen", width=180, anchor="w")
         self.action_center_tree.pack(fill=tk.BOTH, expand=True)
         self.action_center_tree.bind("<<TreeviewSelect>>", self._on_action_center_select)

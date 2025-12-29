@@ -9,7 +9,7 @@ The CI entrypoint is:
 ```
 
 This script discovers the canonical gate runner, executes it, and emits auditable artifacts under `artifacts/`.
-For PR29, the canonical runner is `tools/verify_pr29_gate.py`.
+For PR30, the canonical runner is `tools/verify_pr30_gate.py`.
 
 ## Job Summary
 
@@ -27,6 +27,8 @@ CI always writes and uploads the following files under `artifacts/`:
 - `artifacts/proof_summary.json` (machine-readable summary)
 - `artifacts/action_center_report.json` (Action Center report)
 - `artifacts/action_center_apply_result.json` (Action Center apply result)
+- `artifacts/action_center_apply_plan.json` (Action Center apply plan)
+- `artifacts/doctor_report.json` (Doctor report)
 - `artifacts/ci_job_summary.md` (human-readable CI summary)
 - `artifacts/repo_hygiene.json` (repo hygiene scan output)
 
@@ -35,7 +37,8 @@ If present, it also copies:
 - `run_complete.json`
 - any `*_latest.json` pointers
 
-PR29 emits additional repo hygiene artifacts under `artifacts/repo_hygiene.json` and updates the CI summary outputs.
+PR30 may emit additional Doctor/action-center artifacts such as `artifacts/doctor_runtime_write.json` and
+`artifacts/abs_path_sanitize_hint.json`.
 
 Step summary excerpts are written to `artifacts/ci_job_summary.md` and mirrored into the GitHub Actions **Summary** tab via `GITHUB_STEP_SUMMARY`.
 
@@ -53,18 +56,18 @@ To trigger a controlled failure for evidence-pack validation, run the workflow m
 1. Open the **CI Gates** workflow in GitHub Actions.
 2. Select **Run workflow** and set `force_fail` to `true`.
 
-This sets `CI_FORCE_FAIL=1` only for that manual run, causing the gates to fail after execution while still producing and uploading the evidence pack.
+This sets `CI_FORCE_FAIL=1` only for that manual run, causing the gates to fail after execution while still producing and uploading the evidence pack. The PR30 gate also supports `PR30_FORCE_FAIL=1` for local evidence-pack validation.
 
-## PR29 repo hygiene gate (local)
+## PR30 gate (local)
 
 Run the PR29 gate locally using module mode:
 
 ```
-python -m tools.verify_pr29_gate
+python -m tools.verify_pr30_gate
 ```
 
 To confirm fail-closed behavior while still emitting artifacts:
 
 ```
-PR29_FORCE_FAIL=1 ./scripts/ci_gates.sh
+PR30_FORCE_FAIL=1 ./scripts/ci_gates.sh
 ```

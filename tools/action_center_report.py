@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from tools.git_baseline_probe import probe_baseline
+from tools import doctor_report
 
 ROOT = Path(__file__).resolve().parent.parent
 LOGS_DIR = ROOT / "Logs"
@@ -19,6 +20,9 @@ LATEST_DIR = RUNS_DIR / "_latest"
 PROGRESS_INDEX_PATH = RUNS_DIR / "progress_index.json"
 STATE_PATH = LOGS_DIR / "train_service" / "state.json"
 DEFAULT_OUTPUT = ROOT / "artifacts" / "action_center_report.json"
+DOCTOR_REPORT_PATH = ROOT / "artifacts" / "doctor_report.json"
+DOCTOR_DIAG_OUTPUT = ROOT / "artifacts" / "doctor_runtime_write.json"
+ABS_PATH_HINT_OUTPUT = ROOT / "artifacts" / "abs_path_sanitize_hint.json"
 SUPERVISOR_SCRIPT = ROOT / "tools" / "supervisor.py"
 PROGRESS_INDEX_SCRIPT = ROOT / "tools" / "progress_index.py"
 
@@ -31,29 +35,88 @@ LATEST_POINTERS = [
 ]
 
 CONFIRM_TOKENS = {
-    "ACTION_CLEAR_KILL_SWITCH": "CLEAR",
+    "CLEAR_KILL_SWITCH": "CLEAR",
     "ACTION_REBUILD_PROGRESS_INDEX": "REBUILD",
     "ACTION_RESTART_SERVICES_SIM_ONLY": "RESTART",
+    "GEN_DOCTOR_REPORT": "RUN",
+    "REPO_HYGIENE_FIX_SAFE": "HYGIENE",
+    "CLEAR_STALE_TEMP": "CLEAN",
+    "ENSURE_RUNTIME_DIRS": "MKDIR",
+    "DIAG_RUNTIME_WRITE": "DIAG",
+    "ABS_PATH_SANITIZE_HINT": "SANITIZE",
+    "ENABLE_GIT_HOOKS": "HOOKS",
 }
 
 ACTION_DEFINITIONS = {
-    "ACTION_CLEAR_KILL_SWITCH": {
+    "CLEAR_KILL_SWITCH": {
         "title": "Clear kill switch (SIM-only)",
-        "confirmation_token": CONFIRM_TOKENS["ACTION_CLEAR_KILL_SWITCH"],
+        "confirmation_token": CONFIRM_TOKENS["CLEAR_KILL_SWITCH"],
         "safety_notes": "SIM-only. Removes local kill switch files and does not place trades.",
         "effect_summary": "Clears kill switch files via supervisor clear-kill-switch.",
+        "risk_level": "CAUTION",
     },
     "ACTION_REBUILD_PROGRESS_INDEX": {
         "title": "Rebuild progress index",
         "confirmation_token": CONFIRM_TOKENS["ACTION_REBUILD_PROGRESS_INDEX"],
         "safety_notes": "SIM-only. Regenerates Logs/train_runs/progress_index.json from local files.",
         "effect_summary": "Runs tools/progress_index.py to refresh the progress index.",
+        "risk_level": "CAUTION",
     },
     "ACTION_RESTART_SERVICES_SIM_ONLY": {
         "title": "Restart SIM services",
         "confirmation_token": CONFIRM_TOKENS["ACTION_RESTART_SERVICES_SIM_ONLY"],
         "safety_notes": "SIM-only. Restarts local supervisor-managed services; no broker access.",
         "effect_summary": "Stops and starts supervisor services (quotes/alerts).",
+        "risk_level": "CAUTION",
+    },
+    "GEN_DOCTOR_REPORT": {
+        "title": "Generate Doctor report",
+        "confirmation_token": CONFIRM_TOKENS["GEN_DOCTOR_REPORT"],
+        "safety_notes": "SIM-only. Writes artifacts/doctor_report.json for diagnostics.",
+        "effect_summary": "Runs tools.doctor_report to capture health evidence.",
+        "risk_level": "SAFE",
+    },
+    "REPO_HYGIENE_FIX_SAFE": {
+        "title": "Repo hygiene fix (safe)",
+        "confirmation_token": CONFIRM_TOKENS["REPO_HYGIENE_FIX_SAFE"],
+        "safety_notes": "SIM-only. Restores tracked runtime artifacts and removes untracked runtime files.",
+        "effect_summary": "Runs python -m tools.repo_hygiene fix --mode safe.",
+        "risk_level": "CAUTION",
+    },
+    "CLEAR_STALE_TEMP": {
+        "title": "Clear stale temp files",
+        "confirmation_token": CONFIRM_TOKENS["CLEAR_STALE_TEMP"],
+        "safety_notes": "SIM-only. Deletes stale *.tmp files older than the Doctor threshold.",
+        "effect_summary": "Removes stale temp files from Logs/runtime and Logs/.",
+        "risk_level": "CAUTION",
+    },
+    "ENSURE_RUNTIME_DIRS": {
+        "title": "Ensure runtime directories",
+        "confirmation_token": CONFIRM_TOKENS["ENSURE_RUNTIME_DIRS"],
+        "safety_notes": "SIM-only. Creates runtime directories if missing.",
+        "effect_summary": "Creates Logs/runtime, Logs/train_service, and artifacts directories.",
+        "risk_level": "SAFE",
+    },
+    "DIAG_RUNTIME_WRITE": {
+        "title": "Diagnose runtime write",
+        "confirmation_token": CONFIRM_TOKENS["DIAG_RUNTIME_WRITE"],
+        "safety_notes": "SIM-only. Re-runs runtime write checks and stores results.",
+        "effect_summary": "Writes artifacts/doctor_runtime_write.json for evidence.",
+        "risk_level": "SAFE",
+    },
+    "ABS_PATH_SANITIZE_HINT": {
+        "title": "Generate absolute-path sanitization hints",
+        "confirmation_token": CONFIRM_TOKENS["ABS_PATH_SANITIZE_HINT"],
+        "safety_notes": "SIM-only. Writes a sanitized-paths guidance artifact.",
+        "effect_summary": "Writes artifacts/abs_path_sanitize_hint.json with guidance.",
+        "risk_level": "SAFE",
+    },
+    "ENABLE_GIT_HOOKS": {
+        "title": "Enable git hooks (best effort)",
+        "confirmation_token": CONFIRM_TOKENS["ENABLE_GIT_HOOKS"],
+        "safety_notes": "SIM-only. Best-effort enable githooks for repo hygiene.",
+        "effect_summary": "Runs scripts/enable_githooks.* if available.",
+        "risk_level": "SAFE",
     },
 }
 
@@ -161,39 +224,63 @@ def _run_command(command: list[str]) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _sanitize_command(command: list[str]) -> list[str]:
+    sanitized: list[str] = []
+    for arg in command:
+        try:
+            path = Path(arg)
+        except Exception:
+            sanitized.append(str(arg))
+            continue
+        if path.is_absolute():
+            rel = _relpath(path)
+            if rel == path.as_posix():
+                sanitized.append("<abs_path>")
+            else:
+                sanitized.append(rel)
+        else:
+            sanitized.append(str(arg))
+    return sanitized
+
+
 def _execute_clear_kill_switch() -> ActionExecutionResult:
     proc = _run_command([sys.executable, str(SUPERVISOR_SCRIPT), "clear-kill-switch"])
     details = {
-        "command": proc.args,
+        "command": _sanitize_command(list(proc.args)),
         "returncode": proc.returncode,
         "stdout": proc.stdout,
         "stderr": proc.stderr,
     }
     if proc.returncode == 0:
+        details["changes_made"] = [
+            _relpath(ROOT / "Data" / "KILL_SWITCH"),
+            _relpath(LOGS_DIR / "train_service" / "KILL_SWITCH"),
+        ]
         write_event(
             "KILL_SWITCH_CLEARED",
             "Action Center cleared kill switch",
-            action_id="ACTION_CLEAR_KILL_SWITCH",
+            action_id="CLEAR_KILL_SWITCH",
         )
-        return ActionExecutionResult("ACTION_CLEAR_KILL_SWITCH", True, "kill switch cleared", details)
+        return ActionExecutionResult("CLEAR_KILL_SWITCH", True, "kill switch cleared", details)
     write_event(
         "KILL_SWITCH_CLEAR_FAILED",
         "Action Center failed to clear kill switch",
         severity="ERROR",
-        action_id="ACTION_CLEAR_KILL_SWITCH",
+        action_id="CLEAR_KILL_SWITCH",
     )
-    return ActionExecutionResult("ACTION_CLEAR_KILL_SWITCH", False, "kill switch clear failed", details)
+    return ActionExecutionResult("CLEAR_KILL_SWITCH", False, "kill switch clear failed", details)
 
 
 def _execute_rebuild_progress_index() -> ActionExecutionResult:
     proc = _run_command([sys.executable, str(PROGRESS_INDEX_SCRIPT)])
     details = {
-        "command": proc.args,
+        "command": _sanitize_command(list(proc.args)),
         "returncode": proc.returncode,
         "stdout": proc.stdout,
         "stderr": proc.stderr,
     }
     if proc.returncode == 0:
+        details["changes_made"] = [_relpath(PROGRESS_INDEX_PATH)]
         write_event(
             "PROGRESS_INDEX_REBUILT",
             "Action Center rebuilt progress index",
@@ -219,13 +306,13 @@ def _execute_restart_services() -> ActionExecutionResult:
 
     details = {
         "stop": {
-            "command": stop_proc.args,
+            "command": _sanitize_command(list(stop_proc.args)),
             "returncode": stop_proc.returncode,
             "stdout": stop_proc.stdout,
             "stderr": stop_proc.stderr,
         },
         "start": {
-            "command": start_proc.args if start_proc else [],
+            "command": _sanitize_command(list(start_proc.args)) if start_proc else [],
             "returncode": start_proc.returncode if start_proc else None,
             "stdout": start_proc.stdout if start_proc else "",
             "stderr": start_proc.stderr if start_proc else "",
@@ -247,13 +334,146 @@ def _execute_restart_services() -> ActionExecutionResult:
     return ActionExecutionResult("ACTION_RESTART_SERVICES_SIM_ONLY", False, "service restart failed", details)
 
 
+def _execute_generate_doctor_report() -> ActionExecutionResult:
+    report = doctor_report.build_report()
+    doctor_report.write_report(report, DOCTOR_REPORT_PATH)
+    details = {
+        "output_path": _relpath(DOCTOR_REPORT_PATH),
+        "issues_count": len(report.get("issues", [])),
+        "changes_made": [_relpath(DOCTOR_REPORT_PATH)],
+    }
+    return ActionExecutionResult("GEN_DOCTOR_REPORT", True, "doctor report generated", details)
+
+
+def _execute_repo_hygiene_fix_safe() -> ActionExecutionResult:
+    proc = _run_command([sys.executable, "-m", "tools.repo_hygiene", "fix", "--mode", "safe"])
+    details = {
+        "command": _sanitize_command(list(proc.args)),
+        "returncode": proc.returncode,
+        "stdout": proc.stdout,
+        "stderr": proc.stderr,
+    }
+    success = proc.returncode == 0
+    message = "repo hygiene fix completed" if success else "repo hygiene fix failed"
+    return ActionExecutionResult("REPO_HYGIENE_FIX_SAFE", success, message, details)
+
+
+def _execute_clear_stale_temp() -> ActionExecutionResult:
+    stale_files = doctor_report.find_stale_temp_files(
+        [LOGS_DIR, LOGS_DIR / "runtime"], doctor_report.TEMP_FILE_THRESHOLD_SECONDS
+    )
+    removed: list[str] = []
+    failures: list[str] = []
+    for path in stale_files:
+        try:
+            path.unlink()
+            removed.append(_relpath(path))
+        except Exception:
+            failures.append(_relpath(path))
+    success = not failures
+    details = {"removed": removed, "failed": failures}
+    details["changes_made"] = removed
+    message = f"removed {len(removed)} stale temp files" if success else "failed to remove stale temp files"
+    return ActionExecutionResult("CLEAR_STALE_TEMP", success, message, details)
+
+
+def _execute_ensure_runtime_dirs() -> ActionExecutionResult:
+    targets = [LOGS_DIR / "runtime", LOGS_DIR / "train_service", ROOT / "artifacts"]
+    created: list[str] = []
+    for path in targets:
+        if not path.exists():
+            path.mkdir(parents=True, exist_ok=True)
+            created.append(_relpath(path))
+    details = {"created": created, "targets": [_relpath(path) for path in targets], "changes_made": created}
+    return ActionExecutionResult("ENSURE_RUNTIME_DIRS", True, "runtime directories ensured", details)
+
+
+def _execute_diag_runtime_write() -> ActionExecutionResult:
+    result = doctor_report.runtime_write_check(LOGS_DIR / "runtime")
+    payload = {"ts_utc": _iso_now(), "runtime_write_health": result}
+    DOCTOR_DIAG_OUTPUT.parent.mkdir(parents=True, exist_ok=True)
+    DOCTOR_DIAG_OUTPUT.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    details = {
+        "output_path": _relpath(DOCTOR_DIAG_OUTPUT),
+        "status": result.get("status"),
+        "changes_made": [_relpath(DOCTOR_DIAG_OUTPUT)],
+    }
+    success = result.get("status") == "PASS"
+    message = "runtime write check passed" if success else "runtime write check failed"
+    return ActionExecutionResult("DIAG_RUNTIME_WRITE", success, message, details)
+
+
+def _execute_abs_path_sanitize_hint() -> ActionExecutionResult:
+    artifact_candidates = [
+        ROOT / "artifacts" / "action_center_report.json",
+        ROOT / "artifacts" / "action_center_apply_result.json",
+        ROOT / "artifacts" / "proof_summary.json",
+        ROOT / "artifacts" / "gates.log",
+        ROOT / "artifacts" / "ci_job_summary.md",
+    ]
+    leaked_paths = doctor_report.scan_absolute_paths(artifact_candidates)
+    payload = {
+        "ts_utc": _iso_now(),
+        "summary": "Check artifacts for absolute Windows paths (e.g., C:\\...).",
+        "detected_artifacts": [_relpath(path) for path in leaked_paths],
+        "guidance": [
+            "Prefer repo-relative paths in artifacts.",
+            "Avoid persisting user home directories in logs.",
+            "Redact absolute paths in reports before sharing.",
+        ],
+    }
+    ABS_PATH_HINT_OUTPUT.parent.mkdir(parents=True, exist_ok=True)
+    ABS_PATH_HINT_OUTPUT.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    details = {"output_path": _relpath(ABS_PATH_HINT_OUTPUT), "changes_made": [_relpath(ABS_PATH_HINT_OUTPUT)]}
+    return ActionExecutionResult("ABS_PATH_SANITIZE_HINT", True, "abs path hint written", details)
+
+
+def _execute_enable_githooks() -> ActionExecutionResult:
+    script = ROOT / "scripts" / "enable_githooks.sh"
+    if os.name == "nt":
+        script = ROOT / "scripts" / "enable_githooks.ps1"
+    if not script.exists():
+        return ActionExecutionResult(
+            "ENABLE_GIT_HOOKS",
+            False,
+            "githook enable script unavailable",
+            {"refused": True, "reason": "script missing"},
+        )
+    proc = _run_command([str(script)])
+    details = {
+        "command": _sanitize_command(list(proc.args)),
+        "returncode": proc.returncode,
+        "stdout": proc.stdout,
+        "stderr": proc.stderr,
+    }
+    success = proc.returncode == 0
+    message = "githooks enabled" if success else "githooks enable failed"
+    if success:
+        details["changes_made"] = [_relpath(script)]
+    return ActionExecutionResult("ENABLE_GIT_HOOKS", success, message, details)
+
+
 def _execute_action(action_id: str) -> ActionExecutionResult:
-    if action_id == "ACTION_CLEAR_KILL_SWITCH":
+    if action_id == "CLEAR_KILL_SWITCH":
         return _execute_clear_kill_switch()
     if action_id == "ACTION_REBUILD_PROGRESS_INDEX":
         return _execute_rebuild_progress_index()
     if action_id == "ACTION_RESTART_SERVICES_SIM_ONLY":
         return _execute_restart_services()
+    if action_id == "GEN_DOCTOR_REPORT":
+        return _execute_generate_doctor_report()
+    if action_id == "REPO_HYGIENE_FIX_SAFE":
+        return _execute_repo_hygiene_fix_safe()
+    if action_id == "CLEAR_STALE_TEMP":
+        return _execute_clear_stale_temp()
+    if action_id == "ENSURE_RUNTIME_DIRS":
+        return _execute_ensure_runtime_dirs()
+    if action_id == "DIAG_RUNTIME_WRITE":
+        return _execute_diag_runtime_write()
+    if action_id == "ABS_PATH_SANITIZE_HINT":
+        return _execute_abs_path_sanitize_hint()
+    if action_id == "ENABLE_GIT_HOOKS":
+        return _execute_enable_githooks()
     raise ValueError(f"Unknown action_id: {action_id}")
 
 
@@ -265,6 +485,22 @@ def _load_json(path: Path) -> dict[str, Any] | None:
     except Exception:
         return None
     return data if isinstance(data, dict) else None
+
+
+def _load_doctor_report() -> dict[str, Any] | None:
+    return _load_json(DOCTOR_REPORT_PATH)
+
+
+def _doctor_issue_to_action_center(issue: dict[str, Any]) -> dict[str, Any]:
+    evidence = issue.get("evidence_paths_rel", [])
+    actions = issue.get("suggested_actions", [])
+    return {
+        "code": str(issue.get("id", "DOCTOR_ISSUE")),
+        "severity": str(issue.get("severity", "INFO")),
+        "summary": str(issue.get("summary", "")),
+        "evidence_paths": list(evidence) if isinstance(evidence, list) else [],
+        "recommended_actions": list(actions) if isinstance(actions, list) else [],
+    }
 
 
 def _latest_run_complete(runs_root: Path) -> Path | None:
@@ -320,14 +556,16 @@ def _build_recommended_actions(action_evidence: dict[str, set[str]] | None = Non
     recommended_actions: list[dict[str, Any]] = []
     for action_id in ACTION_DEFINITIONS:
         action = ACTION_DEFINITIONS[action_id]
+        risk_level = str(action.get("risk_level", "SAFE")).upper()
         recommended_actions.append(
             {
                 "action_id": action_id,
                 "title": action["title"],
-                "requires_typed_confirmation": True,
+                "requires_typed_confirmation": risk_level != "SAFE",
                 "confirmation_token": action["confirmation_token"],
                 "safety_notes": action["safety_notes"],
                 "effect_summary": action["effect_summary"],
+                "risk_level": risk_level,
                 "related_evidence_paths": sorted(action_evidence.get(action_id, set())),
             }
         )
@@ -339,7 +577,12 @@ def _severity_rank(severity: str) -> int:
     return order.get(severity.upper(), 0)
 
 
-def _build_action_rows(issues: list[dict[str, Any]], now: datetime) -> list[dict[str, Any]]:
+def _build_action_rows(
+    issues: list[dict[str, Any]],
+    now: datetime,
+    action_evidence: dict[str, set[str]] | None = None,
+) -> list[dict[str, Any]]:
+    action_evidence = action_evidence or {action_id: set() for action_id in ACTION_DEFINITIONS}
     rows: list[dict[str, Any]] = []
     for action_id, action in ACTION_DEFINITIONS.items():
         matching = [
@@ -362,12 +605,15 @@ def _build_action_rows(issues: list[dict[str, Any]], now: datetime) -> list[dict
             f"python -m tools.action_center_apply --action-id {action_id} "
             f"--confirm {action['confirmation_token']}"
         )
+        evidence_paths = sorted(action_evidence.get(action_id, set()))
         rows.append(
             {
                 "action_id": action_id,
                 "severity": severity,
+                "risk_level": action.get("risk_level", "SAFE"),
                 "summary": summary,
                 "recommended_command": recommended_command,
+                "evidence_paths": evidence_paths,
                 "last_seen_ts_utc": now.isoformat(),
             }
         )
@@ -405,7 +651,7 @@ def build_report() -> dict[str, Any]:
                 "severity": "HIGH",
                 "summary": "Kill switch file present; training services are halted.",
                 "evidence_paths": sorted({_relpath(path) for path in present_kill_switches}),
-                "recommended_actions": ["ACTION_CLEAR_KILL_SWITCH"],
+                "recommended_actions": ["CLEAR_KILL_SWITCH"],
             }
         )
 
@@ -570,6 +816,34 @@ def build_report() -> dict[str, Any]:
             }
         )
 
+    doctor_payload = _load_doctor_report()
+    doctor_summary: dict[str, Any] = {"status": "MISSING", "ts_utc": None, "issues_count": 0}
+    if doctor_payload:
+        doctor_issues_raw = doctor_payload.get("issues", [])
+        doctor_issues: list[dict[str, Any]] = []
+        if isinstance(doctor_issues_raw, list):
+            doctor_issues = [
+                _doctor_issue_to_action_center(entry)
+                for entry in doctor_issues_raw
+                if isinstance(entry, dict)
+            ]
+        issues.extend(doctor_issues)
+        doctor_summary = {
+            "status": "OK" if not doctor_issues else "ISSUE",
+            "ts_utc": doctor_payload.get("ts_utc"),
+            "issues_count": len(doctor_issues),
+        }
+    else:
+        issues.append(
+            {
+                "code": "DOCTOR_REPORT_MISSING",
+                "severity": "WARN",
+                "summary": "Doctor report missing; run Doctor to refresh diagnostics.",
+                "evidence_paths": [_relpath(DOCTOR_REPORT_PATH)],
+                "recommended_actions": ["GEN_DOCTOR_REPORT"],
+            }
+        )
+
     if os.environ.get("CI_FORCE_FAIL") == "1":
         issues.append(
             {
@@ -593,7 +867,8 @@ def build_report() -> dict[str, Any]:
         "environment_notes": environment_notes,
         "detected_issues": issues,
         "recommended_actions": _build_recommended_actions(action_evidence),
-        "action_rows": _build_action_rows(issues, now),
+        "action_rows": _build_action_rows(issues, now, action_evidence),
+        "doctor_summary": doctor_summary,
     }
 
 
