@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from tools.paths import policy_registry_runtime_path, to_repo_relative
+from tools.replay_artifacts import REPLAY_SCHEMA_VERSION
 
 ROOT = Path(__file__).resolve().parent.parent
 LOGS_DIR = ROOT / "Logs"
@@ -222,6 +223,52 @@ def load_xp_snapshot_latest(path: Path = XP_SNAPSHOT_LATEST) -> dict[str, Any]:
     payload.setdefault("missing_reasons", [])
     payload.setdefault("xp_breakdown", [])
     return payload
+
+
+def load_replay_index_latest() -> dict[str, Any]:
+    candidates = [path for path in RUNS_ROOT.glob("**/replay/replay_index.json") if path.is_file()]
+    latest = _select_latest_by_mtime(candidates)
+    if latest is None:
+        return {
+            "status": "missing",
+            "missing_reason": "replay_index_missing",
+            "missing_artifacts": ["replay_index.json"],
+            "searched_paths": [to_repo_relative(path) for path in candidates],
+            "suggested_next_actions": ["Run PR33 SIM training to generate replay artifacts."],
+            "source": {"mode": "missing", "path": "Logs/train_runs/**/replay/replay_index.json"},
+        }
+    payload = _safe_read_json(latest)
+    if not payload:
+        return {
+            "status": "missing",
+            "missing_reason": "replay_index_unreadable",
+            "missing_artifacts": [latest.name],
+            "searched_paths": [to_repo_relative(latest)],
+            "suggested_next_actions": ["Re-run PR33 SIM training to regenerate replay artifacts."],
+            "source": {"mode": "missing", "path": to_repo_relative(latest)},
+        }
+    payload.setdefault("source", {"mode": "latest_by_mtime", "path": to_repo_relative(latest)})
+    if payload.get("schema_version") != REPLAY_SCHEMA_VERSION:
+        payload["missing_reason"] = "replay_index_schema_mismatch"
+    return payload
+
+
+def load_decision_cards(path: Path, max_rows: int = 5000) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    rows: list[dict[str, Any]] = []
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            payload = json.loads(line)
+            if isinstance(payload, dict):
+                rows.append(payload)
+            if len(rows) >= max_rows:
+                break
+    except Exception:
+        return []
+    return rows
 
 
 def load_policy_history(registry_path: Path, events_path: Path | None = None) -> list[dict[str, Any]]:

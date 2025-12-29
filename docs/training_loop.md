@@ -46,3 +46,19 @@ The latest pointers are stored here:
 - `Logs/train_runs/_latest/promotion_history_latest.json`
 
 Use these paths in the UI Progress panel under **PR28 Training Loop (SIM-only)**.
+
+## PR33 Replay artifacts (SIM-only)
+
+PR33 emits deterministic replay artifacts for human-readable decision cards. Output is bounded, atomic, and repo-relative.
+
+Artifacts per run:
+
+- `Logs/train_runs/<run_id>/replay/replay_index.json`
+- `Logs/train_runs/<run_id>/replay/decision_cards.jsonl`
+- `Logs/train_runs/<run_id>/replay/replay_events.jsonl`
+- `Logs/train_runs/<run_id>/_latest/replay_index_latest.json`
+- `Logs/train_runs/<run_id>/_latest/decision_cards_latest.jsonl`
+
+Decision cards are JSONL with deterministic fields only (no LLM reasoning). Evidence paths are repo-relative and use forward slashes.
+
+For schema details, see `docs/replay.md`.

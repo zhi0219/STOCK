@@ -127,3 +127,81 @@ def atomic_write_json(
         error_type=failure.error_type,
     )
     raise AtomicWriteError(failure)
+
+
+def atomic_write_text(
+    path: Path,
+    payload: str,
+    retries: int = 5,
+    backoff_ms: int = 50,
+    fsync: bool = True,
+) -> AtomicWriteResult:
+    if retries < 1:
+        raise ValueError("retries must be >= 1")
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    last_error: Exception | None = None
+    for attempt in range(1, retries + 1):
+        tmp_path = path.with_name(f".{path.name}.tmp.{os.getpid()}.{attempt}")
+        _log_marker("ATOMIC_WRITE_TEXT_ATTEMPT", path=path.as_posix(), attempt=attempt, tmp=tmp_path.name)
+        try:
+            with tmp_path.open("w", encoding="utf-8") as handle:
+                handle.write(payload)
+                handle.flush()
+                if fsync:
+                    os.fsync(handle.fileno())
+            os.replace(tmp_path, path)
+            result = AtomicWriteResult(path=path, attempts=attempt, bytes_written=len(payload.encode("utf-8")))
+            if result.retries_used:
+                _log_marker(
+                    "ATOMIC_WRITE_TEXT_RETRY_SUCCESS",
+                    path=path.as_posix(),
+                    attempts=result.attempts,
+                    retries_used=result.retries_used,
+                )
+            else:
+                _log_marker("ATOMIC_WRITE_TEXT_SUCCESS", path=path.as_posix(), attempts=result.attempts)
+            return result
+        except PermissionError as exc:
+            last_error = exc
+            _log_marker(
+                "ATOMIC_WRITE_TEXT_RETRY",
+                path=path.as_posix(),
+                attempt=attempt,
+                error_type=type(exc).__name__,
+            )
+            if attempt < retries:
+                time.sleep((backoff_ms / 1000.0) * attempt)
+            else:
+                break
+        except Exception as exc:
+            last_error = exc
+            _log_marker(
+                "ATOMIC_WRITE_TEXT_ERROR",
+                path=path.as_posix(),
+                attempt=attempt,
+                error_type=type(exc).__name__,
+            )
+            break
+        finally:
+            try:
+                if tmp_path.exists():
+                    tmp_path.unlink()
+            except Exception:
+                pass
+
+    error = last_error or RuntimeError("unknown failure")
+    failure = AtomicWriteFailure(
+        path=path,
+        attempts=retries,
+        error_type=type(error).__name__,
+        error_message=str(error),
+        retryable=isinstance(error, PermissionError),
+    )
+    _log_marker(
+        "ATOMIC_WRITE_TEXT_FAILED",
+        path=path.as_posix(),
+        attempts=failure.attempts,
+        error_type=failure.error_type,
+    )
+    raise AtomicWriteError(failure)
