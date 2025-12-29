@@ -7,7 +7,10 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from tools.doctor_report import build_report, write_report
+from tools.no_lookahead_audit import AuditConfig, run_audit
 from tools.pr28_training_loop import PR28Config, RUNS_ROOT, run_pr28_flow
+from tools.promotion_gate_v2 import GateConfig, evaluate_promotion_gate
+from tools.walk_forward_eval import WalkForwardConfig, run_walk_forward
 from tools.write_xp_snapshot import write_xp_snapshot
 from tools.xp_model import compute_xp_snapshot
 
@@ -76,7 +79,7 @@ def _contains_absolute_path(text: str) -> bool:
 
 def _assert_repo_relative(snapshot: dict[str, Any]) -> list[str]:
     errors: list[str] = []
-    evidence_paths = []
+    evidence_paths: list[str] = []
     for item in snapshot.get("xp_breakdown", []):
         if isinstance(item, dict):
             paths = item.get("evidence_paths_rel")
@@ -91,14 +94,30 @@ def _assert_repo_relative(snapshot: dict[str, Any]) -> list[str]:
     return errors
 
 
-def _assert_fail_closed() -> list[str]:
+def _assert_walk_forward_required() -> list[str]:
     errors: list[str] = []
-    missing_root = RUNS_ROOT / "_pr31_gate_missing"
-    (missing_root / "_latest").mkdir(parents=True, exist_ok=True)
-    write_xp_snapshot(runs_root=missing_root, artifacts_output=None)
-    snapshot = _safe_read_json(missing_root / "progress_xp" / "xp_snapshot_latest.json")
-    if snapshot.get("status") != "INSUFFICIENT_DATA":
-        errors.append("fail_closed_missing_artifacts_not_marked")
+    config = GateConfig(require_walk_forward=True, walk_forward_min_windows=2, walk_forward_min_pass_rate=0.5)
+    candidate = {
+        "candidate_id": "wf_candidate",
+        "score": 1.2,
+        "max_drawdown_pct": 1.0,
+        "turnover": 2,
+        "reject_rate": 0.0,
+    }
+    baselines = [{"candidate_id": "baseline", "score": 0.1, "max_drawdown_pct": 1.0}]
+    decision = evaluate_promotion_gate(candidate, baselines, "pr32_gate", config, walk_forward=None)
+    if decision.get("decision") != "REJECT":
+        errors.append("promotion_gate_not_fail_closed")
+    reasons = decision.get("reasons") if isinstance(decision.get("reasons"), list) else []
+    if "walk_forward_missing" not in reasons:
+        errors.append("promotion_gate_missing_reason")
+    return errors
+
+
+def _assert_no_lookahead_pass(audit_payload: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    if audit_payload.get("status") != "PASS":
+        errors.append("no_lookahead_audit_failed")
     return errors
 
 
@@ -106,16 +125,34 @@ def main() -> int:
     ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
     errors: list[str] = []
 
-    runs_root = RUNS_ROOT / "_pr31_gate"
+    runs_root = RUNS_ROOT / "_pr32_gate"
     config = PR28Config(
         runs_root=runs_root,
-        seed=31,
+        seed=32,
         max_steps=80,
         candidate_count=2,
         min_steps=40,
         quotes_limit=120,
     )
     artifacts = run_pr28_flow(config)
+
+    walk_forward_config = WalkForwardConfig(
+        runs_root=runs_root,
+        windows=2,
+        train_size=20,
+        eval_size=10,
+        seed=32,
+        max_steps=20,
+        candidate_count=1,
+        min_pass_rate=0.4,
+        min_baseline_beats=1,
+        min_windows_required=2,
+        artifacts_dir=ARTIFACTS_DIR,
+    )
+    wf_paths = run_walk_forward(walk_forward_config)
+
+    audit_payload = run_audit(AuditConfig(rows=20, lookback=3, artifacts_dir=ARTIFACTS_DIR))
+    errors.extend(_assert_no_lookahead_pass(audit_payload))
 
     doctor_report = build_report()
     write_report(doctor_report, ARTIFACTS_DIR / "doctor_report.json")
@@ -135,6 +172,7 @@ def main() -> int:
             "promotion": artifacts.get("promotion_decision"),
             "promotion_history": artifacts.get("promotion_history_latest"),
             "promotion_history_jsonl": artifacts.get("promotion_history"),
+            "walk_forward": wf_paths.get("latest_result"),
             "doctor_report": ARTIFACTS_DIR / "doctor_report.json",
             "repo_hygiene": ARTIFACTS_DIR / "repo_hygiene.json",
         }
@@ -143,6 +181,7 @@ def main() -> int:
         promotion_payload = _safe_read_json(Path(str(artifacts.get("promotion_decision"))))
         promotion_history_payload = _safe_read_json(Path(str(artifacts.get("promotion_history_latest"))))
         history_events = _safe_read_jsonl(Path(str(artifacts.get("promotion_history"))))
+        walk_forward_payload = _safe_read_json(Path(str(wf_paths.get("latest_result"))))
         doctor_payload = _safe_read_json(ARTIFACTS_DIR / "doctor_report.json")
         repo_hygiene_payload = _safe_read_json(ARTIFACTS_DIR / "repo_hygiene.json")
 
@@ -152,7 +191,7 @@ def main() -> int:
             promotion=promotion_payload,
             promotion_history=promotion_history_payload,
             promotion_history_events=history_events,
-            walk_forward=None,
+            walk_forward=walk_forward_payload,
             doctor_report=doctor_payload,
             repo_hygiene=repo_hygiene_payload,
             evidence_paths=evidence_paths,
@@ -161,18 +200,24 @@ def main() -> int:
         )
         errors.extend(_compare_key_fields(snapshot, recomputed))
         errors.extend(_assert_repo_relative(snapshot))
-        errors.extend(_assert_fail_closed())
 
-    if os.environ.get("PR31_FORCE_FAIL") == "1":
-        errors.append("PR31_FORCE_FAIL")
+    errors.extend(_assert_walk_forward_required())
+
+    if not Path(str(wf_paths.get("walk_forward_result"))).exists():
+        errors.append("walk_forward_result_missing")
+    if not Path(str(wf_paths.get("walk_forward_windows"))).exists():
+        errors.append("walk_forward_windows_missing")
+
+    if os.environ.get("PR32_FORCE_FAIL") == "1":
+        errors.append("PR32_FORCE_FAIL")
 
     if errors:
-        print("verify_pr31_gate FAIL")
+        print("verify_pr32_gate FAIL")
         for reason in errors:
             print(f" - {reason}")
         return 1
 
-    print("verify_pr31_gate PASS")
+    print("verify_pr32_gate PASS")
     return 0
 
 

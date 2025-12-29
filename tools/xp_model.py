@@ -68,6 +68,7 @@ def compute_xp_snapshot(
     promotion: dict[str, Any] | None,
     promotion_history: dict[str, Any] | None,
     promotion_history_events: list[dict[str, Any]] | None,
+    walk_forward: dict[str, Any] | None,
     doctor_report: dict[str, Any] | None,
     repo_hygiene: dict[str, Any] | None,
     evidence_paths: dict[str, Path | None],
@@ -212,6 +213,35 @@ def compute_xp_snapshot(
     else:
         add_insufficient("stability_history_unavailable", -5, [evidence_paths.get("promotion_history")])
 
+    if walk_forward and isinstance(walk_forward, dict):
+        wf_status = str(walk_forward.get("status") or "")
+        wf_pass_rate = walk_forward.get("pass_rate")
+        wf_pass_count = walk_forward.get("pass_count")
+        wf_window_count = walk_forward.get("window_count")
+        if wf_status == "INSUFFICIENT_DATA":
+            add_insufficient("walk_forward_insufficient", -6, [evidence_paths.get("walk_forward")])
+        else:
+            pass_rate_val = float(wf_pass_rate or 0.0)
+            rate_points = _clamp(int(round((pass_rate_val - 0.5) * 40.0)), -20, 20)
+            add_item(
+                key="stability_walk_forward_pass_rate",
+                label="Stability: walk-forward pass rate",
+                value=round(pass_rate_val, 4),
+                points=rate_points,
+                evidence=[evidence_paths.get("walk_forward")],
+                notes="Rewards pass rates above 0.5 across walk-forward windows.",
+            )
+            add_item(
+                key="stability_walk_forward_windows",
+                label="Stability: walk-forward window passes",
+                value=f"{wf_pass_count}/{wf_window_count}",
+                points=5 if pass_rate_val >= 0.5 else -5,
+                evidence=[evidence_paths.get("walk_forward")],
+                notes="Summarizes walk-forward window pass counts.",
+            )
+    else:
+        add_insufficient("missing_walk_forward_result", -6, [evidence_paths.get("walk_forward")])
+
     if doctor_report and isinstance(doctor_report, dict):
         kill_switch_present = bool(doctor_report.get("kill_switch_present"))
         kill_points = -15 if kill_switch_present else 5
@@ -269,6 +299,7 @@ def compute_xp_snapshot(
         "promotion_decision": _safe_relpath(evidence_paths.get("promotion")),
         "promotion_history_latest": _safe_relpath(evidence_paths.get("promotion_history")),
         "promotion_history": _safe_relpath(evidence_paths.get("promotion_history_jsonl")),
+        "walk_forward_result": _safe_relpath(evidence_paths.get("walk_forward")),
         "doctor_report": _safe_relpath(evidence_paths.get("doctor_report")),
         "repo_hygiene": _safe_relpath(evidence_paths.get("repo_hygiene")),
     }

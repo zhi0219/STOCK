@@ -18,6 +18,9 @@ class GateConfig:
     window_count: int = 3
     window_passes_required: int = 2
     auto_promote_consecutive: int = 3
+    require_walk_forward: bool = False
+    walk_forward_min_windows: int = 2
+    walk_forward_min_pass_rate: float = 0.5
 
 
 def _now() -> str:
@@ -84,11 +87,43 @@ def _count_consecutive_approvals(decisions: List[Dict[str, object]]) -> int:
     return count
 
 
+def _evaluate_walk_forward(
+    walk_forward: Dict[str, object] | None,
+    config: GateConfig,
+) -> tuple[bool, List[str], Dict[str, object]]:
+    reasons: List[str] = []
+    summary = {
+        "status": None,
+        "window_count": None,
+        "pass_rate": None,
+    }
+    if not walk_forward or not isinstance(walk_forward, dict):
+        reasons.append("walk_forward_missing")
+        return False, reasons, summary
+
+    status = walk_forward.get("status")
+    window_count = int(walk_forward.get("window_count") or 0)
+    pass_rate = float(walk_forward.get("pass_rate") or 0.0)
+
+    summary.update({"status": status, "window_count": window_count, "pass_rate": pass_rate})
+
+    if str(status) == "INSUFFICIENT_DATA":
+        reasons.append("walk_forward_insufficient")
+    if window_count < config.walk_forward_min_windows:
+        reasons.append("walk_forward_insufficient")
+    if pass_rate < config.walk_forward_min_pass_rate:
+        reasons.append("walk_forward_failed")
+    if str(status) == "FAIL":
+        reasons.append("walk_forward_failed")
+    return not reasons, reasons, summary
+
+
 def evaluate_promotion_gate(
     candidate: Dict[str, object] | None,
     baselines: List[Dict[str, object]],
     run_id: str,
     config: GateConfig | None = None,
+    walk_forward: Dict[str, object] | None = None,
 ) -> Dict[str, object]:
     config = config or GateConfig()
     ts = _now()
@@ -122,7 +157,18 @@ def evaluate_promotion_gate(
 
     decisions = _recent_decisions(candidate_id, config.window_count - 1)
     window_passes = sum(1 for entry in decisions if entry.get("decision") == "APPROVE")
-    current_pass = bool(safety_pass and beat_baselines)
+    walk_forward_pass = True
+    walk_forward_reasons: List[str] = []
+    walk_forward_summary: Dict[str, object] = {}
+    if config.require_walk_forward:
+        walk_forward_pass, walk_forward_reasons, walk_forward_summary = _evaluate_walk_forward(
+            walk_forward, config
+        )
+        if not walk_forward_pass:
+            reasons.extend(walk_forward_reasons)
+            required_steps.append("run_walk_forward_eval")
+
+    current_pass = bool(safety_pass and beat_baselines and walk_forward_pass)
     total_passes = window_passes + (1 if current_pass else 0)
     if total_passes < config.window_passes_required:
         reasons.append("insufficient_window_wins")
@@ -160,6 +206,9 @@ def evaluate_promotion_gate(
         "auto_promote_eligible": auto_eligible,
         "auto_promote_required_consecutive": config.auto_promote_consecutive,
         "safety_failures": safety_failures,
+        "walk_forward_required": config.require_walk_forward,
+        "walk_forward": walk_forward_summary,
+        "walk_forward_reasons": walk_forward_reasons,
     }
 
 
