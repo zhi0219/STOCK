@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "keep_days_train_runs": 14,
+  "keep_runs_max": 500,
+  "keep_days_replay": 14,
+  "keep_replay_max_bytes_per_run": 2097152,
+  "keep_diagnostics_days": 14,
+  "keep_events_days": 30,
+  "prune_mode": "SAFE",
+  "recent_runs_buffer": 20,
+  "recent_index_max_runs": 100
+}

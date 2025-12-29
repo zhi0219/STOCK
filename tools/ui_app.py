@@ -139,6 +139,27 @@ ACTION_CENTER_DEFAULTS = {
         "effect_summary": "Runs scripts/enable_githooks.* if available.",
         "risk_level": "SAFE",
     },
+    "RUN_RETENTION_REPORT": {
+        "title": "Run retention report",
+        "confirmation_token": "REPORT",
+        "safety_notes": "SIM-only. Generates retention report for storage health evidence.",
+        "effect_summary": "Runs python -m tools.retention_engine report.",
+        "risk_level": "SAFE",
+    },
+    "PRUNE_OLD_RUNS_SAFE": {
+        "title": "Prune old runs (safe)",
+        "confirmation_token": "PRUNE",
+        "safety_notes": "SIM-only. Conservative retention prune with safety checks.",
+        "effect_summary": "Runs python -m tools.retention_engine prune --mode safe.",
+        "risk_level": "SAFE",
+    },
+    "REBUILD_RECENT_INDEX": {
+        "title": "Rebuild recent runs index",
+        "confirmation_token": "INDEX",
+        "safety_notes": "SIM-only. Rebuilds Logs/train_runs/recent_runs_index.json.",
+        "effect_summary": "Runs python -m tools.recent_runs_index.",
+        "risk_level": "SAFE",
+    },
 }
 
 if str(ROOT) not in sys.path:
@@ -3727,14 +3748,17 @@ class App(tk.Tk):
                 )
 
     def _refresh_replay_panel(self) -> None:
+        start = time.perf_counter()
         payload = load_replay_index_latest()
+        elapsed = time.perf_counter() - start
+        slow_note = f" | load_slow={elapsed:.2f}s" if elapsed > 0.5 else ""
         self._replay_index_payload = payload
         if payload.get("status") == "missing":
             reason = payload.get("missing_reason")
             searched = payload.get("searched_paths", [])
             searched_text = ", ".join(str(item) for item in searched) if searched else "-"
             self.replay_status_var.set(f"Replay: missing ({reason}) | looked={searched_text}")
-            self.replay_detail_var.set("Latest replay: Missing/Not available")
+            self.replay_detail_var.set(f"Latest replay: Missing/Not available{slow_note}")
             self.replay_latest_path_var.set("decision_cards_latest.jsonl: -")
             self._replay_cards = []
             self._apply_replay_filters()
@@ -3746,7 +3770,7 @@ class App(tk.Tk):
             self.replay_status_var.set(
                 f"Replay: Unsupported schema_version | source={source_path}"
             )
-            self.replay_detail_var.set("Latest replay: Unsupported schema_version")
+            self.replay_detail_var.set(f"Latest replay: Unsupported schema_version{slow_note}")
             self._replay_cards = []
             self._apply_replay_filters()
             return
@@ -3755,7 +3779,7 @@ class App(tk.Tk):
         num_cards = counts.get("num_cards", 0)
         created = payload.get("created_ts_utc") or payload.get("ts_utc") or "-"
         self.replay_status_var.set(f"Replay: loaded | source={source_path}")
-        self.replay_detail_var.set(f"Latest replay: {created} | cards={num_cards}")
+        self.replay_detail_var.set(f"Latest replay: {created} | cards={num_cards}{slow_note}")
 
         pointers = payload.get("pointers", {}) if isinstance(payload.get("pointers"), dict) else {}
         decision_rel = str(pointers.get("decision_cards") or "")

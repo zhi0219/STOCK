@@ -13,6 +13,7 @@ RUNS_ROOT = LOGS_DIR / "train_runs"
 PROGRESS_JUDGE_DIR = RUNS_ROOT / "progress_judge"
 XP_SNAPSHOT_DIR = RUNS_ROOT / "progress_xp"
 XP_SNAPSHOT_LATEST = XP_SNAPSHOT_DIR / "xp_snapshot_latest.json"
+RECENT_RUNS_INDEX_PATH = RUNS_ROOT / "recent_runs_index.json"
 
 
 def _safe_read_json(path: Path) -> dict[str, Any]:
@@ -226,7 +227,34 @@ def load_xp_snapshot_latest(path: Path = XP_SNAPSHOT_LATEST) -> dict[str, Any]:
 
 
 def load_replay_index_latest() -> dict[str, Any]:
-    candidates = [path for path in RUNS_ROOT.glob("**/replay/replay_index.json") if path.is_file()]
+    recent_index = load_recent_runs_index()
+    if recent_index.get("status") != "missing":
+        runs = recent_index.get("runs", [])
+        if isinstance(runs, list):
+            for entry in runs:
+                if not isinstance(entry, dict):
+                    continue
+                replay_rel = str(entry.get("replay_index") or "")
+                if not replay_rel:
+                    continue
+                replay_path = ROOT / replay_rel
+                if not replay_path.exists():
+                    continue
+                payload = _safe_read_json(replay_path)
+                if payload:
+                    payload.setdefault(
+                        "source",
+                        {
+                            "mode": "recent_runs_index",
+                            "path": to_repo_relative(replay_path),
+                            "index_path": to_repo_relative(RECENT_RUNS_INDEX_PATH),
+                        },
+                    )
+                    if payload.get("schema_version") != REPLAY_SCHEMA_VERSION:
+                        payload["missing_reason"] = "replay_index_schema_mismatch"
+                    return payload
+
+    candidates = _bounded_replay_scan(limit=60)
     latest = _select_latest_by_mtime(candidates)
     if latest is None:
         return {
@@ -235,7 +263,7 @@ def load_replay_index_latest() -> dict[str, Any]:
             "missing_artifacts": ["replay_index.json"],
             "searched_paths": [to_repo_relative(path) for path in candidates],
             "suggested_next_actions": ["Run PR33 SIM training to generate replay artifacts."],
-            "source": {"mode": "missing", "path": "Logs/train_runs/**/replay/replay_index.json"},
+            "source": {"mode": "missing", "path": "Logs/train_runs/*/replay/replay_index.json"},
         }
     payload = _safe_read_json(latest)
     if not payload:
@@ -247,9 +275,53 @@ def load_replay_index_latest() -> dict[str, Any]:
             "suggested_next_actions": ["Re-run PR33 SIM training to regenerate replay artifacts."],
             "source": {"mode": "missing", "path": to_repo_relative(latest)},
         }
-    payload.setdefault("source", {"mode": "latest_by_mtime", "path": to_repo_relative(latest)})
+    payload.setdefault("source", {"mode": "bounded_scan", "path": to_repo_relative(latest)})
     if payload.get("schema_version") != REPLAY_SCHEMA_VERSION:
         payload["missing_reason"] = "replay_index_schema_mismatch"
+    return payload
+
+
+def _bounded_replay_scan(limit: int = 60) -> list[Path]:
+    if not RUNS_ROOT.exists():
+        return []
+    run_dirs = [path for path in RUNS_ROOT.iterdir() if path.is_dir() and not path.name.startswith("_")]
+
+    def _run_mtime(path: Path) -> float:
+        marker = path / "run_complete.json"
+        if marker.exists():
+            try:
+                return marker.stat().st_mtime
+            except OSError:
+                return 0.0
+        try:
+            return path.stat().st_mtime
+        except OSError:
+            return 0.0
+
+    run_dirs.sort(key=_run_mtime, reverse=True)
+    candidates: list[Path] = []
+    for run_dir in run_dirs[:limit]:
+        replay_index = run_dir / "replay" / "replay_index.json"
+        if replay_index.exists():
+            candidates.append(replay_index)
+    return candidates
+
+
+def load_recent_runs_index(path: Path = RECENT_RUNS_INDEX_PATH) -> dict[str, Any]:
+    payload = _safe_read_json(path)
+    if not payload:
+        return {
+            "status": "missing",
+            "missing_reason": "recent_runs_index_missing",
+            "missing_artifacts": [path.name],
+            "searched_paths": [to_repo_relative(path)],
+            "suggested_next_actions": ["Run python -m tools.recent_runs_index to rebuild recent runs index."],
+            "source": {"mode": "missing", "path": to_repo_relative(path)},
+        }
+    missing = _require_fields(payload, ["schema_version", "created_ts_utc", "runs"])
+    if missing:
+        payload["missing_reason"] = f"recent_runs_index_missing_fields:{','.join(missing)}"
+    payload.setdefault("source", {"mode": "index", "path": to_repo_relative(path)})
     return payload
 
 

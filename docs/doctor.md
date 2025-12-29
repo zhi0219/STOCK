@@ -15,6 +15,7 @@ Doctor is advisory-only. It never places trades, talks to brokers, or modifies f
 - **Repo hygiene summary** (tracked/untracked/ignored counts via `tools.repo_hygiene`).
 - **Absolute path leaks** in selected artifacts (Windows-style `C:\...` patterns).
 - **Import/entrypoint sanity** (reuse `artifacts/import_contract_result.json` if present, otherwise lightweight import).
+- **Storage health** (retention report presence, safety checks, and candidate backlog).
 
 Doctor writes a stable schema to `artifacts/doctor_report.json`.
 
