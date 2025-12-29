@@ -9,6 +9,7 @@ The CI entrypoint is:
 ```
 
 This script discovers the canonical gate runner, executes it, and emits auditable artifacts under `artifacts/`.
+For PR28, the canonical runner is `tools/verify_pr28_gate.py`.
 
 ## Job Summary
 
@@ -33,6 +34,8 @@ If present, it also copies:
 - `run_complete.json`
 - any `*_latest.json` pointers
 
+PR28 emits additional training-loop artifacts under `Logs/train_runs/` and updates the `*_latest.json` pointers so they are always uploaded.
+
 Step summary excerpts are written to `artifacts/ci_job_summary.md` and mirrored into the GitHub Actions **Summary** tab via `GITHUB_STEP_SUMMARY`.
 
 ## Manual demo inputs (workflow_dispatch)
@@ -50,3 +53,17 @@ To trigger a controlled failure for evidence-pack validation, run the workflow m
 2. Select **Run workflow** and set `force_fail` to `true`.
 
 This sets `CI_FORCE_FAIL=1` only for that manual run, causing the gates to fail after execution while still producing and uploading the evidence pack.
+
+## PR28 training loop gate (local)
+
+Run the PR28 gate locally using module mode:
+
+```
+python -m tools.verify_pr28_gate
+```
+
+To confirm fail-closed behavior while still emitting artifacts:
+
+```
+PR28_FORCE_FAIL=1 ./scripts/ci_gates.sh
+```

@@ -156,6 +156,51 @@ def load_engine_status(
     }
 
 
+def load_pr28_latest(
+    tournament_path: Path,
+    judge_path: Path,
+    promotion_path: Path,
+    history_path: Path,
+) -> dict[str, Any]:
+    tournament_candidates = RUNS_ROOT.glob("**/tournament_result.json")
+    judge_candidates = RUNS_ROOT.glob("**/judge_result.json")
+    promotion_candidates = RUNS_ROOT.glob("**/promotion_decision.json")
+
+    def _load_pr28(path: Path, missing_reason: str, candidates: Iterable[Path]) -> dict[str, Any]:
+        payload = _load_latest_with_fallback(
+            path,
+            candidates,
+            missing_reason,
+            ["schema_version", "ts_utc", "run_id", "git_commit"],
+            ["Run PR28 SIM training to generate artifacts."],
+        )
+        payload.setdefault("status", "ok")
+        return payload
+
+    history_payload = _safe_read_json(history_path)
+    if not history_payload:
+        history_payload = {
+            "status": "missing",
+            "missing_reason": "promotion_history_latest_missing",
+            "missing_artifacts": [history_path.name],
+            "searched_paths": [str(history_path)],
+            "suggested_next_actions": ["Run PR28 SIM training to generate promotion history."],
+            "source": {"mode": "missing", "path": str(history_path)},
+        }
+    else:
+        missing = _require_fields(history_payload, ["schema_version", "ts_utc", "run_id", "git_commit"])
+        if missing:
+            history_payload["missing_reason"] = f"promotion_history_missing_fields:{','.join(missing)}"
+        history_payload.setdefault("source", {"mode": "latest_pointer", "path": str(history_path)})
+
+    return {
+        "tournament": _load_pr28(tournament_path, "tournament_result_latest_missing", tournament_candidates),
+        "judge": _load_pr28(judge_path, "judge_result_latest_missing", judge_candidates),
+        "promotion": _load_pr28(promotion_path, "promotion_decision_latest_missing", promotion_candidates),
+        "history": history_payload,
+    }
+
+
 def load_policy_history(registry_path: Path, events_path: Path | None = None) -> list[dict[str, Any]]:
     registry = _safe_read_json(registry_path)
     history = registry.get("history", []) if isinstance(registry.get("history"), list) else []

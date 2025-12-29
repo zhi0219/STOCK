@@ -51,6 +51,10 @@ LEGACY_PROGRESS_JUDGE_LATEST_PATH = ROOT / "Logs" / "train_runs" / "progress_jud
 LATEST_POLICY_HISTORY_PATH = LATEST_DIR / "policy_history_latest.json"
 LATEST_PROMOTION_DECISION_PATH = LATEST_DIR / "promotion_decision_latest.json"
 LATEST_TOURNAMENT_PATH = LATEST_DIR / "tournament_latest.json"
+PR28_TOURNAMENT_RESULT_LATEST_PATH = LATEST_DIR / "tournament_result_latest.json"
+PR28_JUDGE_RESULT_LATEST_PATH = LATEST_DIR / "judge_result_latest.json"
+PR28_PROMOTION_DECISION_LATEST_PATH = LATEST_DIR / "promotion_decision_latest.json"
+PR28_PROMOTION_HISTORY_LATEST_PATH = LATEST_DIR / "promotion_history_latest.json"
 UI_SMOKE_LATEST_PATH = ROOT / "Logs" / "ui_smoke_latest.json"
 POLICY_REGISTRY_PATH = ROOT / "Logs" / "policy_registry.json"
 BASELINE_GUIDE_SCRIPT = ROOT / "tools" / "baseline_fix_guide.py"
@@ -91,6 +95,7 @@ from tools.ui_parsers import (
     load_engine_status,
     load_policy_history,
     load_policy_history_latest,
+    load_pr28_latest,
     load_progress_judge_latest,
 )
 from tools.ui_scroll import VerticalScrolledFrame
@@ -482,6 +487,10 @@ class App(tk.Tk):
         self.engine_status_tournament_var = tk.StringVar(value="Last tournament updated: -")
         self.engine_status_promotion_var = tk.StringVar(value="Last promotion decision: -")
         self.engine_status_judge_var = tk.StringVar(value="Last judge updated: -")
+        self.pr28_tournament_status_var = tk.StringVar(value="PR28 tournament: not loaded")
+        self.pr28_judge_status_var = tk.StringVar(value="PR28 judge: not loaded")
+        self.pr28_promotion_status_var = tk.StringVar(value="PR28 promotion: not loaded")
+        self.pr28_evidence_var = tk.StringVar(value="PR28 evidence: -")
         self.skill_tree_status_var = tk.StringVar(value="Skill Tree: not loaded")
         self.skill_tree_detail_var = tk.StringVar(value="Pool summary: -")
         self.skill_tree_candidates_var = tk.StringVar(value="Candidates: -")
@@ -2894,6 +2903,13 @@ class App(tk.Tk):
         tk.Label(engine_frame, textvariable=self.engine_status_promotion_var, anchor="w").pack(anchor="w")
         tk.Label(engine_frame, textvariable=self.engine_status_judge_var, anchor="w").pack(anchor="w")
 
+        pr28_frame = tk.LabelFrame(self.progress_tab, text="PR28 Training Loop (SIM-only)", padx=6, pady=6)
+        pr28_frame.pack(fill=tk.X, padx=6, pady=4)
+        tk.Label(pr28_frame, textvariable=self.pr28_tournament_status_var, anchor="w").pack(anchor="w")
+        tk.Label(pr28_frame, textvariable=self.pr28_judge_status_var, anchor="w").pack(anchor="w")
+        tk.Label(pr28_frame, textvariable=self.pr28_promotion_status_var, anchor="w").pack(anchor="w")
+        tk.Label(pr28_frame, textvariable=self.pr28_evidence_var, anchor="w", fg="#6b7280").pack(anchor="w")
+
         status_label = tk.Label(self.progress_tab, textvariable=self.progress_status_var, anchor="w")
         status_label.pack(fill=tk.X, padx=6)
 
@@ -3138,6 +3154,12 @@ class App(tk.Tk):
             LATEST_PROMOTION_DECISION_PATH,
             judge_path,
         )
+        pr28_status = load_pr28_latest(
+            PR28_TOURNAMENT_RESULT_LATEST_PATH,
+            PR28_JUDGE_RESULT_LATEST_PATH,
+            PR28_PROMOTION_DECISION_LATEST_PATH,
+            PR28_PROMOTION_HISTORY_LATEST_PATH,
+        )
 
         def _format_status(label: str, payload: dict[str, object]) -> str:
             created = payload.get("created_utc") or payload.get("generated_ts") or "-"
@@ -3168,6 +3190,55 @@ class App(tk.Tk):
         )
         self.engine_status_judge_var.set(
             _format_status("Last judge updated", status.get("judge", {}))
+        )
+
+        def _format_pr28(label: str, payload: dict[str, object]) -> str:
+            ts = payload.get("ts_utc") or payload.get("created_utc") or "-"
+            reason = payload.get("missing_reason")
+            source = payload.get("source") if isinstance(payload.get("source"), dict) else {}
+            source_mode = source.get("mode", "unknown")
+            source_path = source.get("path", "")
+            if payload.get("status") == "missing":
+                missing_artifacts = payload.get("missing_artifacts", [])
+                searched = payload.get("searched_paths", [])
+                missing_text = ", ".join(str(item) for item in missing_artifacts) if missing_artifacts else "-"
+                searched_text = ", ".join(str(item) for item in searched) if searched else "-"
+                next_actions = payload.get("suggested_next_actions", [])
+                next_text = ", ".join(str(item) for item in next_actions) if next_actions else "-"
+                return (
+                    f"{label}: missing ({reason}) | source={source_mode} {source_path} | "
+                    f"missing={missing_text} | looked={searched_text} | next={next_text}"
+                )
+            if reason:
+                return f"{label}: {ts} (missing fields: {reason}) | source={source_mode} {source_path}"
+            return f"{label}: {ts} | source={source_mode} {source_path}"
+
+        self.pr28_tournament_status_var.set(
+            _format_pr28("PR28 tournament", pr28_status.get("tournament", {}))
+        )
+        judge_payload = pr28_status.get("judge", {})
+        judge_status = str(judge_payload.get("status") or "unknown")
+        scores = judge_payload.get("scores", {}) if isinstance(judge_payload.get("scores"), dict) else {}
+        baseline_scores = scores.get("baselines", {}) if isinstance(scores.get("baselines"), dict) else {}
+        score_bits = ", ".join(
+            f"{key}={baseline_scores.get(key)}" for key in sorted(baseline_scores.keys())
+        )
+        self.pr28_judge_status_var.set(
+            f"PR28 judge: {judge_status} | {score_bits or 'scores unavailable'}"
+        )
+        promotion_payload = pr28_status.get("promotion", {})
+        decision = promotion_payload.get("decision") or "-"
+        reasons = promotion_payload.get("reasons", []) if isinstance(promotion_payload.get("reasons"), list) else []
+        reason_text = ", ".join(str(item) for item in reasons) if reasons else "-"
+        self.pr28_promotion_status_var.set(
+            f"PR28 promotion: {decision} | reasons={reason_text}"
+        )
+        history_payload = pr28_status.get("history", {})
+        history_path = history_payload.get("history_path") or history_payload.get("source", {}).get("path")
+        self.pr28_evidence_var.set(
+            "PR28 evidence: "
+            f"{history_path or 'no history path'} | latest paths: "
+            f"{PR28_TOURNAMENT_RESULT_LATEST_PATH}, {PR28_JUDGE_RESULT_LATEST_PATH}, {PR28_PROMOTION_DECISION_LATEST_PATH}"
         )
 
     def _refresh_policy_history(self) -> None:
