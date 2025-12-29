@@ -51,3 +51,7 @@ artifacts/
 Data/*.tmp
 Data/*.bak
 Logs/*.tmp
+
+# runtime artifacts
+Logs/policy_registry.json
+
