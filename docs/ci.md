@@ -9,7 +9,7 @@ The CI entrypoint is:
 ```
 
 This script discovers the canonical gate runner, executes it, and emits auditable artifacts under `artifacts/`.
-For PR30, the canonical runner is `tools/verify_pr30_gate.py`.
+For PR31, the canonical runner is `tools/verify_pr31_gate.py`.
 
 ## Job Summary
 
@@ -29,6 +29,7 @@ CI always writes and uploads the following files under `artifacts/`:
 - `artifacts/action_center_apply_result.json` (Action Center apply result)
 - `artifacts/action_center_apply_plan.json` (Action Center apply plan)
 - `artifacts/doctor_report.json` (Doctor report)
+- `artifacts/xp_snapshot.json` (Truthful XP snapshot)
 - `artifacts/ci_job_summary.md` (human-readable CI summary)
 - `artifacts/repo_hygiene.json` (repo hygiene scan output)
 
@@ -56,18 +57,18 @@ To trigger a controlled failure for evidence-pack validation, run the workflow m
 1. Open the **CI Gates** workflow in GitHub Actions.
 2. Select **Run workflow** and set `force_fail` to `true`.
 
-This sets `CI_FORCE_FAIL=1` only for that manual run, causing the gates to fail after execution while still producing and uploading the evidence pack. The PR30 gate also supports `PR30_FORCE_FAIL=1` for local evidence-pack validation.
+This sets `CI_FORCE_FAIL=1` only for that manual run, causing the gates to fail after execution while still producing and uploading the evidence pack. The PR31 gate also supports `PR31_FORCE_FAIL=1` for local evidence-pack validation.
 
-## PR30 gate (local)
+## PR31 gate (local)
 
-Run the PR29 gate locally using module mode:
+Run the PR31 gate locally using module mode:
 
 ```
-python -m tools.verify_pr30_gate
+python -m tools.verify_pr31_gate
 ```
 
 To confirm fail-closed behavior while still emitting artifacts:
 
 ```
-PR30_FORCE_FAIL=1 ./scripts/ci_gates.sh
+PR31_FORCE_FAIL=1 ./scripts/ci_gates.sh
 ```
