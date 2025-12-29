@@ -22,6 +22,34 @@ Related CI evidence artifacts:
 - Any action requires a typed confirmation token.
 - Actions are blocked in CI environments.
 - Fail-closed: action execution fails on any error and logs an audit event.
+- Action Center apply requires `APPLY:<action_id>` and supports `--dry-run` for evidence-only runs.
+
+## Apply (local CLI)
+
+List safe actions:
+
+```
+.\.venv\Scripts\python.exe .\tools\action_center_apply.py
+```
+
+Dry-run an action (no mutations, evidence only):
+
+```
+.\.venv\Scripts\python.exe .\tools\action_center_apply.py --action-id ACTION_REBUILD_PROGRESS_INDEX --confirm APPLY:ACTION_REBUILD_PROGRESS_INDEX --dry-run
+```
+
+Apply an action with confirmation (SIM-only, local):
+
+```
+.\.venv\Scripts\python.exe .\tools\action_center_apply.py --action-id ACTION_REBUILD_PROGRESS_INDEX --confirm APPLY:ACTION_REBUILD_PROGRESS_INDEX
+```
+
+Evidence and events:
+
+- Evidence pack defaults to `artifacts/action_center_apply/` with:
+  - `action_center_apply_summary.json`
+  - `action_center_apply.log`
+- Apply attempts append to `Logs/events_YYYY-MM-DD.jsonl`.
 
 ## CI forced-fail demo
 

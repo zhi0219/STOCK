@@ -16,6 +16,7 @@ import yaml
 if str(Path(__file__).resolve().parent.parent) not in sys.path:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from tools.fs_atomic import AtomicWriteError, atomic_write_json
 from tools.sim_autopilot import _kill_switch_enabled, _kill_switch_path
 
 
@@ -75,11 +76,24 @@ def _utf8_env() -> dict:
     return env
 
 
-def _atomic_write_json(path: Path, payload: Dict[str, object]) -> None:
+def _event_path(now: datetime) -> Path:
+    return ROOT / "Logs" / f"events_{now:%Y-%m-%d}.jsonl"
+
+
+def _append_event(event_type: str, message: str, severity: str = "INFO", **extra: object) -> None:
+    now = _now()
+    payload: Dict[str, object] = {
+        "schema_version": 1,
+        "ts_utc": now.isoformat(),
+        "event_type": event_type,
+        "severity": severity,
+        "message": message,
+    }
+    payload.update({key: value for key, value in extra.items() if value is not None})
+    path = _event_path(now)
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = path.with_suffix(".tmp")
-    tmp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    tmp_path.replace(path)
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(payload, ensure_ascii=False) + "\n")
 
 
 def _load_kill_switch_cfg() -> dict:
@@ -151,7 +165,30 @@ def _sleep_with_heartbeat(
 
 
 def _write_state(state: Dict[str, object]) -> None:
-    _atomic_write_json(STATE_PATH, state)
+    try:
+        result = atomic_write_json(STATE_PATH, state)
+        if result.retries_used:
+            _append_event(
+                "TRAIN_SERVICE_STATE_WRITE_RETRY",
+                "State write succeeded after retry.",
+                attempts=result.attempts,
+                retries_used=result.retries_used,
+                state_path=str(STATE_PATH),
+            )
+    except AtomicWriteError as exc:
+        failure = exc.failure
+        _append_event(
+            "TRAIN_SERVICE_STATE_WRITE_FAILED",
+            "State write failed after bounded retries.",
+            severity="ERROR",
+            attempts=failure.attempts,
+            retryable=failure.retryable,
+            error_type=failure.error_type,
+            error_message=failure.error_message,
+            state_path=str(STATE_PATH),
+            next_steps="Check file permissions/locks, then restart the training service.",
+        )
+        raise
 
 
 def _enforce_runs_root(path: Path) -> Path:
