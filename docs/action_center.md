@@ -2,7 +2,7 @@
 
 ## What it does
 
-The Action Center provides a deterministic, auditable loop to diagnose missing or stale artifacts, propose safe recovery actions, and (optionally) execute those actions with typed confirmation. It is **SIM-only** and **READ_ONLY** with respect to external accounts; it never places trades, connects to brokers, or modifies funds.
+The Action Center provides a deterministic, auditable loop to diagnose missing or stale artifacts, propose safe recovery actions, and (optionally) execute those actions with explicit UI confirmation. It is **SIM-only** and **READ_ONLY** with respect to external accounts; it never places trades, connects to brokers, or modifies funds.
 
 ## Artifacts
 
@@ -15,11 +15,12 @@ Related CI evidence artifacts:
 - `artifacts/proof_summary.json`
 - `artifacts/gates.log`
 - `artifacts/action_center_apply_result.json`
+- `artifacts/action_center_apply_plan.json`
 
 ## Safety model
 
 - Read-only by default (report generation only).
-- Any action requires a typed confirmation token.
+- Any action requires explicit confirmation (UI checkbox + press-and-hold for CAUTION/DANGEROUS).
 - Actions are blocked in CI environments.
 - Fail-closed: action execution fails on any error and logs an audit event.
 - Action Center apply requires the per-action confirmation token (e.g., `REBUILD`) and supports `--dry-run` for evidence-only runs.
@@ -60,7 +61,10 @@ When `CI_FORCE_FAIL=1` is used for the workflow dispatch demo, the Action Center
 
 The Tk UI exposes an **Action Center** tab with:
 
-- Status strip (`ACTION_CENTER_STATUS`, `DATA_HEALTH`, `LAST_REPORT_TS_UTC`, `LAST_APPLY_TS_UTC`)
-- Action list with selection and recommended commands
-- Apply workflow with confirmation token + SIM-only acknowledgment
-- Doctor mini-panel for repo/venv/path checks
+- Status strip (`ACTION_CENTER_STATUS`, `DOCTOR_STATUS`, `LAST_REPORT_TS_UTC`, `LAST_DOCTOR_TS_UTC`, `LAST_APPLY_TS_UTC`)
+- Action list with selection, severity, risk level, and evidence paths
+- Apply workflow with zero typing:
+  - SAFE: single click
+  - CAUTION: checkbox + press-and-hold (≥1.5s)
+  - DANGEROUS: Advanced toggle, 2 checkboxes + press-and-hold (≥3s)
+- Doctor panel for last report details

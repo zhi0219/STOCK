@@ -65,6 +65,7 @@ def _validate_report_schema(report: dict[str, Any]) -> None:
             "confirmation_token",
             "safety_notes",
             "effect_summary",
+            "risk_level",
             "related_evidence_paths",
         ):
             if key not in action:
@@ -85,13 +86,20 @@ def _check_report_if_present() -> None:
 
 def _check_confirmation_gates() -> None:
     action_definitions, confirm_tokens, confirm_token_is_valid = _load_action_center_defs()
-    expected_ids = {
-        "ACTION_CLEAR_KILL_SWITCH",
+    required_ids = {
+        "CLEAR_KILL_SWITCH",
         "ACTION_REBUILD_PROGRESS_INDEX",
         "ACTION_RESTART_SERVICES_SIM_ONLY",
+        "GEN_DOCTOR_REPORT",
+        "REPO_HYGIENE_FIX_SAFE",
+        "CLEAR_STALE_TEMP",
+        "ENSURE_RUNTIME_DIRS",
+        "DIAG_RUNTIME_WRITE",
+        "ABS_PATH_SANITIZE_HINT",
     }
-    if set(action_definitions.keys()) != expected_ids:
-        raise GateError("action definitions missing required action ids")
+    missing = required_ids.difference(action_definitions.keys())
+    if missing:
+        raise GateError(f"action definitions missing required action ids: {sorted(missing)}")
     for action_id, token in confirm_tokens.items():
         if action_id not in action_definitions:
             raise GateError(f"missing action definition for {action_id}")
