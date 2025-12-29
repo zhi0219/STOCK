@@ -7,6 +7,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, List
 
+from tools.paths import to_repo_relative
+
 ROOT = Path(__file__).resolve().parent.parent
 LOGS_DIR = ROOT / "Logs"
 RUNS_ROOT = LOGS_DIR / "train_runs"
@@ -96,15 +98,15 @@ def compute_throughput_diagnosis(
     entries = _progress_runs(progress_index.get("entries"))
 
     evidence: Dict[str, object] = {
-        "state_path": str(state_path),
-        "progress_index_path": str(progress_index_path),
+        "state_path": to_repo_relative(state_path),
+        "progress_index_path": to_repo_relative(progress_index_path),
         "runs_found": len(entries),
     }
 
     reasons: List[str] = []
 
     kill_paths = _kill_switch_paths()
-    triggered = [str(path) for path in kill_paths if path.exists()]
+    triggered = [to_repo_relative(path) for path in kill_paths if path.exists()]
     if triggered:
         reasons.append("kill_switch_present")
         evidence["kill_switch_paths"] = triggered

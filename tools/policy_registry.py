@@ -6,9 +6,10 @@ import time
 from pathlib import Path
 from typing import Dict, Tuple
 
-ROOT = Path(__file__).resolve().parent.parent
-LOGS_DIR = ROOT / "Logs"
-REGISTRY_PATH = LOGS_DIR / "policy_registry.json"
+from tools.paths import policy_registry_runtime_path, policy_registry_seed_path, to_repo_relative
+
+REGISTRY_PATH = policy_registry_runtime_path()
+SEED_PATH = policy_registry_seed_path()
 WHITELIST_KEYS = {
     "max_orders_per_minute",
     "max_notional_per_order",
@@ -43,15 +44,35 @@ def _default_registry() -> Dict[str, object]:
     }
 
 
+def _load_seed_registry() -> Dict[str, object]:
+    if not SEED_PATH.exists():
+        return _default_registry()
+    try:
+        payload = json.loads(SEED_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return _default_registry()
+    return payload if isinstance(payload, dict) and payload else _default_registry()
+
+
+def _normalize_evidence(evidence: str) -> str:
+    if not evidence:
+        return evidence
+    head, sep, tail = evidence.partition("#")
+    path = Path(head)
+    if path.is_absolute() or path.exists():
+        return to_repo_relative(path) + (sep + tail if sep else "")
+    return evidence
+
+
 def load_registry() -> Dict[str, object]:
     if not REGISTRY_PATH.exists():
-        registry = _default_registry()
+        registry = _load_seed_registry()
         _atomic_write(REGISTRY_PATH, registry)
         return registry
     try:
         return json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
     except Exception:
-        registry = _default_registry()
+        registry = _load_seed_registry()
         _atomic_write(REGISTRY_PATH, registry)
         return registry
 
@@ -93,7 +114,7 @@ def upsert_policy(policy_version: str, risk_overrides: Dict[str, object], based_
         "created_at": now,
         "based_on": based_on,
         "source": source,
-        "evidence": evidence,
+        "evidence": _normalize_evidence(evidence),
     }
     registry["policies"] = policies
     _atomic_write(REGISTRY_PATH, registry)
@@ -107,7 +128,7 @@ def record_history(action: str, policy_version: str, evidence: str) -> None:
         {
             "action": action,
             "policy_version": policy_version,
-            "evidence": evidence,
+            "evidence": _normalize_evidence(evidence),
             "ts_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         }
     )
@@ -123,7 +144,7 @@ def promote_policy(policy_version: str, evidence: str) -> Dict[str, object]:
         {
             "action": "PROMOTED",
             "policy_version": policy_version,
-            "evidence": evidence,
+            "evidence": _normalize_evidence(evidence),
             "ts_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         }
     )
@@ -139,7 +160,7 @@ def reject_policy(policy_version: str, evidence: str) -> Dict[str, object]:
         {
             "action": "REJECTED",
             "policy_version": policy_version,
-            "evidence": evidence,
+            "evidence": _normalize_evidence(evidence),
             "ts_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         }
     )
