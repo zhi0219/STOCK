@@ -56,6 +56,8 @@ PR28_TOURNAMENT_RESULT_LATEST_PATH = LATEST_DIR / "tournament_result_latest.json
 PR28_JUDGE_RESULT_LATEST_PATH = LATEST_DIR / "judge_result_latest.json"
 PR28_PROMOTION_DECISION_LATEST_PATH = LATEST_DIR / "promotion_decision_latest.json"
 PR28_PROMOTION_HISTORY_LATEST_PATH = LATEST_DIR / "promotion_history_latest.json"
+XP_SNAPSHOT_DIR = ROOT / "Logs" / "train_runs" / "progress_xp"
+XP_SNAPSHOT_LATEST_PATH = XP_SNAPSHOT_DIR / "xp_snapshot_latest.json"
 UI_SMOKE_LATEST_PATH = ROOT / "Logs" / "ui_smoke_latest.json"
 POLICY_REGISTRY_PATH = policy_registry_runtime_path()
 BASELINE_GUIDE_SCRIPT = ROOT / "tools" / "baseline_fix_guide.py"
@@ -151,6 +153,7 @@ from tools.ui_parsers import (
     load_policy_history_latest,
     load_pr28_latest,
     load_progress_judge_latest,
+    load_xp_snapshot_latest,
 )
 from tools.ui_scroll import VerticalScrolledFrame
 
@@ -516,6 +519,10 @@ class App(tk.Tk):
         self.progress_detail_missing_var = tk.StringVar(value="Missing reason: -")
         self.progress_judge_xp_var = tk.StringVar(value="Truthful XP: No judge data")
         self.progress_judge_level_var = tk.StringVar(value="Level: No judge data")
+        self.progress_xp_status_var = tk.StringVar(value="Truthful XP: INSUFFICIENT_DATA")
+        self.progress_xp_level_var = tk.StringVar(value="Level: -")
+        self.progress_xp_banner_var = tk.StringVar(value="")
+        self.progress_xp_evidence_var = tk.StringVar(value="Evidence paths: -")
         self.progress_truth_status_var = tk.StringVar(value="Truthful Progress: INSUFFICIENT_DATA")
         self.progress_truth_score_do_nothing_var = tk.StringVar(value="Score vs DoNothing: -")
         self.progress_truth_score_buy_hold_var = tk.StringVar(value="Score vs Buy&Hold: -")
@@ -538,6 +545,7 @@ class App(tk.Tk):
         self.progress_growth_service_var = tk.StringVar(value="Service: -")
         self.progress_growth_kill_var = tk.StringVar(value="Kill switch: -")
         self.progress_growth_truth_xp_var = tk.StringVar(value="Truthful XP: -")
+        self._xp_snapshot_cache: dict[str, object] | None = None
         self.engine_status_tournament_var = tk.StringVar(value="Last tournament updated: -")
         self.engine_status_promotion_var = tk.StringVar(value="Last promotion decision: -")
         self.engine_status_judge_var = tk.StringVar(value="Last judge updated: -")
@@ -1452,6 +1460,7 @@ class App(tk.Tk):
         self._refresh_action_center_report()
         self._refresh_training_hud()
         self._refresh_truthful_progress()
+        self._refresh_xp_snapshot()
         self._refresh_policy_history()
         self._maybe_auto_refresh_progress()
         self._refresh_throughput_panel()
@@ -1478,6 +1487,7 @@ class App(tk.Tk):
             LATEST_POLICY_HISTORY_PATH,
             LATEST_PROMOTION_DECISION_PATH,
             LATEST_TOURNAMENT_PATH,
+            XP_SNAPSHOT_LATEST_PATH,
         ]:
             if not path.exists():
                 continue
@@ -1492,6 +1502,7 @@ class App(tk.Tk):
             self._load_progress_index()
         if should_refresh_latest:
             self._refresh_truthful_progress()
+            self._refresh_xp_snapshot()
             self._refresh_engine_status()
             self._refresh_policy_history()
         self._progress_last_index_mtime = index_mtime
@@ -1688,8 +1699,7 @@ class App(tk.Tk):
         seven_day_count = 0
         latest_cash_end = None
         oldest_cash_start = None
-        latest_judge_xp = None
-        previous_judge_xp = None
+        latest_xp_total = None
         for idx, entry in enumerate(self.progress_entries):
             if not isinstance(entry, dict):
                 continue
@@ -1765,25 +1775,6 @@ class App(tk.Tk):
                     last_gates = str(gates)
                 elif isinstance(gates, str):
                     last_gates = gates
-                judge_summary = (
-                    entry.get("judge_summary")
-                    if isinstance(entry.get("judge_summary"), dict)
-                    else {}
-                )
-                if isinstance(judge_summary, dict):
-                    xp = judge_summary.get("xp")
-                    if isinstance(xp, (int, float)):
-                        latest_judge_xp = float(xp)
-            if idx == 1:
-                judge_summary = (
-                    entry.get("judge_summary")
-                    if isinstance(entry.get("judge_summary"), dict)
-                    else {}
-                )
-                if isinstance(judge_summary, dict):
-                    xp = judge_summary.get("xp")
-                    if isinstance(xp, (int, float)):
-                        previous_judge_xp = float(xp)
 
         if not complete_entries:
             if self.progress_entries:
@@ -1836,25 +1827,25 @@ class App(tk.Tk):
         kill_triggered = [str(path) for path in kill_switch_paths if path.exists()]
         kill_status = "TRIPPED" if kill_triggered else "CLEAR"
         self.progress_growth_kill_var.set(f"Kill switch: {kill_status}")
-        judge_age = None
-        if PROGRESS_JUDGE_LATEST_PATH.exists():
+        snapshot = self._xp_snapshot_cache or load_xp_snapshot_latest(XP_SNAPSHOT_LATEST_PATH)
+        if isinstance(snapshot, dict):
+            xp_total = snapshot.get("xp_total")
+            if isinstance(xp_total, (int, float)):
+                latest_xp_total = float(xp_total)
+
+        xp_age = None
+        if XP_SNAPSHOT_LATEST_PATH.exists():
             try:
-                judge_age = max(0.0, time.time() - PROGRESS_JUDGE_LATEST_PATH.stat().st_mtime)
+                xp_age = max(0.0, time.time() - XP_SNAPSHOT_LATEST_PATH.stat().st_mtime)
             except Exception:
-                judge_age = None
-        judge_age_text = _format_age(judge_age) if judge_age is not None else "missing"
-        if latest_judge_xp is not None:
-            if previous_judge_xp is not None:
-                delta = latest_judge_xp - previous_judge_xp
-                self.progress_growth_truth_xp_var.set(
-                    f"Truthful XP: {latest_judge_xp:.1f} (Δ {delta:+.1f}) | judge age {judge_age_text}"
-                )
-            else:
-                self.progress_growth_truth_xp_var.set(
-                    f"Truthful XP: {latest_judge_xp:.1f} | judge age {judge_age_text}"
-                )
+                xp_age = None
+        xp_age_text = _format_age(xp_age) if xp_age is not None else "missing"
+        if latest_xp_total is not None:
+            self.progress_growth_truth_xp_var.set(
+                f"Truthful XP: {latest_xp_total:.1f} | xp age {xp_age_text}"
+            )
         else:
-            self.progress_growth_truth_xp_var.set(f"Truthful XP: missing | judge age {judge_age_text}")
+            self.progress_growth_truth_xp_var.set(f"Truthful XP: missing | xp age {xp_age_text}")
 
     def _load_progress_index(self) -> None:
         path = self.progress_index_path
@@ -1977,6 +1968,7 @@ class App(tk.Tk):
                     self.progress_status_var.set("Progress index refreshed from disk")
                     self._load_progress_index()
                     self._refresh_truthful_progress()
+                    self._refresh_xp_snapshot()
                     self._refresh_engine_status()
                     self._refresh_policy_history()
                     self._refresh_skill_tree_panel()
@@ -1996,6 +1988,7 @@ class App(tk.Tk):
         self._load_progress_index()
         self._refresh_action_center_report()
         self._refresh_truthful_progress()
+        self._refresh_xp_snapshot()
         self._refresh_engine_status()
         self._refresh_policy_history()
         self._refresh_skill_tree_panel()
@@ -2618,18 +2611,18 @@ class App(tk.Tk):
             self.progress_detail_status_var.set(f"Status: {status}")
             self.progress_detail_missing_var.set(f"Missing reason: {missing_reason}")
 
-            judge_summary = entry.get("judge_summary") if isinstance(entry, dict) else None
-            if isinstance(judge_summary, dict) and "xp" in judge_summary and "level" in judge_summary:
-                self.progress_judge_xp_var.set(f"Truthful XP: {judge_summary.get('xp')}")
-                self.progress_judge_level_var.set(f"Level: {judge_summary.get('level')}")
+            xp_snapshot = self._xp_snapshot_cache or load_xp_snapshot_latest(XP_SNAPSHOT_LATEST_PATH)
+            if isinstance(xp_snapshot, dict) and "xp_total" in xp_snapshot and "level" in xp_snapshot:
+                self.progress_judge_xp_var.set(f"Truthful XP: {xp_snapshot.get('xp_total')}")
+                self.progress_judge_level_var.set(f"Level: {xp_snapshot.get('level')}")
             else:
-                self.progress_judge_xp_var.set("Truthful XP: No judge data")
-                self.progress_judge_level_var.set("Level: No judge data")
+                self.progress_judge_xp_var.set("Truthful XP: No snapshot data")
+                self.progress_judge_level_var.set("Level: No snapshot data")
         else:
             self.progress_detail_status_var.set("Status: -")
             self.progress_detail_missing_var.set("Missing reason: -")
-            self.progress_judge_xp_var.set("Truthful XP: No judge data")
-            self.progress_judge_level_var.set("Level: No judge data")
+            self.progress_judge_xp_var.set("Truthful XP: No snapshot data")
+            self.progress_judge_level_var.set("Level: No snapshot data")
         self.progress_summary_preview.configure(state=tk.NORMAL)
         self.progress_summary_preview.delete("1.0", tk.END)
         self.progress_summary_preview.insert(tk.END, summary_text)
@@ -3076,6 +3069,45 @@ class App(tk.Tk):
             wraplength=1000,
             fg="#6b7280",
         ).pack(anchor="w")
+        xp_frame = tk.LabelFrame(self.progress_tab, text="Truthful XP (SIM-only)", padx=6, pady=6)
+        xp_frame.pack(fill=tk.X, padx=6, pady=4)
+        tk.Label(xp_frame, textvariable=self.progress_xp_status_var, font=("Helvetica", 13, "bold")).pack(
+            anchor="w"
+        )
+        tk.Label(xp_frame, textvariable=self.progress_xp_level_var, font=("Helvetica", 12, "bold")).pack(
+            anchor="w"
+        )
+        self.progress_xp_progress = ttk.Progressbar(xp_frame, orient="horizontal", length=320, mode="determinate")
+        self.progress_xp_progress.pack(fill=tk.X, padx=4, pady=2)
+        tk.Label(
+            xp_frame,
+            textvariable=self.progress_xp_banner_var,
+            anchor="w",
+            justify=tk.LEFT,
+            wraplength=1000,
+            fg="#b91c1c",
+        ).pack(anchor="w")
+        xp_table_frame = tk.Frame(xp_frame)
+        xp_table_frame.pack(fill=tk.X, pady=4)
+        xp_columns = ("label", "points", "value", "evidence")
+        self.progress_xp_tree = ttk.Treeview(xp_table_frame, columns=xp_columns, show="headings", height=5)
+        for name, width in [
+            ("label", 220),
+            ("points", 80),
+            ("value", 140),
+            ("evidence", 420),
+        ]:
+            self.progress_xp_tree.heading(name, text=name)
+            self.progress_xp_tree.column(name, width=width, anchor="w")
+        self.progress_xp_tree.pack(fill=tk.X, expand=True)
+        xp_actions = tk.Frame(xp_frame)
+        xp_actions.pack(fill=tk.X, pady=2)
+        tk.Button(xp_actions, text="Open XP Evidence", command=self._open_xp_evidence).pack(
+            side=tk.LEFT, padx=3
+        )
+        tk.Label(xp_actions, textvariable=self.progress_xp_evidence_var, anchor="w", fg="#6b7280").pack(
+            side=tk.LEFT, padx=6, fill=tk.X, expand=True
+        )
         diag_frame = tk.LabelFrame(self.progress_tab, text="Run-rate diagnosis (SIM-only)", padx=6, pady=6)
         diag_frame.pack(fill=tk.X, padx=6, pady=4)
         tk.Label(diag_frame, textvariable=self.progress_diag_status_var, anchor="w", font=("Helvetica", 12, "bold")).pack(
@@ -3275,7 +3307,7 @@ class App(tk.Tk):
         tk.Label(status_frame, textvariable=self.progress_detail_status_var, anchor="w").pack(anchor="w")
         tk.Label(status_frame, textvariable=self.progress_detail_missing_var, anchor="w").pack(anchor="w")
 
-        judge_frame = tk.LabelFrame(detail_frame, text="Truthful XP/Level (judge-only)", padx=4, pady=4)
+        judge_frame = tk.LabelFrame(detail_frame, text="Truthful XP/Level (snapshot)", padx=4, pady=4)
         judge_frame.pack(fill=tk.X, pady=4)
         tk.Label(judge_frame, textvariable=self.progress_judge_xp_var, anchor="w").pack(anchor="w")
         tk.Label(judge_frame, textvariable=self.progress_judge_level_var, anchor="w").pack(anchor="w")
@@ -3324,6 +3356,7 @@ class App(tk.Tk):
         self._refresh_proof_lamps()
         self._load_progress_index()
         self._refresh_truthful_progress()
+        self._refresh_xp_snapshot()
         self._refresh_engine_status()
         self._refresh_policy_history()
         self._refresh_skill_tree_panel()
@@ -3381,6 +3414,87 @@ class App(tk.Tk):
             self.progress_truth_evidence_var.set(f"Evidence runs: {', '.join([str(rid) for rid in evidence_ids])}")
         else:
             self.progress_truth_evidence_var.set("Evidence runs: none")
+
+    def _refresh_xp_snapshot(self) -> None:
+        payload = load_xp_snapshot_latest(XP_SNAPSHOT_LATEST_PATH)
+        self._xp_snapshot_cache = payload if isinstance(payload, dict) else None
+        status = payload.get("status", "INSUFFICIENT_DATA")
+        xp_total = payload.get("xp_total")
+        level = payload.get("level")
+        level_progress = payload.get("level_progress", 0.0)
+        if isinstance(xp_total, (int, float)):
+            xp_text = f"Truthful XP: {int(xp_total)}"
+        else:
+            xp_text = "Truthful XP: -"
+        if isinstance(level, (int, float)):
+            level_text = f"Level: {int(level)}"
+        else:
+            level_text = "Level: -"
+        self.progress_xp_status_var.set(f"{xp_text} | status {status}")
+        self.progress_xp_level_var.set(level_text)
+        try:
+            progress_value = float(level_progress) * 100.0
+        except Exception:
+            progress_value = 0.0
+        self.progress_xp_progress["value"] = max(0.0, min(100.0, progress_value))
+
+        missing_reasons = payload.get("missing_reasons", [])
+        if isinstance(missing_reasons, list) and missing_reasons:
+            banner = f"INSUFFICIENT_DATA: {', '.join(str(item) for item in missing_reasons[:3])}"
+        else:
+            banner = ""
+        self.progress_xp_banner_var.set(banner)
+
+        evidence_paths: list[str] = []
+        breakdown = payload.get("xp_breakdown", [])
+        if isinstance(breakdown, list):
+            for item in breakdown:
+                if not isinstance(item, dict):
+                    continue
+                paths = item.get("evidence_paths_rel")
+                if isinstance(paths, list):
+                    evidence_paths.extend(str(p) for p in paths if p)
+        evidence_paths = list(dict.fromkeys(evidence_paths))
+        if evidence_paths:
+            self.progress_xp_evidence_var.set(f"Evidence paths: {', '.join(evidence_paths[:4])}")
+        else:
+            self.progress_xp_evidence_var.set("Evidence paths: -")
+
+        if hasattr(self, "progress_xp_tree"):
+            for item in self.progress_xp_tree.get_children():
+                self.progress_xp_tree.delete(item)
+            if isinstance(breakdown, list):
+                for row in breakdown:
+                    if not isinstance(row, dict):
+                        continue
+                    label = row.get("label", "")
+                    points = row.get("points", "")
+                    value = row.get("value", "")
+                    evidence = row.get("evidence_paths_rel", [])
+                    evidence_text = ", ".join(str(p) for p in evidence) if isinstance(evidence, list) else str(evidence)
+                    self.progress_xp_tree.insert(
+                        "", tk.END, values=(label, points, value, evidence_text)
+                    )
+
+    def _open_xp_evidence(self) -> None:
+        if XP_SNAPSHOT_LATEST_PATH.exists():
+            try:
+                if hasattr(os, "startfile"):
+                    os.startfile(str(XP_SNAPSHOT_LATEST_PATH.parent))  # type: ignore[attr-defined]
+                else:
+                    subprocess.Popen(["xdg-open", str(XP_SNAPSHOT_LATEST_PATH.parent)], env=_utf8_env())
+                return
+            except Exception as exc:  # pragma: no cover - UI feedback
+                messagebox.showerror("XP Evidence", f"Failed to open XP folder: {exc}")
+                return
+        payload = self._xp_snapshot_cache or {}
+        evidence_paths = payload.get("source_artifacts", {}) if isinstance(payload, dict) else {}
+        message = "XP snapshot not found.\n"
+        if isinstance(evidence_paths, dict) and evidence_paths:
+            message += "Evidence paths:\n" + "\n".join(str(p) for p in evidence_paths.values())
+        else:
+            message += "Evidence paths unavailable."
+        messagebox.showinfo("XP Evidence", message)
 
     def _refresh_engine_status(self) -> None:
         judge_path = PROGRESS_JUDGE_LATEST_PATH if PROGRESS_JUDGE_LATEST_PATH.exists() else LEGACY_PROGRESS_JUDGE_LATEST_PATH

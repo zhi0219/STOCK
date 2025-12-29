@@ -10,6 +10,8 @@ ROOT = Path(__file__).resolve().parent.parent
 LOGS_DIR = ROOT / "Logs"
 RUNS_ROOT = LOGS_DIR / "train_runs"
 PROGRESS_JUDGE_DIR = RUNS_ROOT / "progress_judge"
+XP_SNAPSHOT_DIR = RUNS_ROOT / "progress_xp"
+XP_SNAPSHOT_LATEST = XP_SNAPSHOT_DIR / "xp_snapshot_latest.json"
 
 
 def _safe_read_json(path: Path) -> dict[str, Any]:
@@ -202,6 +204,24 @@ def load_pr28_latest(
         "promotion": _load_pr28(promotion_path, "promotion_decision_latest_missing", promotion_candidates),
         "history": history_payload,
     }
+
+
+def load_xp_snapshot_latest(path: Path = XP_SNAPSHOT_LATEST) -> dict[str, Any]:
+    candidates = list(XP_SNAPSHOT_DIR.glob("xp_snapshot_*.json"))
+    payload = _load_latest_with_fallback(
+        path,
+        candidates,
+        "xp_snapshot_latest_missing",
+        ["xp_spec_version", "xp_total", "level"],
+        ["Run python -m tools.write_xp_snapshot to generate XP artifacts."],
+    )
+    payload.setdefault("status", "INSUFFICIENT_DATA")
+    payload.setdefault("xp_total", 0)
+    payload.setdefault("level", 1)
+    payload.setdefault("level_progress", 0.0)
+    payload.setdefault("missing_reasons", [])
+    payload.setdefault("xp_breakdown", [])
+    return payload
 
 
 def load_policy_history(registry_path: Path, events_path: Path | None = None) -> list[dict[str, Any]]:
