@@ -41,7 +41,7 @@ def _extract_syntax_details(output: str) -> dict[str, object] | None:
             if parts:
                 file_part = parts[0]
                 if "File" in file_part:
-                    file_path = file_part.split("File", 1)[-1].strip().strip("\"")
+                    file_path = file_part.split("File", 1)[-1].strip().strip('"')
             if len(parts) > 1:
                 line_part = parts[1].strip()
                 if line_part.startswith("line"):
@@ -65,7 +65,13 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
 
 
-def main() -> int:
+def _run_syntax_guard() -> int:
+    cmd = [sys.executable, "-m", "tools.syntax_guard", "--artifacts-dir", str(ARTIFACTS_DIR)]
+    result = subprocess.run(cmd, text=True)
+    return result.returncode
+
+
+def _run_compile_check() -> int:
     ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
     compile_targets = ["tools", "alerts.py", "main.py", "quotes.py"]
     cmd = [sys.executable, "-m", "compileall", "-q", *compile_targets]
@@ -92,14 +98,22 @@ def main() -> int:
     }
     _write_json(RESULT_PATH, payload)
 
-    if result.returncode != 0:
-        print("verify_pr36_gate FAIL")
-        if exception_summary:
-            print(f" - {exception_summary}")
-        return 1
+    return result.returncode
 
-    print("verify_pr36_gate PASS")
-    return 0
+
+def main() -> int:
+    syntax_exit = _run_syntax_guard()
+    compile_exit = _run_compile_check()
+
+    status = "PASS" if syntax_exit == 0 and compile_exit == 0 else "FAIL"
+    print(f"verify_pr38_gate {status}")
+
+    if syntax_exit != 0:
+        print(f" - syntax_guard_failed rc={syntax_exit}")
+    if compile_exit != 0:
+        print(f" - compile_check_failed rc={compile_exit}")
+
+    return 0 if status == "PASS" else 1
 
 
 if __name__ == "__main__":

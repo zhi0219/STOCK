@@ -144,6 +144,28 @@ if import_contract_traceback_path.exists():
     import_contract_excerpt = "\n".join(trace_lines[-60:])
     import_contract_excerpt = sanitize_excerpt(import_contract_excerpt)
 
+syntax_guard_result_path = artifacts_dir / "syntax_guard_result.json"
+syntax_guard_excerpt_path = artifacts_dir / "syntax_guard_excerpt.txt"
+syntax_guard_status = "UNKNOWN"
+syntax_guard_hits = 0
+syntax_guard_excerpt = ""
+if syntax_guard_result_path.exists():
+    try:
+        syntax_guard_result = json.loads(
+            syntax_guard_result_path.read_text(encoding="utf-8", errors="replace")
+        )
+    except Exception:
+        syntax_guard_result = {"status": "UNKNOWN", "hits": 0}
+    if isinstance(syntax_guard_result, dict):
+        syntax_guard_status = str(syntax_guard_result.get("status", "UNKNOWN"))
+        syntax_guard_hits = int(syntax_guard_result.get("hits", 0) or 0)
+if syntax_guard_excerpt_path.exists():
+    syntax_lines = syntax_guard_excerpt_path.read_text(
+        encoding="utf-8", errors="replace"
+    ).splitlines()
+    syntax_guard_excerpt = "\n".join(syntax_lines[-60:])
+    syntax_guard_excerpt = sanitize_excerpt(syntax_guard_excerpt)
+
 compile_result_path = artifacts_dir / "compile_check_result.json"
 compile_log_path = artifacts_dir / "compile_check.log"
 compile_result: dict[str, object] | None = None
@@ -200,6 +222,9 @@ summary = {
         "result": import_contract_result,
         "traceback_excerpt": import_contract_excerpt,
     },
+    "syntax_guard_status": syntax_guard_status,
+    "syntax_guard_hits": syntax_guard_hits,
+    "syntax_guard_excerpt_path": str(syntax_guard_excerpt_path),
     "compile_check_status": compile_status,
     "compile_check_exception": compile_exception,
     "compile_check_error_location": {
@@ -236,6 +261,12 @@ summary_lines = [
     f"- **import_contract_traceback_excerpt**:\n\n```\n{import_contract_excerpt}\n```"
     if import_contract_excerpt
     else "- **import_contract_traceback_excerpt**: `n/a`",
+    f"- **syntax_guard_status**: `{syntax_guard_status}`",
+    f"- **syntax_guard_hits**: `{syntax_guard_hits}`",
+    f"- **syntax_guard_excerpt_path**: `{syntax_guard_excerpt_path}`",
+    f"- **syntax_guard_excerpt**:\n\n```\n{syntax_guard_excerpt}\n```"
+    if syntax_guard_excerpt
+    else "- **syntax_guard_excerpt**: `n/a`",
     f"- **compile_check_status**: `{compile_status}`",
     f"- **compile_check_exception**: `{compile_exception or 'none'}`",
     f"- **compile_check_error_file**: `{compile_error_file or 'n/a'}`",
@@ -277,6 +308,18 @@ if [[ "${CI_LOG_SPAM_DEMO:-0}" == "1" ]]; then
     printf 'CI_LOG_SPAM_DEMO line %04d: harmless filler for truncation demo\n' "${i}"
   done
   echo "===CI_LOG_SPAM_DEMO_END==="
+fi
+
+if [[ ${rc} -eq 0 ]]; then
+  set +e
+  python3 -m tools.syntax_guard --artifacts-dir "${artifacts_dir}"
+  syntax_guard_exit=$?
+  set -e
+  if [[ ${syntax_guard_exit} -ne 0 ]]; then
+    status="FAIL"
+    failing_gate="syntax_guard"
+    rc=${syntax_guard_exit}
+  fi
 fi
 
 if ls tools/verify_pr*_gate.py >/dev/null 2>&1; then
@@ -410,6 +453,13 @@ if [[ "${PR37_FORCE_FAIL:-0}" == "1" ]]; then
   echo "PR37_FORCE_FAIL enabled; forcing failure after gates."
   status="FAIL"
   failing_gate="PR37_FORCE_FAIL"
+  rc=1
+fi
+
+if [[ "${PR38_FORCE_FAIL:-0}" == "1" ]]; then
+  echo "PR38_FORCE_FAIL enabled; forcing failure after gates."
+  status="FAIL"
+  failing_gate="PR38_FORCE_FAIL"
   rc=1
 fi
 
