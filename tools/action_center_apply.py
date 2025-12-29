@@ -356,6 +356,16 @@ def main(argv: list[str] | None = None) -> int:
         summary["action_result"] = asdict(result)
         changes = result.details.get("changes_made", []) if isinstance(result.details, dict) else []
         summary["changes_made"] = list(changes) if isinstance(changes, list) else []
+        if action_id == "ENABLE_OVERTRADING_GUARDRAILS_SAFE":
+            evidence_payload = {
+                "ts_utc": ts_utc,
+                "action_id": action_id,
+                "runtime_config_path": result.details.get("output_path") if isinstance(result.details, dict) else None,
+                "status": "APPLIED" if result.success else "FAILED",
+            }
+            evidence_path = evidence_dir / "overtrading_guardrails_evidence.json"
+            _write_json(evidence_path, evidence_payload)
+            summary["changes_made"].append(to_repo_relative(evidence_path))
         if "stdout" in result.details:
             result_payload["stdout_excerpt"] = _excerpt(str(result.details.get("stdout", "")))
             result_payload["stderr_excerpt"] = _excerpt(str(result.details.get("stderr", "")))

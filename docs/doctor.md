@@ -16,6 +16,7 @@ Doctor is advisory-only. It never places trades, talks to brokers, or modifies f
 - **Absolute path leaks** in selected artifacts (Windows-style `C:\...` patterns).
 - **Import/entrypoint sanity** (reuse `artifacts/import_contract_result.json` if present, otherwise lightweight import).
 - **Storage health** (retention report presence, safety checks, and candidate backlog).
+- **Overtrading guardrails** status (SAFE/CAUTION/DANGEROUS) from `trade_activity_report_latest.json`.
 
 Doctor writes a stable schema to `artifacts/doctor_report.json`.
 

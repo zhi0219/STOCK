@@ -31,6 +31,7 @@ CI always writes and uploads the following files under `artifacts/`:
 - `artifacts/action_center_apply_plan.json` (Action Center apply plan)
 - `artifacts/doctor_report.json` (Doctor report)
 - `artifacts/xp_snapshot.json` (Truthful XP snapshot)
+- `artifacts/trade_activity_report.json` (PR38 trade activity audit)
 - `artifacts/ci_job_summary.md` (human-readable CI summary)
 - `artifacts/repo_hygiene.json` (repo hygiene scan output)
 - `artifacts/compile_check.log` (PR36 compile check log)

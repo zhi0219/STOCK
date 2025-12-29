@@ -91,7 +91,14 @@ Points:
 
 Missing safety evidence adds `INSUFFICIENT_DATA` penalties.
 
-### 5) Walk-forward stability
+### 5) Overtrading guardrails
+
+Source: `Logs/train_runs/_latest/trade_activity_report_latest.json`
+
+- Any trade-activity violations or `status != PASS` → explicit penalty line item.
+- Missing trade-activity evidence adds an `INSUFFICIENT_DATA` penalty.
+
+### 6) Walk-forward stability
 
 Source: `walk_forward_result_latest.json`
 

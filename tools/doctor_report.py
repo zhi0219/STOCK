@@ -21,6 +21,7 @@ ARTIFACTS_DIR = ROOT / "artifacts"
 DEFAULT_OUTPUT = ARTIFACTS_DIR / "doctor_report.json"
 LOGS_DIR = ROOT / "Logs"
 RUNTIME_DIR = runtime_dir()
+TRADE_ACTIVITY_REPORT_PATH = LOGS_DIR / "train_runs" / "_latest" / "trade_activity_report_latest.json"
 KILL_SWITCH_PATHS = [ROOT / "Data" / "KILL_SWITCH", LOGS_DIR / "train_service" / "KILL_SWITCH"]
 TEMP_FILE_THRESHOLD_SECONDS = 3600
 TEMP_FILE_PATTERNS = (".tmp", ".tmp.")
@@ -40,6 +41,7 @@ ACTION_ENABLE_GIT_HOOKS = "ENABLE_GIT_HOOKS"
 ACTION_RUN_RETENTION_REPORT = "RUN_RETENTION_REPORT"
 ACTION_PRUNE_OLD_RUNS_SAFE = "PRUNE_OLD_RUNS_SAFE"
 ACTION_REBUILD_RECENT_INDEX = "REBUILD_RECENT_INDEX"
+ACTION_ENABLE_OVERTRADING_GUARDRAILS = "ENABLE_OVERTRADING_GUARDRAILS_SAFE"
 
 IMPORT_CHECK_MODULES = ("tools.action_center_report", "tools.action_center_apply", "tools.doctor_report")
 
@@ -169,6 +171,16 @@ def scan_absolute_paths(paths: Iterable[Path]) -> list[Path]:
 
 def _load_import_contract_result() -> dict[str, Any] | None:
     path = ARTIFACTS_DIR / "import_contract_result.json"
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _safe_read_json(path: Path) -> dict[str, Any] | None:
     if not path.exists():
         return None
     try:
@@ -345,6 +357,52 @@ def build_report() -> dict[str, Any]:
             }
         )
 
+    overtrading_payload = _safe_read_json(TRADE_ACTIVITY_REPORT_PATH)
+    overtrading_status = "MISSING"
+    overtrading_level = "DANGEROUS"
+    overtrading_violations: list[str] = []
+    overtrading_evidence = [to_repo_relative(TRADE_ACTIVITY_REPORT_PATH)]
+    if overtrading_payload:
+        overtrading_status = str(overtrading_payload.get("status") or "UNKNOWN")
+        violations = overtrading_payload.get("violations", [])
+        if isinstance(violations, list):
+            overtrading_violations = [
+                str(item.get("code", item)) if isinstance(item, dict) else str(item)
+                for item in violations
+            ]
+        if overtrading_status == "PASS" and not overtrading_violations:
+            overtrading_level = "SAFE"
+            budget = overtrading_payload.get("budget", {})
+            budget_values = budget.get("budget", {}) if isinstance(budget, dict) else {}
+            max_trades = budget_values.get("max_trades_per_day")
+            max_turnover = budget_values.get("max_turnover_per_day")
+            min_seconds = budget_values.get("min_seconds_between_trades")
+            trades_peak = overtrading_payload.get("trades_per_day_peak")
+            turnover_gross = overtrading_payload.get("turnover_gross")
+            min_between = overtrading_payload.get("min_seconds_between_trades")
+            if isinstance(max_trades, (int, float)) and isinstance(trades_peak, (int, float)):
+                if trades_peak >= float(max_trades) * 0.8:
+                    overtrading_level = "CAUTION"
+            if isinstance(max_turnover, (int, float)) and isinstance(turnover_gross, (int, float)):
+                if turnover_gross >= float(max_turnover) * 0.8:
+                    overtrading_level = "CAUTION"
+            if isinstance(min_seconds, (int, float)) and isinstance(min_between, (int, float)):
+                if min_between <= float(min_seconds) * 1.2:
+                    overtrading_level = "CAUTION"
+        else:
+            overtrading_level = "DANGEROUS"
+
+    if overtrading_level != "SAFE":
+        issues.append(
+            {
+                "id": "OVERTRADING_GUARDRAILS",
+                "severity": "HIGH" if overtrading_level == "DANGEROUS" else "WARN",
+                "summary": f"Overtrading status {overtrading_level} (audit={overtrading_status}).",
+                "evidence_paths_rel": overtrading_evidence,
+                "suggested_actions": [ACTION_ENABLE_OVERTRADING_GUARDRAILS],
+            }
+        )
+
     if os.environ.get("PR30_INJECT_ISSUES") == "1":
         injected = [
             (ACTION_GEN_DOCTOR_REPORT, "Injected doctor report issue."),
@@ -396,6 +454,12 @@ def build_report() -> dict[str, Any]:
             "unknown_count": counts.get("unknown", 0),
         },
         "storage_health": storage_health,
+        "overtrading_activity": {
+            "status": overtrading_status,
+            "level": overtrading_level,
+            "violations": overtrading_violations,
+            "report_path": to_repo_relative(TRADE_ACTIVITY_REPORT_PATH),
+        },
         "issues": issues,
     }
     return report

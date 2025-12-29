@@ -11,6 +11,7 @@ from typing import Dict, List, Tuple
 ROOT = Path(__file__).resolve().parent.parent
 LOGS_DIR = ROOT / "Logs" / "train_runs"
 SUMMARY_TAG = "PR16_GATE_SUMMARY"
+TRADE_ACTIVITY_PASS = {"status": "PASS", "violations": []}
 
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -112,6 +113,7 @@ def _write_promotion_artifacts(
         run_dir.name,
         GateConfig(),
         stress_report=stress_report,
+        trade_activity_report=TRADE_ACTIVITY_PASS,
     )
     (run_dir / "promotion_decision.json").write_text(
         json.dumps(decision, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -133,6 +135,7 @@ def _negative_tests() -> List[str]:
         "neg_low",
         GateConfig(),
         stress_report={"status": "PASS", "baseline_pass": True, "stress_pass": True, "scenarios": [{"pass": True}]},
+        trade_activity_report=TRADE_ACTIVITY_PASS,
     )
     if decision_low.get("decision") != "REJECT":
         failures.append("baseline_win_reject_missing")
@@ -144,6 +147,7 @@ def _negative_tests() -> List[str]:
         "neg_risk",
         GateConfig(),
         stress_report={"status": "PASS", "baseline_pass": True, "stress_pass": True, "scenarios": [{"pass": True}]},
+        trade_activity_report=TRADE_ACTIVITY_PASS,
     )
     if decision_risky.get("decision") != "REJECT":
         failures.append("risk_reject_missing")

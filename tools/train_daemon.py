@@ -25,6 +25,8 @@ from tools.policy_registry import get_policy, load_registry, record_history
 from tools.policy_registry import promote_policy as _promote_policy
 from tools.execution_friction import load_friction_policy
 from tools.promotion_gate_v2 import GateConfig, evaluate_promotion_gate
+from tools.trade_activity_audit import build_report as build_trade_activity_report
+from tools.trade_activity_audit import write_trade_activity_report
 from tools.sim_autopilot import _kill_switch_enabled, _kill_switch_path, run_step
 from tools.sim_tournament import (
     BASELINE_CANDIDATES,
@@ -1212,6 +1214,18 @@ def main(argv: List[str] | None = None) -> int:
     no_lookahead_audit = _safe_read_json(
         no_lookahead_latest_dir() / "no_lookahead_audit_latest.json"
     )
+    trade_activity_report = None
+    try:
+        trade_activity_report = build_trade_activity_report(run_dir=run_dir)
+        write_trade_activity_report(trade_activity_report, run_dir, None)
+    except Exception as exc:
+        degraded_flags.append("TRADE_ACTIVITY_AUDIT_FAILED")
+        _write_event(
+            "TRADE_ACTIVITY_AUDIT_FAILED",
+            "Trade activity audit failed to run.",
+            severity="WARN",
+            error=str(exc),
+        )
 
     decision_payload = evaluate_promotion_gate(
         best_candidate,
@@ -1221,6 +1235,7 @@ def main(argv: List[str] | None = None) -> int:
         stress_report=stress_report,
         walk_forward_result=walk_forward_result,
         no_lookahead_audit=no_lookahead_audit,
+        trade_activity_report=trade_activity_report,
     )
     decision_payload = {
         "schema_version": 1,

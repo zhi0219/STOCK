@@ -57,6 +57,7 @@ PR28_JUDGE_RESULT_LATEST_PATH = LATEST_DIR / "judge_result_latest.json"
 PR28_PROMOTION_DECISION_LATEST_PATH = LATEST_DIR / "promotion_decision_latest.json"
 PR28_PROMOTION_HISTORY_LATEST_PATH = LATEST_DIR / "promotion_history_latest.json"
 LATEST_STRESS_REPORT_PATH = LATEST_DIR / "stress_report_latest.json"
+TRADE_ACTIVITY_LATEST_PATH = LATEST_DIR / "trade_activity_report_latest.json"
 FRICTION_POLICY_PATH = ROOT / "Data" / "friction_policy.json"
 XP_SNAPSHOT_DIR = ROOT / "Logs" / "train_runs" / "progress_xp"
 XP_SNAPSHOT_LATEST_PATH = XP_SNAPSHOT_DIR / "xp_snapshot_latest.json"
@@ -176,6 +177,13 @@ ACTION_CENTER_DEFAULTS = {
         "effect_summary": "Writes a review guidance artifact for manual inspection.",
         "risk_level": "CAUTION",
     },
+    "ENABLE_OVERTRADING_GUARDRAILS_SAFE": {
+        "title": "Enable Overtrading Guardrails (Safe Defaults)",
+        "confirmation_token": "GUARDRAILS",
+        "safety_notes": "SIM-only. Writes runtime overtrading budget config; no broker access.",
+        "effect_summary": "Copies Data/overtrading_budget.json into Logs/runtime/overtrading_budget.json.",
+        "risk_level": "SAFE",
+    },
 }
 
 if str(ROOT) not in sys.path:
@@ -193,6 +201,7 @@ from tools.ui_parsers import (
     load_pr28_latest,
     load_progress_judge_latest,
     load_replay_index_latest,
+    load_trade_activity_latest,
     load_xp_snapshot_latest,
 )
 from tools.ui_scroll import VerticalScrolledFrame
@@ -576,6 +585,10 @@ class App(tk.Tk):
         self.progress_stress_status_var = tk.StringVar(value="Stress status: -")
         self.progress_stress_reject_var = tk.StringVar(value="Stress reject reasons: -")
         self.progress_stress_evidence_var = tk.StringVar(value="Stress evidence: -")
+        self.progress_overtrading_status_var = tk.StringVar(value="Overtrading status: -")
+        self.progress_overtrading_kpi_var = tk.StringVar(value="Overtrading KPIs: -")
+        self.progress_overtrading_cooldown_var = tk.StringVar(value="Cooldown violations: -")
+        self.progress_overtrading_evidence_var = tk.StringVar(value="Overtrading evidence: -")
         self.progress_diag_status_var = tk.StringVar(value="Diagnosis: -")
         self.progress_diag_summary_var = tk.StringVar(value="Progress diagnosis will appear here.")
         self.progress_growth_total_var = tk.StringVar(value="Total runs: -")
@@ -668,6 +681,7 @@ class App(tk.Tk):
         self.replay_status_var = tk.StringVar(value="Replay: missing")
         self.replay_detail_var = tk.StringVar(value="Latest replay: -")
         self.replay_latest_path_var = tk.StringVar(value="decision_cards_latest.jsonl: -")
+        self.replay_trade_activity_path_var = tk.StringVar(value="trade_activity_report_latest.json: -")
         self.replay_action_filter_var = tk.StringVar(value="(all)")
         self.replay_symbol_filter_var = tk.StringVar(value="")
         self.replay_reject_only_var = tk.BooleanVar(value=False)
@@ -676,6 +690,7 @@ class App(tk.Tk):
         self._replay_cards: list[dict[str, object]] = []
         self._replay_filtered_cards: list[dict[str, object]] = []
         self._replay_index_payload: dict[str, object] | None = None
+        self._trade_activity_payload: dict[str, object] | None = None
         self.action_center_selected_var = tk.StringVar(value="Selected action: (none)")
         self.action_center_status_marker_var = tk.StringVar(value="ACTION_CENTER_STATUS: ISSUE")
         self.action_center_data_health_var = tk.StringVar(value="DATA_HEALTH: ISSUE")
@@ -1521,6 +1536,7 @@ class App(tk.Tk):
         self._refresh_xp_snapshot()
         self._refresh_policy_history()
         self._refresh_replay_panel()
+        self._refresh_overtrading_status()
         self._maybe_auto_refresh_progress()
         self._refresh_throughput_panel()
 
@@ -1564,6 +1580,7 @@ class App(tk.Tk):
             self._refresh_xp_snapshot()
             self._refresh_engine_status()
             self._refresh_policy_history()
+            self._refresh_overtrading_status()
         self._progress_last_index_mtime = index_mtime
         self._progress_last_latest_mtime = latest_mtime
         self._progress_last_refresh_ts = now
@@ -2049,6 +2066,7 @@ class App(tk.Tk):
         self._refresh_action_center_report()
         self._refresh_truthful_progress()
         self._refresh_friction_status()
+        self._refresh_overtrading_status()
         self._refresh_xp_snapshot()
         self._refresh_engine_status()
         self._refresh_policy_history()
@@ -2063,6 +2081,9 @@ class App(tk.Tk):
         tk.Label(status_frame, textvariable=self.replay_latest_path_var, anchor="w", fg="#6b7280").pack(
             anchor="w"
         )
+        tk.Label(status_frame, textvariable=self.replay_trade_activity_path_var, anchor="w", fg="#6b7280").pack(
+            anchor="w"
+        )
 
         status_actions = tk.Frame(status_frame)
         status_actions.pack(fill=tk.X, pady=4)
@@ -2072,6 +2093,9 @@ class App(tk.Tk):
         tk.Button(status_actions, text="Copy replay path", command=self._copy_replay_latest_path).pack(
             side=tk.LEFT, padx=3
         )
+        tk.Button(
+            status_actions, text="Open trade activity report", command=self._open_trade_activity_report
+        ).pack(side=tk.LEFT, padx=3)
 
         filter_frame = tk.LabelFrame(self.replay_tab, text="Filters", padx=6, pady=6)
         filter_frame.pack(fill=tk.X, padx=6, pady=4)
@@ -3222,6 +3246,27 @@ class App(tk.Tk):
             wraplength=1000,
             fg="#6b7280",
         ).pack(anchor="w")
+        overtrading_frame = tk.LabelFrame(
+            self.progress_tab, text="Overtrading Guardrails (SIM-only)", padx=6, pady=6
+        )
+        overtrading_frame.pack(fill=tk.X, padx=6, pady=4)
+        tk.Label(overtrading_frame, textvariable=self.progress_overtrading_status_var, anchor="w").pack(
+            anchor="w"
+        )
+        tk.Label(overtrading_frame, textvariable=self.progress_overtrading_kpi_var, anchor="w").pack(
+            anchor="w"
+        )
+        tk.Label(overtrading_frame, textvariable=self.progress_overtrading_cooldown_var, anchor="w").pack(
+            anchor="w"
+        )
+        tk.Label(
+            overtrading_frame,
+            textvariable=self.progress_overtrading_evidence_var,
+            anchor="w",
+            justify=tk.LEFT,
+            wraplength=1000,
+            fg="#6b7280",
+        ).pack(anchor="w")
         xp_frame = tk.LabelFrame(self.progress_tab, text="Truthful XP (SIM-only)", padx=6, pady=6)
         xp_frame.pack(fill=tk.X, padx=6, pady=4)
         tk.Label(xp_frame, textvariable=self.progress_xp_status_var, font=("Helvetica", 13, "bold")).pack(
@@ -3627,6 +3672,43 @@ class App(tk.Tk):
         else:
             self.progress_stress_evidence_var.set("Stress evidence: -")
 
+    def _refresh_overtrading_status(self) -> None:
+        payload = load_trade_activity_latest(TRADE_ACTIVITY_LATEST_PATH)
+        self._trade_activity_payload = payload if isinstance(payload, dict) else None
+        status = payload.get("status", "missing")
+        run_id = payload.get("run_id", "-")
+        violation_list = payload.get("violations", [])
+        violation_count = len(violation_list) if isinstance(violation_list, list) else 0
+        trades_per_day = payload.get("trades_per_day")
+        turnover = payload.get("turnover_gross")
+        cooldown_violations = 0
+        if isinstance(violation_list, list):
+            cooldown_violations = sum(
+                1
+                for item in violation_list
+                if isinstance(item, dict) and item.get("code") == "min_seconds_between_trades"
+            )
+        self.progress_overtrading_status_var.set(
+            f"Overtrading status: {status} | run_id={run_id} | violations={violation_count}"
+        )
+        self.progress_overtrading_kpi_var.set(
+            f"Overtrading KPIs: trades/day={trades_per_day} | turnover={turnover}"
+        )
+        self.progress_overtrading_cooldown_var.set(
+            f"Cooldown violations: {cooldown_violations}"
+        )
+        if payload.get("status") == "missing":
+            missing = payload.get("missing_reason", "unknown")
+            self.progress_overtrading_evidence_var.set(f"Overtrading evidence: missing ({missing})")
+        else:
+            evidence = payload.get("evidence", {})
+            if isinstance(evidence, dict):
+                evidence_paths = [str(value) for value in evidence.values() if value]
+                evidence_text = ", ".join(evidence_paths) if evidence_paths else "-"
+                self.progress_overtrading_evidence_var.set(f"Overtrading evidence: {evidence_text}")
+            else:
+                self.progress_overtrading_evidence_var.set("Overtrading evidence: -")
+
     def _refresh_xp_snapshot(self) -> None:
         payload = load_xp_snapshot_latest(XP_SNAPSHOT_LATEST_PATH)
         self._xp_snapshot_cache = payload if isinstance(payload, dict) else None
@@ -3850,9 +3932,19 @@ class App(tk.Tk):
     def _refresh_replay_panel(self) -> None:
         start = time.perf_counter()
         payload = load_replay_index_latest()
+        trade_payload = load_trade_activity_latest(TRADE_ACTIVITY_LATEST_PATH)
         elapsed = time.perf_counter() - start
         slow_note = f" | load_slow={elapsed:.2f}s" if elapsed > 0.5 else ""
         self._replay_index_payload = payload
+        self._trade_activity_payload = trade_payload
+        trade_source = trade_payload.get("source") if isinstance(trade_payload.get("source"), dict) else {}
+        trade_path = trade_source.get("path", "")
+        if trade_payload.get("status") == "missing":
+            self.replay_trade_activity_path_var.set("trade_activity_report_latest.json: missing")
+        else:
+            self.replay_trade_activity_path_var.set(
+                f"trade_activity_report_latest.json: {trade_path or to_repo_relative(TRADE_ACTIVITY_LATEST_PATH)}"
+            )
         if payload.get("status") == "missing":
             reason = payload.get("missing_reason")
             searched = payload.get("searched_paths", [])
@@ -3994,6 +4086,28 @@ class App(tk.Tk):
             subprocess.Popen(["xdg-open", str(path)], env=_utf8_env())
         except Exception:  # pragma: no cover - UI feedback
             self._show_copyable_text("Replay", "Copy the path below:", decision_rel)
+
+    def _open_trade_activity_report(self) -> None:
+        payload = self._trade_activity_payload or {}
+        source = payload.get("source") if isinstance(payload.get("source"), dict) else {}
+        report_rel = source.get("path") or to_repo_relative(TRADE_ACTIVITY_LATEST_PATH)
+        if not report_rel:
+            messagebox.showinfo("Replay", "Trade activity report not found")
+            return
+        path = ROOT / report_rel
+        if not path.exists():
+            messagebox.showinfo("Replay", f"Trade activity report not found: {report_rel}")
+            return
+        try:
+            if hasattr(os, "startfile"):
+                os.startfile(str(path))  # type: ignore[attr-defined]
+                return
+            if sys.platform == "darwin":
+                subprocess.Popen(["open", str(path)], env=_utf8_env())
+                return
+            subprocess.Popen(["xdg-open", str(path)], env=_utf8_env())
+        except Exception:  # pragma: no cover - UI feedback
+            self._show_copyable_text("Replay", "Copy the path below:", report_rel)
 
     def _copy_replay_latest_path(self) -> None:
         payload = self._replay_index_payload or {}
