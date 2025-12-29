@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from tools.paths import logs_dir
+from tools.paths import logs_dir, no_lookahead_latest_dir, walk_forward_latest_dir
 from tools.xp_model import compute_xp_snapshot
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -14,6 +14,8 @@ LOGS_DIR = logs_dir()
 RUNS_ROOT = LOGS_DIR / "train_runs"
 ARTIFACTS_DIR = ROOT / "artifacts"
 DEFAULT_ARTIFACTS_OUTPUT = ARTIFACTS_DIR / "xp_snapshot.json"
+
+
 def _xp_dir(runs_root: Path) -> Path:
     return runs_root / "progress_xp"
 
@@ -81,6 +83,9 @@ def write_xp_snapshot(
     judge_path = latest_dir / "judge_result_latest.json"
     promotion_path = latest_dir / "promotion_decision_latest.json"
     promotion_history_path = latest_dir / "promotion_history_latest.json"
+    walk_forward_path = walk_forward_latest_dir() / "walk_forward_result_latest.json"
+    walk_forward_windows_path = walk_forward_latest_dir() / "walk_forward_windows_latest.jsonl"
+    no_lookahead_path = no_lookahead_latest_dir() / "no_lookahead_audit_latest.json"
 
     doctor_report_path = ARTIFACTS_DIR / "doctor_report.json"
     repo_hygiene_path = ARTIFACTS_DIR / "repo_hygiene.json"
@@ -89,6 +94,8 @@ def write_xp_snapshot(
     judge_payload = _safe_read_json(judge_path)
     promotion_payload = _safe_read_json(promotion_path)
     promotion_history_payload = _safe_read_json(promotion_history_path)
+    walk_forward_payload = _safe_read_json(walk_forward_path)
+    no_lookahead_payload = _safe_read_json(no_lookahead_path)
     doctor_report_payload = _safe_read_json(doctor_report_path)
     repo_hygiene_payload = _safe_read_json(repo_hygiene_path)
 
@@ -113,6 +120,9 @@ def write_xp_snapshot(
         "promotion": promotion_path,
         "promotion_history": promotion_history_path,
         "promotion_history_jsonl": history_jsonl_path,
+        "walk_forward": walk_forward_path,
+        "walk_forward_windows": walk_forward_windows_path,
+        "no_lookahead_audit": no_lookahead_path,
         "doctor_report": doctor_report_path,
         "repo_hygiene": repo_hygiene_path,
     }
@@ -123,6 +133,8 @@ def write_xp_snapshot(
         promotion=promotion_payload,
         promotion_history=promotion_history_payload,
         promotion_history_events=history_events,
+        walk_forward_result=walk_forward_payload,
+        no_lookahead_audit=no_lookahead_payload,
         doctor_report=doctor_report_payload,
         repo_hygiene=repo_hygiene_payload,
         evidence_paths=evidence_paths,

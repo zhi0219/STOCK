@@ -152,6 +152,8 @@ def main() -> int:
             promotion=promotion_payload,
             promotion_history=promotion_history_payload,
             promotion_history_events=history_events,
+            walk_forward_result=None,
+            no_lookahead_audit=None,
             doctor_report=doctor_payload,
             repo_hygiene=repo_hygiene_payload,
             evidence_paths=evidence_paths,

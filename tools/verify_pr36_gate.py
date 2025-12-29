@@ -29,6 +29,37 @@ def _extract_exception(output: str) -> str | None:
     return lines[-1].strip()
 
 
+def _extract_syntax_details(output: str) -> dict[str, object] | None:
+    if not output:
+        return None
+    lines = output.splitlines()
+    for idx, line in enumerate(lines):
+        if "File \"" in line and "line" in line:
+            parts = line.strip().split(",")
+            file_path = None
+            line_no = None
+            if parts:
+                file_part = parts[0]
+                if "File" in file_part:
+                    file_path = file_part.split("File", 1)[-1].strip().strip("\"")
+            if len(parts) > 1:
+                line_part = parts[1].strip()
+                if line_part.startswith("line"):
+                    try:
+                        line_no = int(line_part.split()[1])
+                    except (IndexError, ValueError):
+                        line_no = None
+            code_line = None
+            if idx + 1 < len(lines):
+                code_line = lines[idx + 1].strip()
+            return {
+                "file": file_path,
+                "line": line_no,
+                "code": code_line,
+            }
+    return None
+
+
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
@@ -48,11 +79,13 @@ def main() -> int:
     _safe_write_text(LOG_PATH, combined)
 
     exception_summary = _extract_exception(combined) if result.returncode != 0 else None
+    syntax_details = _extract_syntax_details(combined) if result.returncode != 0 else None
     payload: dict[str, Any] = {
         "status": "PASS" if result.returncode == 0 else "FAIL",
         "returncode": result.returncode,
         "command": cmd,
         "exception_summary": exception_summary,
+        "error_location": syntax_details,
         "python_version": platform.python_version(),
         "ts_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }

@@ -15,13 +15,13 @@ Run a scan:
 python -m tools.repo_hygiene scan
 ```
 
-Run a safe fix (restores tracked runtime artifacts and removes only untracked runtime files under known runtime directories):
+Run a safe fix (restores tracked runtime artifacts and tracked seed files, removes only untracked runtime files under known runtime directories):
 
 ```
 python -m tools.repo_hygiene fix --mode safe
 ```
 
-Action Center (SIM-only) also exposes **Fix Git Red (Safe)** and writes:
+Action Center (SIM-only) also exposes **Fix Git Red (Safe)** (shown as **Fix All (Safe)** in the UI) and writes:
 
 - `artifacts/git_hygiene_fix_plan.json`
 - `artifacts/git_hygiene_fix_result.json`

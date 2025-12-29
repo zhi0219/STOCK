@@ -130,6 +130,11 @@ def main() -> int:
         _copy_artifact(plan_path, ARTIFACTS_DIR / "git_hygiene_fix_plan.json")
         _copy_artifact(result_path, ARTIFACTS_DIR / "git_hygiene_fix_result.json")
 
+    pr32_cmd = [sys.executable, "-m", "tools.verify_pr32_gate"]
+    rc, output = _run(pr32_cmd)
+    if rc != 0:
+        errors.append(f"pr32_gate_failed:{output}")
+
     payload = {
         "status": "PASS" if not errors else "FAIL",
         "ts_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),

@@ -17,6 +17,22 @@ def runtime_dir() -> Path:
     return logs_dir() / "runtime"
 
 
+def walk_forward_dir() -> Path:
+    return runtime_dir() / "walk_forward"
+
+
+def walk_forward_latest_dir() -> Path:
+    return walk_forward_dir() / "_latest"
+
+
+def no_lookahead_dir() -> Path:
+    return runtime_dir() / "no_lookahead"
+
+
+def no_lookahead_latest_dir() -> Path:
+    return no_lookahead_dir() / "_latest"
+
+
 def policy_registry_seed_path() -> Path:
     return repo_root() / "Data" / "policy_registry.seed.json"
 
