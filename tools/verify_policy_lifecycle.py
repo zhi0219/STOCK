@@ -8,6 +8,8 @@ import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from tools.paths import policy_registry_runtime_path
+
 ROOT = Path(__file__).resolve().parent.parent
 TOOLS = ROOT / "tools"
 LOGS = ROOT / "Logs"
@@ -61,14 +63,14 @@ def main() -> int:
         quotes_path = tmpdir / "quotes.csv"
         _make_quotes(quotes_path)
         run_dir = LOGS / "tournament_runs" / "synthetic_run"
-        _cleanup([LOGS / "policy_registry.json", LOGS / "policy_candidate.json", LOGS / "tournament_runs", LOGS / "Reports"])
+        _cleanup([policy_registry_runtime_path(), LOGS / "policy_candidate.json", LOGS / "tournament_runs", LOGS / "Reports"])
         events_path = _write_events(run_dir)
 
         cmd_candidate = [str(PYTHON), str(TOOLS / "policy_candidate.py"), "--events", str(events_path)]
         if os.spawnv(os.P_WAIT, cmd_candidate[0], cmd_candidate) != 0:
             raise AssertionError("policy_candidate failed")
 
-        registry_path = LOGS / "policy_registry.json"
+        registry_path = policy_registry_runtime_path()
         registry = json.loads(registry_path.read_text(encoding="utf-8"))
         assert "candidate" in "".join(registry.get("policies", {}).keys())
 

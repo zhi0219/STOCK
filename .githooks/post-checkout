@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "REPO_HYGIENE_HOOK_START"
+python -m tools.repo_hygiene fix --mode safe || echo "REPO_HYGIENE_HOOK_FAILED"
+echo "REPO_HYGIENE_HOOK_END"

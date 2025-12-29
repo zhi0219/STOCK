@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from tools.paths import policy_registry_runtime_path
+
 ROOT = Path(__file__).resolve().parent.parent
 LOGS_DIR = ROOT / "Logs"
 RUNS_ROOT = LOGS_DIR / "train_runs"
@@ -93,7 +95,7 @@ def main() -> int:
         ),
         _check_policy_history(
             LATEST_DIR / "policy_history_latest.json",
-            LOGS_DIR / "policy_registry.json",
+            policy_registry_runtime_path(),
         ),
     ]
 

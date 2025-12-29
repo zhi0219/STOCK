@@ -15,6 +15,7 @@ CANDIDATE_PATH = LOGS_DIR / "policy_candidate.json"
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from tools.paths import to_repo_relative
 from tools.policy_registry import WHITELIST_KEYS, get_policy, upsert_policy  # noqa: E402
 
 
@@ -81,6 +82,7 @@ def main(argv: List[str] | None = None) -> int:
     try:
         base_version, base_policy = get_policy()
         events_path = Path(args.events) if args.events else _find_latest_events()
+        events_path_display = to_repo_relative(events_path)
         proposal = _pick_proposal(events_path)
         reason = str(proposal.get("proposal") or proposal.get("message") or "guard")
         adjusted_overrides = _conservative_adjustments(base_policy.get("risk_overrides", {}), reason)
@@ -90,10 +92,16 @@ def main(argv: List[str] | None = None) -> int:
             "based_on": base_version,
             "risk_overrides": adjusted_overrides,
             "proposal_reason": reason,
-            "events_path": str(events_path),
+            "events_path": events_path_display,
             "ts_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         }
-        upsert_policy(candidate_version, adjusted_overrides, based_on=base_version, source="candidate", evidence=str(events_path))
+        upsert_policy(
+            candidate_version,
+            adjusted_overrides,
+            based_on=base_version,
+            source="candidate",
+            evidence=events_path_display,
+        )
         _write_candidate(candidate_payload)
         print(f"Generated {candidate_version} with overrides {adjusted_overrides}")
     except CandidateError as exc:

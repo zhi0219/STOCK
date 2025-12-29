@@ -13,7 +13,9 @@ REQUIRED_RULES = [
     "Logs/status.json",
     "logs/status.json",
     "Logs/policy_registry.json",
+    "Logs/runtime/",
     "logs/policy_registry.json",
+    "logs/runtime/",
     "Logs/train_daemon_state.json",
     "logs/train_daemon_state.json",
     "Logs/train_runs/",
@@ -32,11 +34,14 @@ REQUIRED_RULES = [
     "qa_packets/",
     "qa_answers/",
     "Reports/",
+    "artifacts/",
 ]
 
 RUNTIME_ROOTS = [
     "Logs/",
+    "Logs/runtime/",
     "logs/",
+    "logs/runtime/",
     "Reports/",
     "reports/",
     "evidence_packs/",

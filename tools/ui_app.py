@@ -56,7 +56,7 @@ PR28_JUDGE_RESULT_LATEST_PATH = LATEST_DIR / "judge_result_latest.json"
 PR28_PROMOTION_DECISION_LATEST_PATH = LATEST_DIR / "promotion_decision_latest.json"
 PR28_PROMOTION_HISTORY_LATEST_PATH = LATEST_DIR / "promotion_history_latest.json"
 UI_SMOKE_LATEST_PATH = ROOT / "Logs" / "ui_smoke_latest.json"
-POLICY_REGISTRY_PATH = ROOT / "Logs" / "policy_registry.json"
+POLICY_REGISTRY_PATH = policy_registry_runtime_path()
 BASELINE_GUIDE_SCRIPT = ROOT / "tools" / "baseline_fix_guide.py"
 BASELINE_GUIDE_PATH = ROOT / "Logs" / "baseline_guide.txt"
 JUDGE_STALE_SECONDS = 3600
@@ -90,6 +90,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from tools.git_baseline_probe import probe_baseline
+from tools.paths import policy_registry_runtime_path
 from tools.train_service import CADENCE_PRESETS
 from tools.ui_parsers import (
     load_engine_status,

@@ -39,6 +39,8 @@ logs/action_center_report.json
 Logs/ui_smoke_latest.json
 Logs/*latest*.json
 logs/*latest*.json
+Logs/runtime/
+logs/runtime/
 Logs/train_service/
 logs/train_service/
 evidence_packs/
@@ -54,4 +56,3 @@ Logs/*.tmp
 
 # runtime artifacts
 Logs/policy_registry.json
-

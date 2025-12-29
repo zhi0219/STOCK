@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from typing import Any, Iterable
 
+from tools.paths import policy_registry_runtime_path, to_repo_relative
+
 ROOT = Path(__file__).resolve().parent.parent
 LOGS_DIR = ROOT / "Logs"
 RUNS_ROOT = LOGS_DIR / "train_runs"
@@ -41,21 +43,21 @@ def _load_latest_with_fallback(
     fallback_list = list(fallback_candidates)
     payload = _safe_read_json(latest_path)
     source_mode = "latest_pointer"
-    source_path = str(latest_path)
+    source_path = to_repo_relative(latest_path)
     if not payload:
         fallback = _select_latest_by_mtime(fallback_list)
         if fallback:
             payload = _safe_read_json(fallback)
             source_mode = "fallback_scan"
-            source_path = str(fallback)
+            source_path = to_repo_relative(fallback)
     if not payload:
         return {
             "status": "missing",
             "missing_reason": missing_reason,
             "missing_artifacts": [latest_path.name],
-            "searched_paths": [str(latest_path)] + [str(p) for p in fallback_list],
+            "searched_paths": [to_repo_relative(latest_path)] + [to_repo_relative(p) for p in fallback_list],
             "suggested_next_actions": next_actions,
-            "source": {"mode": "missing", "path": str(latest_path)},
+            "source": {"mode": "missing", "path": to_repo_relative(latest_path)},
         }
     missing = _require_fields(payload, required_fields)
     if missing:
@@ -88,9 +90,10 @@ def load_progress_judge_latest(path: Path, fallback: Path | None = None) -> dict
 def load_policy_history_latest(path: Path) -> dict[str, Any]:
     payload = _safe_read_json(path)
     source_mode = "latest_pointer"
-    source_path = str(path)
+    source_path = to_repo_relative(path)
+    registry_path = policy_registry_runtime_path()
     if not payload:
-        registry = _safe_read_json(LOGS_DIR / "policy_registry.json")
+        registry = _safe_read_json(registry_path)
         history = registry.get("history", []) if isinstance(registry.get("history"), list) else []
         last_entry = history[-1] if history else {}
         if isinstance(last_entry, dict) and last_entry:
@@ -107,18 +110,18 @@ def load_policy_history_latest(path: Path) -> dict[str, Any]:
                 },
                 "registry_last_entry": last_entry,
                 "history_tail": history[-5:],
-                "fallback_registry": str(LOGS_DIR / "policy_registry.json"),
+                "fallback_registry": to_repo_relative(registry_path),
             }
             source_mode = "fallback_registry"
-            source_path = str(LOGS_DIR / "policy_registry.json")
+            source_path = to_repo_relative(registry_path)
     if not payload:
         return {
             "status": "missing",
             "missing_reason": "policy_history_latest_missing",
             "missing_artifacts": [path.name],
-            "searched_paths": [str(path), str(LOGS_DIR / "policy_registry.json")],
+            "searched_paths": [to_repo_relative(path), to_repo_relative(registry_path)],
             "suggested_next_actions": ["Run SIM training to generate policy history artifacts."],
-            "source": {"mode": "missing", "path": str(path)},
+            "source": {"mode": "missing", "path": to_repo_relative(path)},
         }
     missing = _require_fields(payload, ["schema_version", "created_utc", "run_id", "policy_version"])
     if missing:
