@@ -70,6 +70,7 @@ def compute_xp_snapshot(
     promotion_history_events: list[dict[str, Any]] | None,
     walk_forward_result: dict[str, Any] | None,
     no_lookahead_audit: dict[str, Any] | None,
+    trade_activity_report: dict[str, Any] | None,
     doctor_report: dict[str, Any] | None,
     repo_hygiene: dict[str, Any] | None,
     evidence_paths: dict[str, Path | None],
@@ -231,6 +232,28 @@ def compute_xp_snapshot(
     else:
         add_insufficient("missing_walk_forward_result", -8, [evidence_paths.get("walk_forward")])
 
+    if trade_activity_report and isinstance(trade_activity_report, dict):
+        ta_status = str(trade_activity_report.get("status") or "UNKNOWN")
+        violations = trade_activity_report.get("violations", [])
+        violation_codes = []
+        if isinstance(violations, list):
+            for item in violations:
+                if isinstance(item, dict):
+                    violation_codes.append(str(item.get("code")))
+                else:
+                    violation_codes.append(str(item))
+        if ta_status != "PASS" or violation_codes:
+            add_item(
+                key="overtrading_guardrails",
+                label="Overtrading guardrails",
+                value=", ".join(code for code in violation_codes if code) or ta_status,
+                points=-12,
+                evidence=[evidence_paths.get("trade_activity_report")],
+                notes="Penalizes trade-activity violations or missing audit status.",
+            )
+    else:
+        add_insufficient("missing_trade_activity_report", -8, [evidence_paths.get("trade_activity_report")])
+
     if doctor_report and isinstance(doctor_report, dict):
         kill_switch_present = bool(doctor_report.get("kill_switch_present"))
         kill_points = -15 if kill_switch_present else 5
@@ -291,6 +314,7 @@ def compute_xp_snapshot(
         "walk_forward_result": _safe_relpath(evidence_paths.get("walk_forward")),
         "walk_forward_windows": _safe_relpath(evidence_paths.get("walk_forward_windows")),
         "no_lookahead_audit": _safe_relpath(evidence_paths.get("no_lookahead_audit")),
+        "trade_activity_report": _safe_relpath(evidence_paths.get("trade_activity_report")),
         "doctor_report": _safe_relpath(evidence_paths.get("doctor_report")),
         "repo_hygiene": _safe_relpath(evidence_paths.get("repo_hygiene")),
     }

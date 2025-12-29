@@ -50,6 +50,7 @@ Evidence and events:
 - Evidence pack defaults to `artifacts/action_center_apply/` with:
   - `action_center_apply_summary.json`
   - `action_center_apply.log`
+  - `overtrading_guardrails_evidence.json` (when enabling guardrails)
 - Apply also writes `artifacts/action_center_apply_result.json`.
 - Apply attempts append to `Logs/events_YYYY-MM-DD.jsonl`.
 
@@ -60,6 +61,10 @@ When storage health is flagged by Doctor, the Action Center may recommend:
 - `RUN_RETENTION_REPORT` (generate `retention_report.json`)
 - `PRUNE_OLD_RUNS_SAFE` (conservative prune with safety checks)
 - `REBUILD_RECENT_INDEX` (refresh `Logs/train_runs/recent_runs_index.json`)
+
+## Overtrading guardrails action (SAFE)
+
+- `ENABLE_OVERTRADING_GUARDRAILS_SAFE` copies `Data/overtrading_budget.json` into `Logs/runtime/overtrading_budget.json`.
 
 ## CI forced-fail demo
 

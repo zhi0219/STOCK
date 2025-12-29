@@ -43,6 +43,7 @@ SEED_PATHS = {
     "Data/policy_registry.seed.json",
     "Data/friction_policy.json",
     "Data/retention_policy.json",
+    "Data/overtrading_budget.json",
 }
 
 SAFE_DELETE_ROOTS = [

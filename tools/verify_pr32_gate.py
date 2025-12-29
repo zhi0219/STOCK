@@ -169,6 +169,7 @@ def main() -> int:
         GateConfig(require_walk_forward=True),
         stress_report={"status": "PASS", "baseline_pass": True, "stress_pass": True, "scenarios": [{"pass": True}]},
         walk_forward_result=None,
+        trade_activity_report={"status": "PASS", "violations": []},
     )
     if decision.get("decision") != "REJECT":
         errors.append("promotion_gate_missing_walk_forward_not_rejected")

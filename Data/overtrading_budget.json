@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "created_utc": "2025-01-01T00:00:00Z",
+  "max_trades_per_day": 12,
+  "min_seconds_between_trades": 300,
+  "max_turnover_per_day": 15000,
+  "volatility_scale": {
+    "enabled": false,
+    "multiplier": 1.0
+  }
+}

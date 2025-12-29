@@ -207,7 +207,14 @@ def main() -> int:
         "reject_rate": 0.0,
     }
     baselines = [{"candidate_id": "baseline", "score": -1.0}]
-    decision = evaluate_promotion_gate(candidate, baselines, "pr35_missing", GateConfig(), stress_report=None)
+    decision = evaluate_promotion_gate(
+        candidate,
+        baselines,
+        "pr35_missing",
+        GateConfig(),
+        stress_report=None,
+        trade_activity_report={"status": "PASS", "violations": []},
+    )
     if decision.get("decision") != "REJECT":
         errors.append("stress_missing_not_rejected")
 

@@ -135,6 +135,7 @@ def main() -> int:
             "promotion": artifacts.get("promotion_decision"),
             "promotion_history": artifacts.get("promotion_history_latest"),
             "promotion_history_jsonl": artifacts.get("promotion_history"),
+            "trade_activity_report": ARTIFACTS_DIR / "trade_activity_report.json",
             "doctor_report": ARTIFACTS_DIR / "doctor_report.json",
             "repo_hygiene": ARTIFACTS_DIR / "repo_hygiene.json",
         }
@@ -145,6 +146,7 @@ def main() -> int:
         history_events = _safe_read_jsonl(Path(str(artifacts.get("promotion_history"))))
         doctor_payload = _safe_read_json(ARTIFACTS_DIR / "doctor_report.json")
         repo_hygiene_payload = _safe_read_json(ARTIFACTS_DIR / "repo_hygiene.json")
+        trade_activity_payload = _safe_read_json(ARTIFACTS_DIR / "trade_activity_report.json")
 
         recomputed = compute_xp_snapshot(
             tournament=tournament_payload,
@@ -154,6 +156,7 @@ def main() -> int:
             promotion_history_events=history_events,
             walk_forward_result=None,
             no_lookahead_audit=None,
+            trade_activity_report=trade_activity_payload,
             doctor_report=doctor_payload,
             repo_hygiene=repo_hygiene_payload,
             evidence_paths=evidence_paths,

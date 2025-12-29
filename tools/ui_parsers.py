@@ -14,6 +14,7 @@ PROGRESS_JUDGE_DIR = RUNS_ROOT / "progress_judge"
 XP_SNAPSHOT_DIR = RUNS_ROOT / "progress_xp"
 XP_SNAPSHOT_LATEST = XP_SNAPSHOT_DIR / "xp_snapshot_latest.json"
 RECENT_RUNS_INDEX_PATH = RUNS_ROOT / "recent_runs_index.json"
+TRADE_ACTIVITY_LATEST = RUNS_ROOT / "_latest" / "trade_activity_report_latest.json"
 
 
 def _safe_read_json(path: Path) -> dict[str, Any]:
@@ -223,6 +224,21 @@ def load_xp_snapshot_latest(path: Path = XP_SNAPSHOT_LATEST) -> dict[str, Any]:
     payload.setdefault("level_progress", 0.0)
     payload.setdefault("missing_reasons", [])
     payload.setdefault("xp_breakdown", [])
+    return payload
+
+
+def load_trade_activity_latest(path: Path = TRADE_ACTIVITY_LATEST) -> dict[str, Any]:
+    payload = _safe_read_json(path)
+    if not payload:
+        return {
+            "status": "missing",
+            "missing_reason": "trade_activity_report_missing",
+            "missing_artifacts": [path.name],
+            "searched_paths": [to_repo_relative(path)],
+            "suggested_next_actions": ["Run python -m tools.trade_activity_audit to generate the report."],
+            "source": {"mode": "missing", "path": to_repo_relative(path)},
+        }
+    payload.setdefault("source", {"mode": "latest_pointer", "path": to_repo_relative(path)})
     return payload
 
 

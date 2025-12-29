@@ -22,6 +22,7 @@ class GateConfig:
     auto_promote_consecutive: int = 3
     require_walk_forward: bool = False
     require_no_lookahead: bool = False
+    require_trade_activity: bool = True
 
 
 def _now() -> str:
@@ -96,6 +97,7 @@ def evaluate_promotion_gate(
     stress_report: Dict[str, object] | None = None,
     walk_forward_result: Dict[str, object] | None = None,
     no_lookahead_audit: Dict[str, object] | None = None,
+    trade_activity_report: Dict[str, object] | None = None,
 ) -> Dict[str, object]:
     config = config or GateConfig()
     ts = _now()
@@ -239,7 +241,48 @@ def evaluate_promotion_gate(
     if no_lookahead_issues and config.require_no_lookahead:
         reasons.append("no_lookahead_constraints_failed")
 
-    current_pass = bool(safety_pass and beat_baselines and stress_ok and walk_forward_ok and no_lookahead_ok)
+    trade_activity_ok = True
+    trade_activity_status = None
+    trade_activity_violations: List[str] = []
+    trade_activity_evidence: Dict[str, object] = {}
+    if trade_activity_report is None:
+        trade_activity_status = "MISSING"
+        if config.require_trade_activity:
+            trade_activity_ok = False
+            trade_activity_violations.append("trade_activity_missing")
+            required_steps.append("run_trade_activity_audit")
+    else:
+        trade_activity_status = str(trade_activity_report.get("status") or "UNKNOWN")
+        violations = trade_activity_report.get("violations")
+        if isinstance(violations, list):
+            trade_activity_violations.extend(str(item.get("code", item)) for item in violations if item)
+        if trade_activity_status != "PASS":
+            trade_activity_ok = False
+        if trade_activity_violations:
+            trade_activity_ok = False
+        evidence = trade_activity_report.get("evidence")
+        if isinstance(evidence, dict):
+            trade_activity_evidence = {
+                key: to_repo_relative(Path(str(value)))
+                if isinstance(value, str)
+                else value
+                for key, value in evidence.items()
+                if value
+            }
+        if trade_activity_violations:
+            required_steps.append("reduce_trade_activity")
+
+    if trade_activity_violations or (trade_activity_status == "MISSING" and config.require_trade_activity):
+        reasons.append("overtrading_constraints_failed")
+
+    current_pass = bool(
+        safety_pass
+        and beat_baselines
+        and stress_ok
+        and walk_forward_ok
+        and no_lookahead_ok
+        and trade_activity_ok
+    )
     total_passes = window_passes + (1 if current_pass else 0)
     if total_passes < config.window_passes_required:
         reasons.append("insufficient_window_wins")
@@ -286,6 +329,9 @@ def evaluate_promotion_gate(
         "no_lookahead_status": no_lookahead_status,
         "no_lookahead_issues": no_lookahead_issues,
         "no_lookahead_evidence": no_lookahead_evidence,
+        "trade_activity_status": trade_activity_status,
+        "trade_activity_violations": trade_activity_violations,
+        "trade_activity_evidence": trade_activity_evidence,
     }
 
 
@@ -299,6 +345,11 @@ def parse_args(argv: List[str]) -> object:
     parser.add_argument("--candidate", help="Path to candidate metrics JSON")
     parser.add_argument("--baselines", help="Path to baselines metrics JSON")
     parser.add_argument("--stress-report", dest="stress_report", help="Path to stress report JSON")
+    parser.add_argument(
+        "--trade-activity-report",
+        dest="trade_activity_report",
+        help="Path to trade activity report JSON",
+    )
     parser.add_argument("--run-id", dest="run_id", default="manual", help="Run ID for evidence")
     return parser.parse_args(argv)
 
@@ -308,6 +359,7 @@ def main(argv: List[str] | None = None) -> int:
     candidate = {}
     baselines: List[Dict[str, object]] = []
     stress_report: Dict[str, object] | None = None
+    trade_activity_report: Dict[str, object] | None = None
     if args.candidate:
         candidate_path = Path(args.candidate)
         if candidate_path.exists():
@@ -324,7 +376,19 @@ def main(argv: List[str] | None = None) -> int:
             stress_payload = json.loads(stress_path.read_text(encoding="utf-8"))
             if isinstance(stress_payload, dict):
                 stress_report = stress_payload
-    decision = evaluate_promotion_gate(candidate or None, baselines, str(args.run_id), stress_report=stress_report)
+    if args.trade_activity_report:
+        report_path = Path(args.trade_activity_report)
+        if report_path.exists():
+            report_payload = json.loads(report_path.read_text(encoding="utf-8"))
+            if isinstance(report_payload, dict):
+                trade_activity_report = report_payload
+    decision = evaluate_promotion_gate(
+        candidate or None,
+        baselines,
+        str(args.run_id),
+        stress_report=stress_report,
+        trade_activity_report=trade_activity_report,
+    )
     print(json.dumps(decision, ensure_ascii=False, indent=2))
     return 0 if decision.get("decision") == "APPROVE" else 1
 

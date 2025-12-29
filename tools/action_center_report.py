@@ -13,6 +13,8 @@ from typing import Any
 from tools.git_baseline_probe import probe_baseline
 from tools import doctor_report
 from tools import git_hygiene_fix
+from tools.overtrading_budget import DEFAULT_BUDGET, load_overtrading_budget
+from tools.paths import runtime_dir, to_repo_relative
 
 ROOT = Path(__file__).resolve().parent.parent
 LOGS_DIR = ROOT / "Logs"
@@ -55,6 +57,7 @@ CONFIRM_TOKENS = {
     "REBUILD_RECENT_INDEX": "INDEX",
     "FIX_GIT_RED_SAFE": "GITSAFE",
     "REVIEW_GIT_DIRTY": "REVIEW",
+    "ENABLE_OVERTRADING_GUARDRAILS_SAFE": "GUARDRAILS",
 }
 
 ACTION_DEFINITIONS = {
@@ -162,6 +165,13 @@ ACTION_DEFINITIONS = {
         "safety_notes": "SIM-only. Generates guidance for unknown git changes; no auto-apply.",
         "effect_summary": "Writes a review guidance artifact for manual inspection.",
         "risk_level": "CAUTION",
+    },
+    "ENABLE_OVERTRADING_GUARDRAILS_SAFE": {
+        "title": "Enable Overtrading Guardrails (Safe Defaults)",
+        "confirmation_token": CONFIRM_TOKENS["ENABLE_OVERTRADING_GUARDRAILS_SAFE"],
+        "safety_notes": "SIM-only. Writes runtime overtrading budget config; no broker access.",
+        "effect_summary": "Copies Data/overtrading_budget.json into Logs/runtime/overtrading_budget.json.",
+        "risk_level": "SAFE",
     },
 }
 
@@ -630,6 +640,29 @@ def _execute_review_git_dirty() -> ActionExecutionResult:
     return ActionExecutionResult("REVIEW_GIT_DIRTY", True, "review guidance written", details)
 
 
+def _execute_enable_overtrading_guardrails() -> ActionExecutionResult:
+    budget_payload = load_overtrading_budget()
+    seed_budget = budget_payload.get("budget") if isinstance(budget_payload, dict) else None
+    if not isinstance(seed_budget, dict):
+        seed_budget = dict(DEFAULT_BUDGET)
+    runtime_path = runtime_dir() / "overtrading_budget.json"
+    payload = dict(seed_budget)
+    payload["enabled_utc"] = _iso_now()
+    runtime_path.parent.mkdir(parents=True, exist_ok=True)
+    runtime_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    details = {
+        "output_path": _relpath(runtime_path),
+        "changes_made": [_relpath(runtime_path)],
+        "source_seed": to_repo_relative(ROOT / "Data" / "overtrading_budget.json"),
+    }
+    return ActionExecutionResult(
+        "ENABLE_OVERTRADING_GUARDRAILS_SAFE",
+        True,
+        "overtrading guardrails enabled",
+        details,
+    )
+
+
 def _execute_action(action_id: str) -> ActionExecutionResult:
     if action_id == "CLEAR_KILL_SWITCH":
         return _execute_clear_kill_switch()
@@ -661,6 +694,8 @@ def _execute_action(action_id: str) -> ActionExecutionResult:
         return _execute_fix_git_red_safe()
     if action_id == "REVIEW_GIT_DIRTY":
         return _execute_review_git_dirty()
+    if action_id == "ENABLE_OVERTRADING_GUARDRAILS_SAFE":
+        return _execute_enable_overtrading_guardrails()
     raise ValueError(f"Unknown action_id: {action_id}")
 
 
