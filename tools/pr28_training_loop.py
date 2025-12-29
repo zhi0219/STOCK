@@ -11,7 +11,9 @@ from typing import Dict, Iterable, List
 
 from tools.promotion_gate_v2 import GateConfig
 from tools.sim_tournament import BASELINE_CANDIDATES, run_strategy_tournament
+from tools.replay_artifacts import build_decision_cards, write_replay_artifacts
 from tools.strategy_pool import load_strategy_pool, select_candidates, write_strategy_pool_manifest
+from tools.paths import to_repo_relative
 
 ROOT = Path(__file__).resolve().parent.parent
 LOGS_DIR = ROOT / "Logs"
@@ -287,12 +289,12 @@ def run_pr28_flow(config: PR28Config) -> Dict[str, Path]:
     history_global = config.runs_root / "promotion_history.jsonl"
     history_run = run_dir / "promotion_history.jsonl"
     evidence_pack = {
-        "run_dir": str(run_dir),
+        "run_dir": to_repo_relative(run_dir),
         "paths": {
-            "tournament_result": str(tournament_path),
-            "judge_result": str(judge_path),
-            "promotion_decision": str(promotion_path),
-            "promotion_history": str(history_global),
+            "tournament_result": to_repo_relative(tournament_path),
+            "judge_result": to_repo_relative(judge_path),
+            "promotion_decision": to_repo_relative(promotion_path),
+            "promotion_history": to_repo_relative(history_global),
         },
     }
 
@@ -338,10 +340,29 @@ def run_pr28_flow(config: PR28Config) -> Dict[str, Path]:
     history_latest = {
         **base_fields,
         "schema_version": 1,
-        "history_path": str(history_global),
+        "history_path": to_repo_relative(history_global),
         "last_event": history_event,
     }
     _atomic_write_json(latest_dir / "promotion_history_latest.json", history_latest)
+
+    last_price = quotes[-1].get("price") if quotes else None
+    data_health = "PASS" if data_source != "synthetic_fallback" else "ISSUE"
+    decision_cards = build_decision_cards(
+        tournament_payload=tournament_result,
+        judge_payload=judge_payload,
+        promotion_payload=promotion_payload,
+        run_id=run_id,
+        ts_utc=ts_utc,
+        last_price=float(last_price) if last_price is not None else None,
+        data_health=data_health,
+        evidence_paths={
+            "tournament_result": tournament_path,
+            "judge_result": judge_path,
+            "promotion_decision": promotion_path,
+            "promotion_history": history_global,
+        },
+    )
+    write_replay_artifacts(run_dir, run_id, safe_commit, decision_cards)
 
     return {
         "run_dir": run_dir,

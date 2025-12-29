@@ -148,11 +148,13 @@ from tools.git_baseline_probe import probe_baseline
 from tools.paths import policy_registry_runtime_path
 from tools.train_service import CADENCE_PRESETS
 from tools.ui_parsers import (
+    load_decision_cards,
     load_engine_status,
     load_policy_history,
     load_policy_history_latest,
     load_pr28_latest,
     load_progress_judge_latest,
+    load_replay_index_latest,
     load_xp_snapshot_latest,
 )
 from tools.ui_scroll import VerticalScrolledFrame
@@ -620,6 +622,17 @@ class App(tk.Tk):
         self._action_center_last_mtime: float | None = None
         self._action_center_report: dict[str, object] | None = None
         self._action_center_actions: list[dict[str, object]] = []
+        self.replay_status_var = tk.StringVar(value="Replay: missing")
+        self.replay_detail_var = tk.StringVar(value="Latest replay: -")
+        self.replay_latest_path_var = tk.StringVar(value="decision_cards_latest.jsonl: -")
+        self.replay_action_filter_var = tk.StringVar(value="(all)")
+        self.replay_symbol_filter_var = tk.StringVar(value="")
+        self.replay_reject_only_var = tk.BooleanVar(value=False)
+        self.replay_guard_failed_var = tk.BooleanVar(value=False)
+        self.replay_selected_detail_var = tk.StringVar(value="Selected card: (none)")
+        self._replay_cards: list[dict[str, object]] = []
+        self._replay_filtered_cards: list[dict[str, object]] = []
+        self._replay_index_payload: dict[str, object] | None = None
         self.action_center_selected_var = tk.StringVar(value="Selected action: (none)")
         self.action_center_status_marker_var = tk.StringVar(value="ACTION_CENTER_STATUS: ISSUE")
         self.action_center_data_health_var = tk.StringVar(value="DATA_HEALTH: ISSUE")
@@ -655,6 +668,7 @@ class App(tk.Tk):
         _, self.health_tab = self._create_scrollable_tab(notebook, "Dashboard")
         _, self.events_tab = self._create_scrollable_tab(notebook, "Events")
         _, self.progress_tab = self._create_scrollable_tab(notebook, "Progress (SIM-only)")
+        _, self.replay_tab = self._create_scrollable_tab(notebook, "Replay (SIM-only)")
         _, self.action_center_tab = self._create_scrollable_tab(notebook, "Action Center")
         _, self.summary_tab = self._create_scrollable_tab(notebook, "摘要")
         _, self.qa_tab = self._create_scrollable_tab(notebook, "AI Q&A")
@@ -664,6 +678,7 @@ class App(tk.Tk):
         self._build_health_tab()
         self._build_events_tab()
         self._build_progress_tab()
+        self._build_replay_tab()
         self._build_action_center_tab()
         self._build_summary_tab()
         self._build_qa_panel()
@@ -1462,6 +1477,7 @@ class App(tk.Tk):
         self._refresh_truthful_progress()
         self._refresh_xp_snapshot()
         self._refresh_policy_history()
+        self._refresh_replay_panel()
         self._maybe_auto_refresh_progress()
         self._refresh_throughput_panel()
 
@@ -1993,6 +2009,81 @@ class App(tk.Tk):
         self._refresh_policy_history()
         self._refresh_skill_tree_panel()
         self._refresh_upgrade_log()
+
+    def _build_replay_tab(self) -> None:
+        status_frame = tk.LabelFrame(self.replay_tab, text="Replay status (SIM-only)", padx=6, pady=6)
+        status_frame.pack(fill=tk.X, padx=6, pady=4)
+        tk.Label(status_frame, textvariable=self.replay_status_var, anchor="w").pack(anchor="w")
+        tk.Label(status_frame, textvariable=self.replay_detail_var, anchor="w").pack(anchor="w")
+        tk.Label(status_frame, textvariable=self.replay_latest_path_var, anchor="w", fg="#6b7280").pack(
+            anchor="w"
+        )
+
+        status_actions = tk.Frame(status_frame)
+        status_actions.pack(fill=tk.X, pady=4)
+        tk.Button(status_actions, text="Open latest replay file", command=self._open_replay_latest_file).pack(
+            side=tk.LEFT, padx=3
+        )
+        tk.Button(status_actions, text="Copy replay path", command=self._copy_replay_latest_path).pack(
+            side=tk.LEFT, padx=3
+        )
+
+        filter_frame = tk.LabelFrame(self.replay_tab, text="Filters", padx=6, pady=6)
+        filter_frame.pack(fill=tk.X, padx=6, pady=4)
+        tk.Label(filter_frame, text="Action").grid(row=0, column=0, sticky="w")
+        ttk.OptionMenu(
+            filter_frame,
+            self.replay_action_filter_var,
+            self.replay_action_filter_var.get(),
+            "(all)",
+            "BUY",
+            "SELL",
+            "HOLD",
+            "REJECT",
+            "NOOP",
+        ).grid(row=0, column=1, sticky="w", padx=4)
+        tk.Label(filter_frame, text="Symbol").grid(row=0, column=2, sticky="w")
+        tk.Entry(filter_frame, textvariable=self.replay_symbol_filter_var, width=16).grid(
+            row=0, column=3, sticky="w", padx=4
+        )
+        tk.Checkbutton(
+            filter_frame, text="Has reject", variable=self.replay_reject_only_var
+        ).grid(row=0, column=4, sticky="w", padx=4)
+        tk.Checkbutton(
+            filter_frame, text="Guard failed", variable=self.replay_guard_failed_var
+        ).grid(row=0, column=5, sticky="w", padx=4)
+        tk.Button(filter_frame, text="Apply filters", command=self._apply_replay_filters).grid(
+            row=0, column=6, sticky="w", padx=4
+        )
+
+        table_frame = tk.LabelFrame(self.replay_tab, text="Decision cards", padx=6, pady=6)
+        table_frame.pack(fill=tk.BOTH, expand=True, padx=6, pady=4)
+        columns = ("ts_utc", "step_id", "symbol", "action", "accepted", "rejects")
+        self.replay_tree = ttk.Treeview(table_frame, columns=columns, show="headings", height=10)
+        for name, width in [
+            ("ts_utc", 170),
+            ("step_id", 100),
+            ("symbol", 120),
+            ("action", 90),
+            ("accepted", 90),
+            ("rejects", 240),
+        ]:
+            self.replay_tree.heading(name, text=name)
+            self.replay_tree.column(name, width=width, anchor="w")
+        self.replay_tree.pack(fill=tk.BOTH, expand=True)
+        self.replay_tree.bind("<<TreeviewSelect>>", self._on_replay_select)
+
+        details_frame = tk.LabelFrame(self.replay_tab, text="Card details", padx=6, pady=6)
+        details_frame.pack(fill=tk.BOTH, expand=True, padx=6, pady=4)
+        tk.Label(details_frame, textvariable=self.replay_selected_detail_var, anchor="w").pack(anchor="w")
+        detail_actions = tk.Frame(details_frame)
+        detail_actions.pack(fill=tk.X, pady=2)
+        tk.Button(detail_actions, text="Copy evidence paths", command=self._copy_replay_evidence).pack(
+            side=tk.LEFT, padx=3
+        )
+        self.replay_detail_text = ScrolledText(details_frame, height=10, wrap=tk.WORD)
+        self.replay_detail_text.pack(fill=tk.BOTH, expand=True)
+        self.replay_detail_text.configure(state=tk.DISABLED)
         self.progress_last_refresh_var.set(f"Last refresh: {utc_now().isoformat()}")
 
     def _refresh_action_center_report(self) -> None:
@@ -3634,6 +3725,189 @@ class App(tk.Tk):
                         entry.get("reason", ""),
                     ),
                 )
+
+    def _refresh_replay_panel(self) -> None:
+        payload = load_replay_index_latest()
+        self._replay_index_payload = payload
+        if payload.get("status") == "missing":
+            reason = payload.get("missing_reason")
+            searched = payload.get("searched_paths", [])
+            searched_text = ", ".join(str(item) for item in searched) if searched else "-"
+            self.replay_status_var.set(f"Replay: missing ({reason}) | looked={searched_text}")
+            self.replay_detail_var.set("Latest replay: Missing/Not available")
+            self.replay_latest_path_var.set("decision_cards_latest.jsonl: -")
+            self._replay_cards = []
+            self._apply_replay_filters()
+            return
+        missing_reason = payload.get("missing_reason")
+        source = payload.get("source") if isinstance(payload.get("source"), dict) else {}
+        source_path = source.get("path", "")
+        if missing_reason == "replay_index_schema_mismatch":
+            self.replay_status_var.set(
+                f"Replay: Unsupported schema_version | source={source_path}"
+            )
+            self.replay_detail_var.set("Latest replay: Unsupported schema_version")
+            self._replay_cards = []
+            self._apply_replay_filters()
+            return
+
+        counts = payload.get("counts", {}) if isinstance(payload.get("counts"), dict) else {}
+        num_cards = counts.get("num_cards", 0)
+        created = payload.get("created_ts_utc") or payload.get("ts_utc") or "-"
+        self.replay_status_var.set(f"Replay: loaded | source={source_path}")
+        self.replay_detail_var.set(f"Latest replay: {created} | cards={num_cards}")
+
+        pointers = payload.get("pointers", {}) if isinstance(payload.get("pointers"), dict) else {}
+        decision_rel = str(pointers.get("decision_cards") or "")
+        self.replay_latest_path_var.set(
+            f"decision_cards_latest.jsonl: {decision_rel or '-'}"
+        )
+        decision_path = ROOT / decision_rel if decision_rel else None
+        if decision_path and decision_path.exists():
+            self._replay_cards = load_decision_cards(decision_path)
+        else:
+            self._replay_cards = []
+        self._apply_replay_filters()
+
+    def _apply_replay_filters(self) -> None:
+        action_filter = self.replay_action_filter_var.get()
+        symbol_filter = self.replay_symbol_filter_var.get().strip().lower()
+        reject_only = self.replay_reject_only_var.get()
+        guard_failed = self.replay_guard_failed_var.get()
+
+        filtered: list[dict[str, object]] = []
+        for card in self._replay_cards:
+            if not isinstance(card, dict):
+                continue
+            action = str(card.get("action") or "")
+            if action_filter != "(all)" and action != action_filter:
+                continue
+            symbol = str(card.get("symbol") or "").lower()
+            if symbol_filter and symbol_filter not in symbol:
+                continue
+            decision = card.get("decision", {}) if isinstance(card.get("decision"), dict) else {}
+            reject_codes = decision.get("reject_reason_codes", [])
+            has_reject = bool(reject_codes) or action == "REJECT"
+            if reject_only and not has_reject:
+                continue
+            guards = card.get("guards", {}) if isinstance(card.get("guards"), dict) else {}
+            data_health = str(guards.get("data_health") or "")
+            guard_failed_state = False
+            if data_health and data_health.upper() != "PASS":
+                guard_failed_state = True
+            if guards.get("kill_switch") or not guards.get("cooldown_ok", True):
+                guard_failed_state = True
+            if not guards.get("limits_ok", True) or not guards.get("no_lookahead_ok", True):
+                guard_failed_state = True
+            if guard_failed and not guard_failed_state:
+                continue
+            filtered.append(card)
+
+        self._replay_filtered_cards = filtered
+        if hasattr(self, "replay_tree"):
+            self.replay_tree.delete(*self.replay_tree.get_children())
+            for card in filtered:
+                decision = card.get("decision", {}) if isinstance(card.get("decision"), dict) else {}
+                reject_codes = decision.get("reject_reason_codes", [])
+                reject_text = ",".join(str(item) for item in reject_codes) if reject_codes else ""
+                self.replay_tree.insert(
+                    "",
+                    tk.END,
+                    values=(
+                        card.get("ts_utc", ""),
+                        card.get("step_id", ""),
+                        card.get("symbol", ""),
+                        card.get("action", ""),
+                        decision.get("accepted", False),
+                        reject_text,
+                    ),
+                )
+
+    def _on_replay_select(self, _event: object = None) -> None:
+        if not hasattr(self, "replay_tree"):
+            return
+        selection = self.replay_tree.selection()
+        if not selection:
+            self.replay_selected_detail_var.set("Selected card: (none)")
+            if hasattr(self, "replay_detail_text"):
+                self.replay_detail_text.configure(state=tk.NORMAL)
+                self.replay_detail_text.delete("1.0", tk.END)
+                self.replay_detail_text.configure(state=tk.DISABLED)
+            return
+        index = self.replay_tree.index(selection[0])
+        if index >= len(self._replay_filtered_cards):
+            return
+        card = self._replay_filtered_cards[index]
+        self.replay_selected_detail_var.set(
+            f"Selected card: {card.get('action')} {card.get('symbol')} step={card.get('step_id')}"
+        )
+        if hasattr(self, "replay_detail_text"):
+            self.replay_detail_text.configure(state=tk.NORMAL)
+            self.replay_detail_text.delete("1.0", tk.END)
+            self.replay_detail_text.insert(
+                tk.END, json.dumps(card, ensure_ascii=False, indent=2)
+            )
+            self.replay_detail_text.configure(state=tk.DISABLED)
+
+    def _open_replay_latest_file(self) -> None:
+        payload = self._replay_index_payload or {}
+        pointers = payload.get("pointers", {}) if isinstance(payload.get("pointers"), dict) else {}
+        decision_rel = str(pointers.get("decision_cards") or "")
+        if not decision_rel:
+            messagebox.showinfo("Replay", "No replay file available")
+            return
+        path = ROOT / decision_rel
+        if not path.exists():
+            messagebox.showinfo("Replay", f"Replay file not found: {decision_rel}")
+            return
+        try:
+            if hasattr(os, "startfile"):
+                os.startfile(str(path))  # type: ignore[attr-defined]
+                return
+            if sys.platform == "darwin":
+                subprocess.Popen(["open", str(path)], env=_utf8_env())
+                return
+            subprocess.Popen(["xdg-open", str(path)], env=_utf8_env())
+        except Exception:  # pragma: no cover - UI feedback
+            self._show_copyable_text("Replay", "Copy the path below:", decision_rel)
+
+    def _copy_replay_latest_path(self) -> None:
+        payload = self._replay_index_payload or {}
+        pointers = payload.get("pointers", {}) if isinstance(payload.get("pointers"), dict) else {}
+        decision_rel = str(pointers.get("decision_cards") or "")
+        if not decision_rel:
+            messagebox.showinfo("Replay", "No replay file available")
+            return
+        try:
+            self.clipboard_clear()
+            self.clipboard_append(decision_rel)
+            messagebox.showinfo("Replay", "Replay path copied to clipboard.")
+        except Exception:  # pragma: no cover - UI feedback
+            self._show_copyable_text("Replay", "Copy the path below:", decision_rel)
+
+    def _copy_replay_evidence(self) -> None:
+        if not hasattr(self, "replay_tree"):
+            return
+        selection = self.replay_tree.selection()
+        if not selection:
+            messagebox.showinfo("Replay", "No replay card selected")
+            return
+        index = self.replay_tree.index(selection[0])
+        if index >= len(self._replay_filtered_cards):
+            return
+        card = self._replay_filtered_cards[index]
+        evidence = card.get("evidence", {}) if isinstance(card.get("evidence"), dict) else {}
+        paths = evidence.get("paths", []) if isinstance(evidence.get("paths"), list) else []
+        payload = "\n".join(str(item) for item in paths) if paths else ""
+        if not payload:
+            messagebox.showinfo("Replay", "No evidence paths for selected card")
+            return
+        try:
+            self.clipboard_clear()
+            self.clipboard_append(payload)
+            messagebox.showinfo("Replay", "Evidence paths copied to clipboard.")
+        except Exception:  # pragma: no cover - UI feedback
+            self._show_copyable_text("Replay", "Copy the paths below:", payload)
 
     def _open_policy_evidence(self) -> None:
         if not hasattr(self, "policy_tree"):
