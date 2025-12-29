@@ -52,10 +52,13 @@ def _run_action_center_apply() -> Evidence:
     evidence_dir = ARTIFACTS_DIR / "action_center_apply"
     evidence_dir.mkdir(parents=True, exist_ok=True)
     action_id = "ACTION_REBUILD_PROGRESS_INDEX"
-    confirm = f"APPLY:{action_id}"
+    from tools.action_center_report import CONFIRM_TOKENS
+
+    confirm = CONFIRM_TOKENS[action_id]
     cmd = [
         sys.executable,
-        str(ROOT / "tools" / "action_center_apply.py"),
+        "-m",
+        "tools.action_center_apply",
         "--action-id",
         action_id,
         "--confirm",
