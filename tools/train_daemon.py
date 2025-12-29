@@ -23,6 +23,7 @@ if str(Path(__file__).resolve().parent.parent) not in sys.path:
 
 from tools.policy_registry import get_policy, load_registry, record_history
 from tools.policy_registry import promote_policy as _promote_policy
+from tools.execution_friction import load_friction_policy
 from tools.promotion_gate_v2 import GateConfig, evaluate_promotion_gate
 from tools.sim_autopilot import _kill_switch_enabled, _kill_switch_path, run_step
 from tools.sim_tournament import (
@@ -37,6 +38,7 @@ from tools.sim_tournament import (
 from tools.strategy_pool import select_candidates, write_strategy_pool_manifest
 from tools.progress_index import build_progress_index, write_progress_index
 from tools import progress_judge
+from tools.stress_harness import evaluate_stress
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_INPUT = ROOT / "Data" / "quotes.csv"
@@ -52,6 +54,8 @@ LATEST_POLICY_HISTORY = LATEST_DIR / "policy_history_latest.json"
 LATEST_PROMOTION_DECISION = LATEST_DIR / "promotion_decision_latest.json"
 LATEST_TOURNAMENT = LATEST_DIR / "tournament_latest.json"
 LATEST_CANDIDATES = LATEST_DIR / "candidates_latest.json"
+LATEST_FRICTION_POLICY = LATEST_DIR / "friction_policy_latest.json"
+LATEST_STRESS_REPORT = LATEST_DIR / "stress_report_latest.json"
 EVIDENCE_CORE = [
     ROOT / "evidence_packs",
     ROOT / "qa_packets",
@@ -805,6 +809,8 @@ def _run_simulation(
     args: argparse.Namespace,
     run_dir: Path,
     kill_cfg: Dict[str, object],
+    friction_policy: Dict[str, float | int],
+    friction_seed: int | None,
 ) -> Tuple[str, Dict[str, object], List[Dict[str, object]], Counter, int, Dict[str, object]]:
     sim_state: Dict[str, object] = {
         "cash_usd": 10_000.0,
@@ -857,6 +863,8 @@ def _run_simulation(
                 "verify_no_lookahead": True,
                 "policy_version": policy_version,
                 "risk_overrides": policy_cfg.get("risk_overrides", {}),
+                "friction_policy": friction_policy,
+                "friction_seed": friction_seed,
             },
         )
 
@@ -967,6 +975,7 @@ def main(argv: List[str] | None = None) -> int:
 
     policy_version, policy_cfg = get_policy(args.policy_version)
     kill_cfg = _load_config()
+    friction_policy = load_friction_policy()
     quotes = _load_quotes(input_path)
     healthy, reason, metrics = _quotes_health(quotes)
     degraded_flags: List[str] = []
@@ -1004,8 +1013,17 @@ def main(argv: List[str] | None = None) -> int:
         _write_event("TRAIN_BUDGET_EXHAUSTED", "Budget exhausted", stop_reason=stop)
         return 1
 
+    _atomic_write_json(run_dir / "friction_policy.json", friction_policy)
+    _atomic_copy_json(run_dir / "friction_policy.json", LATEST_FRICTION_POLICY)
     stop_reason, meta, equity_rows, rejects, trade_count, sim_state = _run_simulation(
-        quotes, policy_version, policy_cfg, args, run_dir, kill_cfg
+        quotes,
+        policy_version,
+        policy_cfg,
+        args,
+        run_dir,
+        kill_cfg,
+        friction_policy,
+        seed,
     )
     if stop_reason == "kill_switch":
         _write_event(
@@ -1124,6 +1142,15 @@ def main(argv: List[str] | None = None) -> int:
     _atomic_copy_json(run_dir / "candidates.json", LATEST_CANDIDATES)
 
     gate_config = GateConfig()
+    stress_report = evaluate_stress(
+        quotes,
+        policy_version,
+        policy_cfg,
+        run_dir,
+        seed=seed,
+        max_steps=min(200, args.max_steps),
+    )
+    _atomic_copy_json(run_dir / "stress_report.json", LATEST_STRESS_REPORT)
     tournament_payload = run_strategy_tournament(
         quotes,
         selected_candidates,
@@ -1168,7 +1195,13 @@ def main(argv: List[str] | None = None) -> int:
     }
     _atomic_write_json(run_dir / "promotion_recommendation.json", recommendation)
 
-    decision_payload = evaluate_promotion_gate(best_candidate, baseline_entries, run_id, gate_config)
+    decision_payload = evaluate_promotion_gate(
+        best_candidate,
+        baseline_entries,
+        run_id,
+        gate_config,
+        stress_report=stress_report,
+    )
     decision_payload = {
         "schema_version": 1,
         "created_utc": _now().isoformat(),
