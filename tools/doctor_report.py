@@ -14,6 +14,7 @@ from typing import Any, Iterable
 
 from tools.paths import repo_root, runtime_dir, to_repo_relative
 from tools.repo_hygiene import scan_repo
+from tools import repo_hygiene
 
 ROOT = repo_root()
 ARTIFACTS_DIR = ROOT / "artifacts"
@@ -24,9 +25,12 @@ KILL_SWITCH_PATHS = [ROOT / "Data" / "KILL_SWITCH", LOGS_DIR / "train_service" /
 TEMP_FILE_THRESHOLD_SECONDS = 3600
 TEMP_FILE_PATTERNS = (".tmp", ".tmp.")
 ABS_PATH_PATTERN = re.compile(r"[A-Za-z]:\\")
+MAX_GIT_DIRTY_FILES = 20
 
 ACTION_GEN_DOCTOR_REPORT = "GEN_DOCTOR_REPORT"
 ACTION_REPO_HYGIENE_FIX_SAFE = "REPO_HYGIENE_FIX_SAFE"
+ACTION_FIX_GIT_RED_SAFE = "FIX_GIT_RED_SAFE"
+ACTION_REVIEW_GIT_DIRTY = "REVIEW_GIT_DIRTY"
 ACTION_CLEAR_KILL_SWITCH = "CLEAR_KILL_SWITCH"
 ACTION_CLEAR_STALE_TEMP = "CLEAR_STALE_TEMP"
 ACTION_ENSURE_RUNTIME_DIRS = "ENSURE_RUNTIME_DIRS"
@@ -140,6 +144,25 @@ def _scan_absolute_paths(paths: Iterable[Path]) -> list[Path]:
     return leaked
 
 
+def _parse_status_path(line: str) -> str:
+    path = line[3:].strip()
+    if " -> " in path:
+        path = path.split(" -> ", 1)[1].strip()
+    return repo_hygiene.normalize_path(path)
+
+
+def _collect_git_dirty_files(status_lines: list[str], limit: int) -> list[dict[str, str]]:
+    dirty: list[dict[str, str]] = []
+    for line in status_lines[:limit]:
+        if not line:
+            continue
+        path = _parse_status_path(line)
+        is_tracked = not (line.startswith("?? ") or line.startswith("!! "))
+        classification = repo_hygiene.classify_for_doctor(path, is_tracked)
+        dirty.append({"path": path, "classification": classification})
+    return dirty
+
+
 def scan_absolute_paths(paths: Iterable[Path]) -> list[Path]:
     return _scan_absolute_paths(paths)
 
@@ -228,13 +251,20 @@ def build_report() -> dict[str, Any]:
     hygiene = scan_repo()
     counts = hygiene.get("counts", {}) if isinstance(hygiene.get("counts"), dict) else {}
     if hygiene.get("status") != "PASS":
+        suggested_actions: list[str] = []
+        if counts.get("runtime_artifacts", 0) > 0:
+            suggested_actions.append(ACTION_FIX_GIT_RED_SAFE)
+        if counts.get("unknown", 0) > 0:
+            suggested_actions.append(ACTION_REVIEW_GIT_DIRTY)
+        if not suggested_actions:
+            suggested_actions.append(ACTION_REPO_HYGIENE_FIX_SAFE)
         issues.append(
             {
                 "id": "REPO_HYGIENE_ISSUE",
                 "severity": "WARN",
                 "summary": "Repository hygiene scan detected tracked or untracked files.",
                 "evidence_paths_rel": ["artifacts/doctor_report.json"],
-                "suggested_actions": [ACTION_REPO_HYGIENE_FIX_SAFE],
+                "suggested_actions": suggested_actions,
             }
         )
 
@@ -337,6 +367,9 @@ def build_report() -> dict[str, Any]:
                 }
             )
 
+    git_status_lines, git_error = repo_hygiene.git_status_porcelain(include_ignored=True)
+    git_clean = 1 if git_error is None and not git_status_lines else 0
+    git_dirty_files = _collect_git_dirty_files(git_status_lines, MAX_GIT_DIRTY_FILES)
     repo_root_rel = "."
     report = {
         "ts_utc": now.isoformat(),
@@ -348,12 +381,20 @@ def build_report() -> dict[str, Any]:
         "venv_detected": venv_detected,
         "kill_switch_present": kill_switch_present,
         "runtime_write_health": runtime_write_health,
-            "repo_hygiene_summary": {
-                "status": hygiene.get("status", "UNKNOWN"),
-                "tracked_modified_count": counts.get("tracked_modified", 0),
-                "untracked_count": counts.get("untracked", 0),
-                "runtime_artifact_count": counts.get("runtime_artifacts", 0),
-            },
+        "git_status": {
+            "clean": git_clean,
+            "available": git_error is None,
+            "error": git_error,
+            "dirty_count": len(git_status_lines),
+        },
+        "git_dirty_files": git_dirty_files,
+        "repo_hygiene_summary": {
+            "status": hygiene.get("status", "UNKNOWN"),
+            "tracked_modified_count": counts.get("tracked_modified", 0),
+            "untracked_count": counts.get("untracked", 0),
+            "runtime_artifact_count": counts.get("runtime_artifacts", 0),
+            "unknown_count": counts.get("unknown", 0),
+        },
         "storage_health": storage_health,
         "issues": issues,
     }
@@ -390,11 +431,14 @@ def main() -> int:
             "venv_detected": bool(os.environ.get("VIRTUAL_ENV") or (ROOT / ".venv").exists()),
             "kill_switch_present": any(path.exists() for path in KILL_SWITCH_PATHS),
             "runtime_write_health": {"status": "FAIL", "error": {"error_message": error_text}},
+            "git_status": {"clean": 0, "available": False, "error": "doctor_report_failed", "dirty_count": 0},
+            "git_dirty_files": [],
             "repo_hygiene_summary": {
                 "status": "UNKNOWN",
                 "tracked_modified_count": 0,
                 "untracked_count": 0,
                 "runtime_artifact_count": 0,
+                "unknown_count": 0,
             },
             "issues": [
                 {

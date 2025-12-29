@@ -162,6 +162,20 @@ ACTION_CENTER_DEFAULTS = {
         "effect_summary": "Runs python -m tools.recent_runs_index.",
         "risk_level": "SAFE",
     },
+    "FIX_GIT_RED_SAFE": {
+        "title": "Fix Git Red (Safe)",
+        "confirmation_token": "GITSAFE",
+        "safety_notes": "SIM-only. Restores tracked runtime artifacts and removes untracked runtime files.",
+        "effect_summary": "Applies safe git hygiene fixes and writes evidence artifacts.",
+        "risk_level": "SAFE",
+    },
+    "REVIEW_GIT_DIRTY": {
+        "title": "Review unknown git changes",
+        "confirmation_token": "REVIEW",
+        "safety_notes": "SIM-only. Generates guidance for unknown git changes; no auto-apply.",
+        "effect_summary": "Writes a review guidance artifact for manual inspection.",
+        "risk_level": "CAUTION",
+    },
 }
 
 if str(ROOT) not in sys.path:

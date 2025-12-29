@@ -12,6 +12,7 @@ from typing import Any
 
 from tools.git_baseline_probe import probe_baseline
 from tools import doctor_report
+from tools import git_hygiene_fix
 
 ROOT = Path(__file__).resolve().parent.parent
 LOGS_DIR = ROOT / "Logs"
@@ -26,6 +27,9 @@ ABS_PATH_HINT_OUTPUT = ROOT / "artifacts" / "abs_path_sanitize_hint.json"
 SUPERVISOR_SCRIPT = ROOT / "tools" / "supervisor.py"
 PROGRESS_INDEX_SCRIPT = ROOT / "tools" / "progress_index.py"
 RECENT_RUNS_INDEX_SCRIPT = ROOT / "tools" / "recent_runs_index.py"
+GIT_HYGIENE_PLAN_PATH = ROOT / "artifacts" / "git_hygiene_fix_plan.json"
+GIT_HYGIENE_RESULT_PATH = ROOT / "artifacts" / "git_hygiene_fix_result.json"
+GIT_HYGIENE_REVIEW_PATH = ROOT / "artifacts" / "git_hygiene_review.json"
 
 LATEST_POINTERS = [
     "candidates_latest.json",
@@ -49,6 +53,8 @@ CONFIRM_TOKENS = {
     "RUN_RETENTION_REPORT": "REPORT",
     "PRUNE_OLD_RUNS_SAFE": "PRUNE",
     "REBUILD_RECENT_INDEX": "INDEX",
+    "FIX_GIT_RED_SAFE": "GITSAFE",
+    "REVIEW_GIT_DIRTY": "REVIEW",
 }
 
 ACTION_DEFINITIONS = {
@@ -142,6 +148,20 @@ ACTION_DEFINITIONS = {
         "safety_notes": "SIM-only. Rebuilds Logs/train_runs/recent_runs_index.json.",
         "effect_summary": "Runs python -m tools.recent_runs_index.",
         "risk_level": "SAFE",
+    },
+    "FIX_GIT_RED_SAFE": {
+        "title": "Fix Git Red (Safe)",
+        "confirmation_token": CONFIRM_TOKENS["FIX_GIT_RED_SAFE"],
+        "safety_notes": "SIM-only. Restores tracked runtime artifacts and removes untracked runtime files only.",
+        "effect_summary": "Applies safe git hygiene fixes and writes evidence artifacts.",
+        "risk_level": "SAFE",
+    },
+    "REVIEW_GIT_DIRTY": {
+        "title": "Review unknown git changes",
+        "confirmation_token": CONFIRM_TOKENS["REVIEW_GIT_DIRTY"],
+        "safety_notes": "SIM-only. Generates guidance for unknown git changes; no auto-apply.",
+        "effect_summary": "Writes a review guidance artifact for manual inspection.",
+        "risk_level": "CAUTION",
     },
 }
 
@@ -541,6 +561,75 @@ def _execute_rebuild_recent_index() -> ActionExecutionResult:
     return ActionExecutionResult("REBUILD_RECENT_INDEX", success, message, details)
 
 
+def _execute_fix_git_red_safe() -> ActionExecutionResult:
+    plan = git_hygiene_fix.build_plan()
+    git_hygiene_fix.write_plan(plan, GIT_HYGIENE_PLAN_PATH)
+    if not plan.get("git_available", False):
+        details = {
+            "plan_path": _relpath(GIT_HYGIENE_PLAN_PATH),
+            "refused": True,
+            "reason": plan.get("git_error") or "git unavailable",
+        }
+        write_event(
+            "GIT_HYGIENE_FIX_REFUSED",
+            "Action Center refused git hygiene fix (git unavailable).",
+            severity="ERROR",
+            action_id="FIX_GIT_RED_SAFE",
+            evidence_paths=[_relpath(GIT_HYGIENE_PLAN_PATH)],
+        )
+        return ActionExecutionResult("FIX_GIT_RED_SAFE", False, "git unavailable; refused", details)
+
+    result = git_hygiene_fix.apply_fix(plan, dry_run=False)
+    git_hygiene_fix.write_result(result, GIT_HYGIENE_RESULT_PATH)
+    details = {
+        "plan_path": _relpath(GIT_HYGIENE_PLAN_PATH),
+        "result_path": _relpath(GIT_HYGIENE_RESULT_PATH),
+        "status": result.get("status"),
+        "changes_made": result.get("changes_made", []),
+        "stdout": "",
+        "stderr": "",
+    }
+    success = result.get("status") == "PASS"
+    write_event(
+        "GIT_HYGIENE_FIX_APPLIED",
+        "Action Center applied git hygiene fix (safe).",
+        severity="INFO" if success else "ERROR",
+        action_id="FIX_GIT_RED_SAFE",
+        result_status=result.get("status"),
+        evidence_paths=[_relpath(GIT_HYGIENE_PLAN_PATH), _relpath(GIT_HYGIENE_RESULT_PATH)],
+    )
+    message = "git hygiene fix applied" if success else "git hygiene fix failed"
+    return ActionExecutionResult("FIX_GIT_RED_SAFE", success, message, details)
+
+
+def _execute_review_git_dirty() -> ActionExecutionResult:
+    plan = git_hygiene_fix.build_plan()
+    payload = {
+        "ts_utc": _iso_now(),
+        "summary": "Unknown git changes detected; review manually.",
+        "unknown_paths": plan.get("unknown_paths", []),
+        "git_status_before": plan.get("git_status_before", {}),
+        "guidance": [
+            "Run: git status --porcelain --untracked-files=all",
+            "Inspect unknown paths and decide whether to keep, ignore, or revert.",
+            "Use git restore <path> for tracked changes; git clean -fd only if you are sure.",
+        ],
+    }
+    GIT_HYGIENE_REVIEW_PATH.parent.mkdir(parents=True, exist_ok=True)
+    GIT_HYGIENE_REVIEW_PATH.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    details = {
+        "output_path": _relpath(GIT_HYGIENE_REVIEW_PATH),
+        "changes_made": [_relpath(GIT_HYGIENE_REVIEW_PATH)],
+    }
+    write_event(
+        "GIT_HYGIENE_REVIEW_READY",
+        "Action Center wrote git hygiene review guidance.",
+        action_id="REVIEW_GIT_DIRTY",
+        evidence_paths=[_relpath(GIT_HYGIENE_REVIEW_PATH)],
+    )
+    return ActionExecutionResult("REVIEW_GIT_DIRTY", True, "review guidance written", details)
+
+
 def _execute_action(action_id: str) -> ActionExecutionResult:
     if action_id == "CLEAR_KILL_SWITCH":
         return _execute_clear_kill_switch()
@@ -568,6 +657,10 @@ def _execute_action(action_id: str) -> ActionExecutionResult:
         return _execute_retention_prune_safe()
     if action_id == "REBUILD_RECENT_INDEX":
         return _execute_rebuild_recent_index()
+    if action_id == "FIX_GIT_RED_SAFE":
+        return _execute_fix_git_red_safe()
+    if action_id == "REVIEW_GIT_DIRTY":
+        return _execute_review_git_dirty()
     raise ValueError(f"Unknown action_id: {action_id}")
 
 
