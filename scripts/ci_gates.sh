@@ -8,6 +8,8 @@ status="PASS"
 rc=0
 failing_gate=""
 runner=""
+gate_script=""
+import_contract_module=""
 
 mkdir -p "${artifacts_dir}"
 : > "${log_file}"
@@ -124,6 +126,24 @@ if log_file.exists() and status == "FAIL":
     error_excerpt = "\n".join(lines[-80:])
     error_excerpt = sanitize_excerpt(error_excerpt)
 
+import_contract_result_path = artifacts_dir / "import_contract_result.json"
+import_contract_traceback_path = artifacts_dir / "import_contract_traceback.txt"
+import_contract_result: dict[str, object] | None = None
+import_contract_excerpt = ""
+if import_contract_result_path.exists():
+    try:
+        import_contract_result = json.loads(
+            import_contract_result_path.read_text(encoding="utf-8", errors="replace")
+        )
+    except Exception:
+        import_contract_result = {"status": "UNKNOWN", "module": None}
+if import_contract_traceback_path.exists():
+    trace_lines = import_contract_traceback_path.read_text(
+        encoding="utf-8", errors="replace"
+    ).splitlines()
+    import_contract_excerpt = "\n".join(trace_lines[-60:])
+    import_contract_excerpt = sanitize_excerpt(import_contract_excerpt)
+
 files = []
 if artifacts_dir.exists():
     for path in sorted(artifacts_dir.rglob("*")):
@@ -144,6 +164,10 @@ summary = {
     "runner": os.environ.get("CI_GATES_RUNNER", ""),
     "failing_gate": failing_gate,
     "error_excerpt": error_excerpt,
+    "import_contract": {
+        "result": import_contract_result,
+        "traceback_excerpt": import_contract_excerpt,
+    },
     "log_truncated": log_truncated,
     "log_bytes_original": log_bytes_original,
     "log_bytes_final": log_bytes_final,
@@ -166,6 +190,12 @@ summary_lines = [
     f"- **ts_utc**: `{summary['ts_utc']}`",
     f"- **failing_gate**: `{failing_gate}`" if status == "FAIL" else "- **failing_gate**: `n/a`",
     f"- **error_excerpt**:\n\n```\n{error_excerpt}\n```" if status == "FAIL" and error_excerpt else "- **error_excerpt**: `n/a`",
+    f"- **import_contract_status**: `{(import_contract_result or {}).get('status', 'UNKNOWN')}`",
+    f"- **import_contract_module**: `{(import_contract_result or {}).get('module', 'n/a')}`",
+    f"- **import_contract_exception**: `{(import_contract_result or {}).get('exception_type', 'none')}`",
+    f"- **import_contract_traceback_excerpt**:\n\n```\n{import_contract_excerpt}\n```"
+    if import_contract_excerpt
+    else "- **import_contract_traceback_excerpt**: `n/a`",
     f"- **log_truncated**: `{log_truncated}`",
     f"- **log_bytes_original**: `{log_bytes_original}`",
     f"- **log_bytes_final**: `{log_bytes_final}`",
@@ -204,11 +234,14 @@ fi
 if ls tools/verify_pr*_gate.py >/dev/null 2>&1; then
   mapfile -t pr_gates < <(ls tools/verify_pr*_gate.py 2>/dev/null | sort -V)
   last_index=$(( ${#pr_gates[@]} - 1 ))
-  runner="python3 ${pr_gates[$last_index]}"
+  gate_script="${pr_gates[$last_index]}"
+  runner="python3 ${gate_script}"
 elif [[ -f tools/verify_foundation.py ]]; then
-  runner="python3 tools/verify_foundation.py"
+  gate_script="tools/verify_foundation.py"
+  runner="python3 ${gate_script}"
 elif [[ -f tools/verify_consistency.py ]]; then
-  runner="python3 tools/verify_consistency.py"
+  gate_script="tools/verify_consistency.py"
+  runner="python3 ${gate_script}"
 fi
 
 if [[ -z "${runner}" ]]; then
@@ -217,14 +250,39 @@ if [[ -z "${runner}" ]]; then
   rc=1
   echo "No canonical gate runner found."
 else
+  import_contract_module="${gate_script%.py}"
+  import_contract_module="${import_contract_module#./}"
+  import_contract_module="${import_contract_module//\//.}"
+
   set +e
-  ${runner}
-  runner_exit=$?
+  python3 tools/verify_import_contract.py \
+    --module "${import_contract_module}" \
+    --artifacts-dir "${artifacts_dir}"
+  import_contract_exit=$?
   set -e
-  if [[ ${runner_exit} -ne 0 ]]; then
+
+  if [[ -f "import_contract_result.json" ]]; then
+    cp "import_contract_result.json" "${artifacts_dir}/" || true
+  fi
+  if [[ -f "import_contract_traceback.txt" ]]; then
+    cp "import_contract_traceback.txt" "${artifacts_dir}/" || true
+  fi
+
+  if [[ ${import_contract_exit} -ne 0 ]]; then
     status="FAIL"
-    failing_gate="${runner}"
-    rc=${runner_exit}
+    failing_gate="import_contract"
+    rc=${import_contract_exit}
+    echo "Import contract failed; skipping gate runner."
+  else
+    set +e
+    ${runner}
+    runner_exit=$?
+    set -e
+    if [[ ${runner_exit} -ne 0 ]]; then
+      status="FAIL"
+      failing_gate="${runner}"
+      rc=${runner_exit}
+    fi
   fi
 fi
 
