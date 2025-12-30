@@ -9,9 +9,10 @@ The CI entrypoint is:
 ```
 
 This script discovers the canonical gate runner, executes it, and emits auditable artifacts under `artifacts/`.
-For PR39, the canonical gate runner is `tools/verify_pr39_gate.py`. The preflight runner remains
-`tools/verify_pr36_gate.py`. CI also runs `tools.compile_check` early to fail closed on syntax
-errors in `tools/`.
+For PR40, the canonical gate runner is `tools/verify_pr40_gate.py`. The preflight runner remains
+`tools/verify_pr36_gate.py`. CI also runs `tools.compile_check` (targets: `tools`, `scripts`),
+`tools.syntax_guard`, `tools.ps_parse_guard`, and `tools.ui_preflight` early to fail closed on
+Windows UI launch regressions.
 
 ## Job Summary
 
@@ -39,6 +40,8 @@ CI always writes and uploads the following files under `artifacts/`:
 - `artifacts/compile_check_result.json` (compile check result)
 - `artifacts/syntax_guard_result.json` (syntax guard results)
 - `artifacts/syntax_guard_excerpt.txt` (syntax guard excerpt)
+- `artifacts/ps_parse_result.json` (PowerShell parse gate result)
+- `artifacts/ui_preflight_result.json` (UI preflight gate result)
 - `artifacts/walk_forward_result.json` (PR32 walk-forward summary)
 - `artifacts/walk_forward_windows.jsonl` (PR32 walk-forward windows)
 - `artifacts/no_lookahead_audit.json` (PR32 no-lookahead audit)
@@ -111,6 +114,14 @@ To run the syntax guard directly:
 
 ```
 python -m tools.syntax_guard
+```
+
+## PR40 gate (local)
+
+Run the PR40 gate locally using module mode:
+
+```
+python -m tools.verify_pr40_gate
 ```
 
 ## PR36 gate (local)

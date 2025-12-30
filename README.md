@@ -47,21 +47,20 @@ UI Proof（PR18 gate, PowerShell 复制即用）：
 推荐（包含预检 + compileall 闸门，失败即停止）：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\run_ui_windows.ps1
+powershell.exe -ExecutionPolicy Bypass -File .\scripts\run_ui_windows.ps1
 ```
 
-可选（直接启动，仍会先跑 compileall 闸门）：
+可选（直接启动，模块模式）：
 
 ```powershell
-.\.venv\Scripts\python.exe -m tools.launch_ui
+.\.venv\Scripts\python.exe -m tools.ui_app
 ```
 
 行为说明：
 
-- 若工作区有改动，脚本会提示：
-  - 选项 1：stash 全部改动（包含 untracked）并继续。
-  - 选项 2：中止并给出提示（不会自动 reset）。
-- 若 compileall 失败：输出 `UI_COMPILEALL_FAIL` 并提示查看 `artifacts/compile_check.log`。
+- 启动器会自动执行安全 git 卫生修复（仅清理 runtime artifacts），并在工作区干净时执行 `git pull --ff-only origin main`。
+- 若发现真实源码改动，会 fail-closed，并给出稳定的 reason code 与下一步命令。
+- 启动器运行本地 compileall + syntax guard 预检，并以 module-mode 启动 UI。
 
 ## PR19 — SIM 训练产物持续生成（候选/锦标赛/晋升/法官）
 
@@ -254,7 +253,7 @@ cd $HOME\Desktop\STOCK
 ```
 
 - 推荐入口（canonical）：`python -m tools.ui_app`。
-- 零输入启动（自动定位 repo root）：`.\scripts\windows_launch_ui.ps1` 或 `python -m tools.launch_ui`。
+- 零输入启动（自动定位 repo root）：`.\scripts\windows_launch_ui.ps1` 或 `python -m tools.ui_app`。
 
 - Windows（PowerShell，repo root）：
 

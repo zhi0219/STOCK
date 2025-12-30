@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import sys
+import tokenize
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -10,6 +12,7 @@ from typing import Iterable
 
 
 PATTERNS = ["f\\\"", "rf\\\"", "fr\\\""]
+EXTRA_CHECKS = ["unexpected_indent", "tokenize_error"]
 DEFAULT_EXCLUDES = {
     ".git",
     ".venv",
@@ -61,10 +64,53 @@ def _scan_file(path: Path) -> list[Hit]:
                     )
                 )
                 start = idx + len(pattern)
+    hits.extend(_scan_unexpected_indent(path, text))
+    return hits
+
+
+def _scan_unexpected_indent(path: Path, text: str) -> list[Hit]:
+    hits: list[Hit] = []
+    last_logical_line = ""
+    indent_level = 0
+    try:
+        tokens = tokenize.generate_tokens(io.StringIO(text).readline)
+        for token in tokens:
+            if token.type == tokenize.NEWLINE:
+                last_logical_line = token.line.rstrip()
+            elif token.type == tokenize.INDENT:
+                logical = last_logical_line.split("#", 1)[0].rstrip()
+                stripped = logical.strip()
+                if indent_level == 0 and stripped and not stripped.endswith(":"):
+                    hits.append(
+                        Hit(
+                            path=path,
+                            line=token.start[0],
+                            column=token.start[1] + 1,
+                            pattern="unexpected_indent",
+                            line_text=token.line.rstrip("\n"),
+                        )
+                    )
+                indent_level += 1
+            elif token.type == tokenize.DEDENT:
+                indent_level = max(indent_level - 1, 0)
+    except (tokenize.TokenError, IndentationError) as exc:
+        hits.append(
+            Hit(
+                path=path,
+                line=1,
+                column=1,
+                pattern=f"tokenize_error:{type(exc).__name__}",
+                line_text=str(exc),
+            )
+        )
     return hits
 
 
 def _suggest_fix(pattern: str) -> str:
+    if pattern.startswith("unexpected_indent"):
+        return "align indentation or remove stray indent"
+    if pattern.startswith("tokenize_error"):
+        return "fix tokenize error (check indentation/syntax)"
     return pattern.replace("\\\"", '"')
 
 
@@ -107,7 +153,7 @@ def run(root: Path, artifacts_dir: Path, excludes: set[str]) -> int:
         "status": "PASS" if not hits else "FAIL",
         "hits": len(hits),
         "files_scanned": files_scanned,
-        "patterns": PATTERNS,
+        "patterns": PATTERNS + EXTRA_CHECKS,
         "excerpt_path": str(excerpt_path),
         "ts_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "entries": [
@@ -166,7 +212,7 @@ def main() -> int:
             "status": "ERROR",
             "hits": 0,
             "files_scanned": 0,
-            "patterns": PATTERNS,
+            "patterns": PATTERNS + EXTRA_CHECKS,
             "excerpt_path": str(excerpt_path),
             "error": f"{type(exc).__name__}: {exc}",
             "ts_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),

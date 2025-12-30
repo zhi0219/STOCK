@@ -104,8 +104,8 @@ ACTION_CENTER_DEFAULTS = {
         "title": "Repo hygiene fix (safe)",
         "confirmation_token": "HYGIENE",
         "safety_notes": "SIM-only. Restores tracked runtime artifacts and removes untracked runtime files.",
-        "effect_summary": "Runs python -m tools.repo_hygiene fix --mode safe.",
-        "risk_level": "CAUTION",
+        "effect_summary": "Runs python -m tools.git_hygiene_fix to apply safe git hygiene fixes.",
+        "risk_level": "SAFE",
     },
     "CLEAR_STALE_TEMP": {
         "title": "Clear stale temp files",
