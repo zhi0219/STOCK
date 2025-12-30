@@ -47,7 +47,7 @@ UI Proof（PR18 gate, PowerShell 复制即用）：
 推荐（自愈 → 拉取更新 → compileall → 启动 UI，失败即停止）：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\run_ui_windows.ps1
+powershell.exe -ExecutionPolicy Bypass -File .\scripts\run_ui_windows.ps1
 ```
 
 可选（直接启动，仍会先跑预检闸门）：

@@ -89,11 +89,20 @@ def _ensure_job_summary() -> None:
         job_summary_path.write_text("# CI Job Summary\n\n", encoding="utf-8")
 
 
+def _excerpt(text: str, limit: int = 240) -> str:
+    if not text:
+        return ""
+    if len(text) <= limit:
+        return text
+    return text[:limit].rstrip() + "..."
+
+
 def main() -> int:
     ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
     errors: list[str] = []
 
     ui_preflight = run_ui_preflight(artifacts_dir=ARTIFACTS_DIR)
+    ui_reason = _excerpt(str(ui_preflight.get("reason_detail", "")))
     if ui_preflight.get("status") != "PASS":
         errors.append("ui_preflight_failed")
 
@@ -119,6 +128,8 @@ def main() -> int:
         print("verify_pr40_gate FAIL")
         for err in errors:
             print(f" - {err}")
+        if ui_reason:
+            print(f"verify_pr40_gate UI_PREFLIGHT_REASON|{ui_reason}")
         return 1
 
     print("verify_pr40_gate PASS")

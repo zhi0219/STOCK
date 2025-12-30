@@ -198,6 +198,23 @@ if compile_log_path.exists():
     compile_excerpt = "\n".join(compile_lines[-60:])
     compile_excerpt = sanitize_excerpt(compile_excerpt)
 
+ui_preflight_path = artifacts_dir / "ui_preflight_result.json"
+ui_preflight_result: dict[str, object] | None = None
+ui_preflight_status = "UNKNOWN"
+ui_preflight_reason = ""
+if ui_preflight_path.exists():
+    try:
+        ui_preflight_result = json.loads(
+            ui_preflight_path.read_text(encoding="utf-8", errors="replace")
+        )
+    except Exception:
+        ui_preflight_result = {"status": "UNKNOWN"}
+if isinstance(ui_preflight_result, dict):
+    ui_preflight_status = str(ui_preflight_result.get("status", "UNKNOWN"))
+    ui_preflight_reason = str(ui_preflight_result.get("reason_detail", "") or "")
+    if ui_preflight_reason:
+        ui_preflight_reason = sanitize_excerpt(ui_preflight_reason[:320])
+
 files = []
 if artifacts_dir.exists():
     for path in sorted(artifacts_dir.rglob("*")):
@@ -233,6 +250,8 @@ summary = {
         "code": compile_error_code,
     },
     "compile_check_excerpt": compile_excerpt,
+    "ui_preflight_status": ui_preflight_status,
+    "ui_preflight_reason": ui_preflight_reason,
     "log_truncated": log_truncated,
     "log_bytes_original": log_bytes_original,
     "log_bytes_final": log_bytes_final,
@@ -275,6 +294,10 @@ summary_lines = [
     f"- **compile_check_excerpt**:\n\n```\n{compile_excerpt}\n```"
     if compile_excerpt
     else "- **compile_check_excerpt**: `n/a`",
+    f"- **ui_preflight_status**: `{ui_preflight_status}`",
+    f"- **ui_preflight_reason**:\n\n```\n{ui_preflight_reason}\n```"
+    if ui_preflight_reason
+    else "- **ui_preflight_reason**: `n/a`",
     f"- **log_truncated**: `{log_truncated}`",
     f"- **log_bytes_original**: `{log_bytes_original}`",
     f"- **log_bytes_final**: `{log_bytes_final}`",
