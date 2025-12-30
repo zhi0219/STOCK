@@ -11,6 +11,7 @@ DEFAULT_BUDGET = {
     "max_trades_per_day": 12,
     "min_seconds_between_trades": 300,
     "max_turnover_per_day": 15000,
+    "max_cost_per_trade": None,
     "volatility_scale": {"enabled": False, "multiplier": 1.0},
 }
 

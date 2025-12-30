@@ -9,8 +9,11 @@ from typing import Any, Iterable
 
 from tools.execution_friction import load_friction_policy
 from tools.fs_atomic import atomic_write_json
+from tools.overtrading_calibration import load_overtrading_calibration, select_overtrading_budget
 from tools.overtrading_budget import load_overtrading_budget
 from tools.paths import repo_root, to_repo_relative
+from tools.regime_classifier import build_report as build_regime_report
+from tools.regime_classifier import write_regime_report
 
 ROOT = repo_root()
 LOGS_DIR = ROOT / "Logs"
@@ -367,6 +370,19 @@ def _detect_violations(
                 )
             )
 
+    max_cost = budget.get("max_cost_per_trade")
+    if isinstance(max_cost, (int, float)):
+        cost_per_trade = metrics.get("cost_per_trade")
+        if isinstance(cost_per_trade, (int, float)) and cost_per_trade > float(max_cost):
+            violations.append(
+                _format_violation(
+                    "max_cost_per_trade",
+                    max_cost,
+                    round(cost_per_trade, 4),
+                    evidence_paths=[_relpath(orders_path) or ""],
+                )
+            )
+
     if budget_payload.get("status") != "PASS":
         violations.append(
             _format_violation(
@@ -417,8 +433,24 @@ def build_report(
 
     friction_policy = load_friction_policy()
     cost_metrics = _estimate_costs(events, friction_policy)
+    metrics = dict(metrics)
+    metrics["cost_per_trade"] = cost_metrics.get("cost_per_trade")
+
+    regime_report = build_regime_report(replay_index_path=replay_index_path, run_dir=run_dir)
+    regime_outputs = write_regime_report(regime_report, resolved_run_dir, None, None)
+    regime_report_path = None
+    if regime_outputs:
+        regime_report_path = regime_outputs.get("latest") or regime_outputs.get("run_report")
+    regime_label = str(regime_report.get("label") or "INSUFFICIENT_DATA")
 
     budget_payload = load_overtrading_budget()
+    base_budget = budget_payload.get("budget") if isinstance(budget_payload.get("budget"), dict) else {}
+    calibration_payload = load_overtrading_calibration()
+    selected_budget, calibration_info = select_overtrading_budget(base_budget, calibration_payload, regime_label)
+    budget_payload = dict(budget_payload)
+    budget_payload["budget"] = selected_budget
+    budget_payload["calibration"] = calibration_info
+
     violations = _detect_violations(events, metrics, budget_payload, orders_path)
 
     status = "PASS"
@@ -440,11 +472,22 @@ def build_report(
         "turnover_net": metrics.get("turnover_net"),
         "avg_holding_time_seconds": metrics.get("avg_holding_time_seconds"),
         "churn_score": metrics.get("churn_score"),
+        "span_days": metrics.get("span_days"),
         "estimated_cost_total": cost_metrics.get("estimated_cost_total"),
         "cost_per_trade": cost_metrics.get("cost_per_trade"),
         "edge_after_cost": cost_metrics.get("edge_after_cost"),
         "violations": violations,
         "budget": budget_payload,
+        "regime": {
+            "label": regime_report.get("label"),
+            "status": regime_report.get("status"),
+            "metrics": regime_report.get("metrics"),
+            "missing_reasons": regime_report.get("missing_reasons", []),
+            "evidence": regime_report.get("evidence"),
+            "source": regime_report.get("source"),
+            "report_path": _relpath(regime_report_path),
+        },
+        "calibration": budget_payload.get("calibration", {}),
         "source": source,
         "evidence": {
             "replay_index": _relpath(replay_index_path),
@@ -453,6 +496,8 @@ def build_report(
             "friction_policy": _relpath(ROOT / "Data" / "friction_policy.json"),
             "overtrading_budget_seed": budget_payload.get("sources", {}).get("seed"),
             "overtrading_budget_runtime": budget_payload.get("sources", {}).get("runtime"),
+            "overtrading_calibration": budget_payload.get("calibration", {}).get("latest_path"),
+            "regime_report": _relpath(regime_report_path),
         },
     }
     return report

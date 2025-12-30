@@ -65,6 +65,15 @@ def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
     tmp_path.replace(path)
 
 
+def _resolve_optional_path(value: object) -> Path | None:
+    if not isinstance(value, str) or not value:
+        return None
+    path = Path(value)
+    if not path.is_absolute():
+        path = (ROOT / path).resolve()
+    return path
+
+
 def _validate_runs_root(path: Path) -> Path:
     resolved = path.resolve()
     if not str(resolved).startswith(str(RUNS_ROOT.resolve())):
@@ -101,6 +110,18 @@ def write_xp_snapshot(
     doctor_report_payload = _safe_read_json(doctor_report_path)
     repo_hygiene_payload = _safe_read_json(repo_hygiene_path)
 
+    calibration_path = None
+    regime_report_path = None
+    if isinstance(trade_activity_payload, dict):
+        calibration = trade_activity_payload.get("calibration")
+        if isinstance(calibration, dict):
+            calibration_path = _resolve_optional_path(
+                calibration.get("calibration_path") or calibration.get("latest_path")
+            )
+        regime = trade_activity_payload.get("regime")
+        if isinstance(regime, dict):
+            regime_report_path = _resolve_optional_path(regime.get("report_path"))
+
     history_events = None
     history_jsonl_path = None
     if promotion_history_payload and isinstance(promotion_history_payload, dict):
@@ -126,6 +147,8 @@ def write_xp_snapshot(
         "walk_forward_windows": walk_forward_windows_path,
         "no_lookahead_audit": no_lookahead_path,
         "trade_activity_report": trade_activity_path,
+        "overtrading_calibration": calibration_path,
+        "regime_report": regime_report_path,
         "doctor_report": doctor_report_path,
         "repo_hygiene": repo_hygiene_path,
     }

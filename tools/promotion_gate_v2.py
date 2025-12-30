@@ -23,6 +23,7 @@ class GateConfig:
     require_walk_forward: bool = False
     require_no_lookahead: bool = False
     require_trade_activity: bool = True
+    require_overtrading_calibration: bool = False
 
 
 def _now() -> str:
@@ -245,6 +246,11 @@ def evaluate_promotion_gate(
     trade_activity_status = None
     trade_activity_violations: List[str] = []
     trade_activity_evidence: Dict[str, object] = {}
+    trade_activity_regime: Dict[str, object] = {}
+    trade_activity_budget: Dict[str, object] = {}
+    trade_activity_metrics: Dict[str, object] = {}
+    calibration_status = None
+    calibration_payload: Dict[str, object] = {}
     if trade_activity_report is None:
         trade_activity_status = "MISSING"
         if config.require_trade_activity:
@@ -269,6 +275,34 @@ def evaluate_promotion_gate(
                 for key, value in evidence.items()
                 if value
             }
+        regime_payload = trade_activity_report.get("regime")
+        if isinstance(regime_payload, dict):
+            trade_activity_regime = regime_payload
+        budget_payload = trade_activity_report.get("budget")
+        if isinstance(budget_payload, dict):
+            trade_activity_budget = budget_payload.get("budget", {}) if isinstance(budget_payload.get("budget"), dict) else {}
+        trade_activity_metrics = {
+            "trades_per_day": trade_activity_report.get("trades_per_day"),
+            "trades_per_day_peak": trade_activity_report.get("trades_per_day_peak"),
+            "turnover_gross": trade_activity_report.get("turnover_gross"),
+            "min_seconds_between_trades": trade_activity_report.get("min_seconds_between_trades"),
+            "cost_per_trade": trade_activity_report.get("cost_per_trade"),
+        }
+        calibration_payload = trade_activity_report.get("calibration") if isinstance(trade_activity_report.get("calibration"), dict) else {}
+        calibration_status = calibration_payload.get("status") if calibration_payload else None
+        if config.require_overtrading_calibration:
+            calibration_failure = None
+            if not calibration_payload:
+                calibration_failure = "overtrading_calibration_missing"
+            elif str(calibration_status or "UNKNOWN") == "INSUFFICIENT_DATA":
+                calibration_failure = "overtrading_calibration_insufficient"
+            elif str(calibration_status or "UNKNOWN") not in {"OK", "PASS"}:
+                calibration_failure = f"overtrading_calibration_status:{calibration_status}"
+            if calibration_failure:
+                trade_activity_ok = False
+                trade_activity_violations.append(calibration_failure)
+                required_steps.append("run_overtrading_calibration")
+                reasons.append(calibration_failure)
         if trade_activity_violations:
             required_steps.append("reduce_trade_activity")
 
@@ -332,6 +366,11 @@ def evaluate_promotion_gate(
         "trade_activity_status": trade_activity_status,
         "trade_activity_violations": trade_activity_violations,
         "trade_activity_evidence": trade_activity_evidence,
+        "trade_activity_regime": trade_activity_regime,
+        "trade_activity_budget": trade_activity_budget,
+        "trade_activity_metrics": trade_activity_metrics,
+        "trade_activity_calibration_status": calibration_status,
+        "trade_activity_calibration": calibration_payload,
     }
 
 
