@@ -1,8 +1,21 @@
-param(
-    [switch]$SkipStashPrompt
-)
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+
+function Write-Log([string]$message, [string]$logPath) {
+    $timestamp = Get-Date -Format "yyyy-MM-ddTHH:mm:ssK"
+    $line = "$timestamp $message"
+    Write-Host $line
+    $logDir = Split-Path $logPath -Parent
+    if (-not (Test-Path $logDir)) {
+        New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+    }
+    Add-Content -Path $logPath -Value $line
+}
 
 function Get-RepoRoot([string]$startPath) {
+    $pythonRoot = & python -m tools.repo_root --print 2>$null
+    if ($LASTEXITCODE -eq 0 -and $pythonRoot) {
+        return $pythonRoot.Trim()
+    }
     $current = Resolve-Path $startPath
     while ($null -ne $current) {
         if (Test-Path (Join-Path $current ".git") -or Test-Path (Join-Path $current "pyproject.toml")) {
@@ -23,43 +36,38 @@ if (-not $repoRoot) {
     exit 2
 }
 
+$logPath = Join-Path $repoRoot "Logs\runtime\launch_ui_windows_latest.log"
+Write-Log "UI_PREFLIGHT_START|root=$repoRoot" $logPath
+
 Set-Location $repoRoot
-Write-Host "UI_PREFLIGHT_START|root=$repoRoot"
 
 $venvPython = Join-Path $repoRoot ".venv\Scripts\python.exe"
 if (-not (Test-Path $venvPython)) {
-    Write-Host "UI_PREFLIGHT_VENV_MISSING|hint=Run: python -m venv .\.venv"
-    exit 2
-}
-
-$gitStatus = & git -C $repoRoot status --porcelain 2>$null
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "UI_PREFLIGHT_GIT_UNAVAILABLE|hint=Ensure git is installed and available on PATH."
-    exit 2
-}
-
-if ($gitStatus) {
-    Write-Host "UI_PREFLIGHT_DIRTY"
-    Write-Host $gitStatus
-    Write-Host "UI_PREFLIGHT_CHOICE|option1=stash_all(option includes untracked)|option2=abort"
-    if (-not $SkipStashPrompt) {
-        $choice = Read-Host "Type STASH to stash and continue, or ABORT to exit"
-    } else {
-        $choice = "ABORT"
+    Write-Log "UI_PREFLIGHT_VENV_CREATE" $logPath
+    & python -m venv .\.venv
+    if ($LASTEXITCODE -ne 0) {
+        Write-Log "UI_PREFLIGHT_VENV_FAILED|reason=venv_create_failed" $logPath
+        exit 2
     }
-    if ($choice -eq "STASH") {
-        & git -C $repoRoot stash push -u -m "ui_preflight_stash"
+    if (Test-Path (Join-Path $repoRoot "requirements-ui.txt")) {
+        Write-Log "UI_PREFLIGHT_INSTALL|requirements=requirements-ui.txt" $logPath
+        & $venvPython -m pip install -r .\requirements-ui.txt
         if ($LASTEXITCODE -ne 0) {
-            Write-Host "UI_PREFLIGHT_STASH_FAIL|reason=git_stash_failed"
-            exit 1
+            Write-Log "UI_PREFLIGHT_INSTALL_FAILED|requirements=requirements-ui.txt" $logPath
+            exit 2
         }
-        Write-Host "UI_PREFLIGHT_STASHED"
+    } elseif (Test-Path (Join-Path $repoRoot "requirements.txt")) {
+        Write-Log "UI_PREFLIGHT_INSTALL|requirements=requirements.txt" $logPath
+        & $venvPython -m pip install -r .\requirements.txt
+        if ($LASTEXITCODE -ne 0) {
+            Write-Log "UI_PREFLIGHT_INSTALL_FAILED|requirements=requirements.txt" $logPath
+            exit 2
+        }
     } else {
-        Write-Host "UI_PREFLIGHT_ABORT"
-        exit 1
+        Write-Log "UI_PREFLIGHT_INSTALL_SKIPPED|reason=requirements_missing" $logPath
     }
 }
 
-Write-Host "UI_LAUNCH_CMD|$venvPython -m tools.launch_ui"
+Write-Log "UI_LAUNCH_CMD|$venvPython -m tools.launch_ui" $logPath
 & $venvPython -m tools.launch_ui
 exit $LASTEXITCODE

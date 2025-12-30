@@ -5,23 +5,31 @@ import subprocess
 import sys
 from pathlib import Path
 
-from tools.compile_check import run_compile_check
+from tools.git_health import fix_safe
+from tools.paths import repo_root
+from tools.ui_preflight import run_ui_preflight
 
 
-def _find_repo_root(start: Path) -> Path | None:
-    for candidate in [start, *start.parents]:
-        if (candidate / "pyproject.toml").exists() or (candidate / ".git").exists():
-            return candidate
-    return None
+def _log_line(log_path: Path, message: str) -> None:
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    if not log_path.exists():
+        log_path.write_text("", encoding="utf-8")
+    with log_path.open("a", encoding="utf-8") as handle:
+        handle.write(message.rstrip() + "\n")
+    print(message)
 
 
-def _resolve_repo_root() -> Path | None:
-    candidates = [Path.cwd(), Path(__file__).resolve()]
-    for start in candidates:
-        root = _find_repo_root(start)
-        if root:
-            return root
-    return None
+def _run_git(cmd: list[str], root: Path) -> tuple[int, str]:
+    result = subprocess.run(
+        ["git", *cmd],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    output = "\n".join(block for block in [result.stdout, result.stderr] if block)
+    return result.returncode, output
 
 
 def _launch_line(root: Path) -> str:
@@ -29,21 +37,36 @@ def _launch_line(root: Path) -> str:
 
 
 def main() -> int:
-    root = _resolve_repo_root()
-    if root is None:
-        print("UI_LAUNCH_FAILED|reason=repo_root_not_found")
-        return 2
+    root = repo_root()
+    log_path = root / "Logs" / "runtime" / "launch_ui_windows_latest.log"
     os.chdir(root)
-    print("UI_PREFLIGHT_START")
-    print("UI_COMPILEALL_START")
-    compile_payload = run_compile_check(targets=["tools"], artifacts_dir=root / "artifacts")
-    if compile_payload.get("status") != "PASS":
-        log_path = compile_payload.get("log_path", "artifacts/compile_check.log")
-        print(f"UI_COMPILEALL_FAIL|log={log_path}")
-        print("UI_LAUNCH_ABORT|reason=compile_failed")
+    _log_line(log_path, "UI_PREFLIGHT_START")
+
+    fix_result = fix_safe()
+    if fix_result.get("status") != "PASS":
+        _log_line(log_path, "UI_LAUNCH_ABORT|reason=git_health_failed")
         return 1
-    print("UI_COMPILEALL_PASS")
-    print(_launch_line(root))
+
+    fetch_code, fetch_output = _run_git(["fetch", "origin", "main"], root)
+    if fetch_code != 0:
+        _log_line(log_path, f"UI_GIT_FETCH_FAIL|detail={fetch_output.strip()}")
+        _log_line(log_path, "UI_LAUNCH_ABORT|reason=git_fetch_failed")
+        return 1
+
+    pull_code, pull_output = _run_git(["pull", "--ff-only", "origin", "main"], root)
+    if pull_code != 0:
+        _log_line(log_path, f"UI_GIT_PULL_FAIL|detail={pull_output.strip()}")
+        _log_line(log_path, "UI_LAUNCH_ABORT|reason=git_pull_failed")
+        return 1
+
+    _log_line(log_path, "UI_COMPILEALL_START")
+    compile_payload = run_ui_preflight(artifacts_dir=root / "artifacts")
+    if compile_payload.get("status") != "PASS":
+        _log_line(log_path, "UI_COMPILEALL_FAIL|log=artifacts/compile_check.log")
+        _log_line(log_path, "UI_LAUNCH_ABORT|reason=compile_failed")
+        return 1
+    _log_line(log_path, "UI_COMPILEALL_PASS")
+    _log_line(log_path, _launch_line(root))
     return subprocess.call([sys.executable, "-m", "tools.ui_app"])
 
 

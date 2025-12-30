@@ -15,6 +15,8 @@ from typing import Any, Iterable
 from tools.paths import repo_root, runtime_dir, to_repo_relative
 from tools.repo_hygiene import scan_repo
 from tools import repo_hygiene
+from tools import git_health
+from tools.ui_preflight import run_ui_preflight
 
 ROOT = repo_root()
 ARTIFACTS_DIR = ROOT / "artifacts"
@@ -43,6 +45,9 @@ ACTION_PRUNE_OLD_RUNS_SAFE = "PRUNE_OLD_RUNS_SAFE"
 ACTION_REBUILD_RECENT_INDEX = "REBUILD_RECENT_INDEX"
 ACTION_ENABLE_OVERTRADING_GUARDRAILS = "ENABLE_OVERTRADING_GUARDRAILS_SAFE"
 ACTION_RUN_OVERTRADING_CALIBRATION = "RUN_OVERTRADING_CALIBRATION"
+ACTION_FIX_GIT_HEALTH_SAFE = "FIX_GIT_HEALTH_SAFE"
+ACTION_MIGRATE_POLICY_REGISTRY_SAFE = "MIGRATE_POLICY_REGISTRY_SAFE"
+ACTION_RUN_UI_PREFLIGHT_SAFE = "RUN_UI_PREFLIGHT_SAFE"
 
 IMPORT_CHECK_MODULES = ("tools.action_center_report", "tools.action_center_apply", "tools.doctor_report")
 
@@ -278,6 +283,55 @@ def build_report() -> dict[str, Any]:
                 "summary": "Repository hygiene scan detected tracked or untracked files.",
                 "evidence_paths_rel": ["artifacts/doctor_report.json"],
                 "suggested_actions": suggested_actions,
+            }
+        )
+
+    git_health_report = git_health.build_report()
+    if git_health_report.get("legacy_policy_registry_present") or git_health_report.get("tracked_runtime_modified"):
+        issues.append(
+            {
+                "id": "GIT_PULL_BLOCKED_RUNTIME_ARTIFACT",
+                "severity": "WARN",
+                "summary": "Runtime artifacts detected that can block git pull.",
+                "evidence_paths_rel": ["artifacts/git_health_report.json"],
+                "suggested_actions": [
+                    ACTION_MIGRATE_POLICY_REGISTRY_SAFE,
+                    ACTION_FIX_GIT_HEALTH_SAFE,
+                ],
+            }
+        )
+
+    if git_health_report.get("skip_worktree") or git_health_report.get("assume_unchanged"):
+        issues.append(
+            {
+                "id": "GIT_HIDDEN_DIRTY_FLAGS_DETECTED",
+                "severity": "HIGH",
+                "summary": "Hidden dirty index flags detected (skip-worktree/assume-unchanged).",
+                "evidence_paths_rel": ["artifacts/git_health_report.json"],
+                "suggested_actions": [ACTION_FIX_GIT_HEALTH_SAFE],
+            }
+        )
+
+    if git_health_report.get("conflict_markers"):
+        issues.append(
+            {
+                "id": "CONFLICT_MARKERS_PRESENT",
+                "severity": "HIGH",
+                "summary": "Conflict markers detected in tracked sources.",
+                "evidence_paths_rel": ["artifacts/git_health_report.json"],
+                "suggested_actions": [ACTION_RUN_UI_PREFLIGHT_SAFE],
+            }
+        )
+
+    ui_preflight = run_ui_preflight(artifacts_dir=ARTIFACTS_DIR)
+    if ui_preflight.get("status") != "PASS":
+        issues.append(
+            {
+                "id": "UI_COMPILE_FAILED",
+                "severity": "HIGH",
+                "summary": "UI preflight compile checks failed.",
+                "evidence_paths_rel": ["artifacts/ui_preflight_result.json"],
+                "suggested_actions": [ACTION_RUN_UI_PREFLIGHT_SAFE],
             }
         )
 

@@ -12,9 +12,12 @@ from typing import Any
 
 from tools.git_baseline_probe import probe_baseline
 from tools import doctor_report
+from tools import git_health
 from tools import git_hygiene_fix
+from tools.migrate_policy_registry import migrate_policy_registry
 from tools.overtrading_budget import DEFAULT_BUDGET, load_overtrading_budget
 from tools.paths import runtime_dir, to_repo_relative
+from tools.ui_preflight import run_ui_preflight
 
 ROOT = Path(__file__).resolve().parent.parent
 LOGS_DIR = ROOT / "Logs"
@@ -59,6 +62,9 @@ CONFIRM_TOKENS = {
     "REVIEW_GIT_DIRTY": "REVIEW",
     "ENABLE_OVERTRADING_GUARDRAILS_SAFE": "GUARDRAILS",
     "RUN_OVERTRADING_CALIBRATION": "CALIBRATE",
+    "FIX_GIT_HEALTH_SAFE": "HEALTH",
+    "MIGRATE_POLICY_REGISTRY_SAFE": "MIGRATE",
+    "RUN_UI_PREFLIGHT_SAFE": "PREFLIGHT",
 }
 
 ACTION_DEFINITIONS = {
@@ -179,6 +185,27 @@ ACTION_DEFINITIONS = {
         "confirmation_token": CONFIRM_TOKENS["RUN_OVERTRADING_CALIBRATION"],
         "safety_notes": "SIM-only. Generates calibration artifacts; no broker access.",
         "effect_summary": "Runs python -m tools.overtrading_calibrate to write evidence artifacts.",
+        "risk_level": "SAFE",
+    },
+    "FIX_GIT_HEALTH_SAFE": {
+        "title": "Fix Git Health (Safe)",
+        "confirmation_token": CONFIRM_TOKENS["FIX_GIT_HEALTH_SAFE"],
+        "safety_notes": "SIM-only. Clears hidden-dirty flags and migrates runtime policy registry with backups.",
+        "effect_summary": "Runs tools.git_health --fix-safe and writes evidence artifacts.",
+        "risk_level": "SAFE",
+    },
+    "MIGRATE_POLICY_REGISTRY_SAFE": {
+        "title": "Migrate Policy Registry (Safe)",
+        "confirmation_token": CONFIRM_TOKENS["MIGRATE_POLICY_REGISTRY_SAFE"],
+        "safety_notes": "SIM-only. Backs up legacy Logs/policy_registry.json before migrating to Logs/runtime.",
+        "effect_summary": "Runs tools.migrate_policy_registry to move legacy registry.",
+        "risk_level": "SAFE",
+    },
+    "RUN_UI_PREFLIGHT_SAFE": {
+        "title": "Run UI Preflight (Safe)",
+        "confirmation_token": CONFIRM_TOKENS["RUN_UI_PREFLIGHT_SAFE"],
+        "safety_notes": "SIM-only. Runs compileall + ui py_compile + conflict scan; no broker access.",
+        "effect_summary": "Writes UI preflight artifacts and compileall logs.",
         "risk_level": "SAFE",
     },
 }
@@ -620,6 +647,67 @@ def _execute_fix_git_red_safe() -> ActionExecutionResult:
     return ActionExecutionResult("FIX_GIT_RED_SAFE", success, message, details)
 
 
+def _execute_fix_git_health_safe() -> ActionExecutionResult:
+    result = git_health.fix_safe()
+    details = {
+        "result_path": _relpath(git_health.ARTIFACT_FIX),
+        "status": result.get("status"),
+        "changes_made": result.get("allowlist_reset", []),
+        "backup_dir": result.get("backup_dir"),
+    }
+    success = result.get("status") == "PASS"
+    write_event(
+        "GIT_HEALTH_FIX_APPLIED",
+        "Action Center applied git health fix (safe).",
+        severity="INFO" if success else "ERROR",
+        action_id="FIX_GIT_HEALTH_SAFE",
+        result_status=result.get("status"),
+        evidence_paths=[_relpath(git_health.ARTIFACT_FIX)],
+    )
+    message = "git health fix applied" if success else "git health fix failed"
+    return ActionExecutionResult("FIX_GIT_HEALTH_SAFE", success, message, details)
+
+
+def _execute_migrate_policy_registry_safe() -> ActionExecutionResult:
+    result = migrate_policy_registry()
+    details = {
+        "result_path": _relpath(ROOT / "artifacts" / "migrate_policy_registry_result.json"),
+        "status": result.get("status"),
+        "backup_path": result.get("backup_path"),
+    }
+    success = result.get("status") in {"MIGRATED", "NOOP"}
+    write_event(
+        "POLICY_REGISTRY_MIGRATED",
+        "Action Center migrated policy registry (safe).",
+        severity="INFO" if success else "ERROR",
+        action_id="MIGRATE_POLICY_REGISTRY_SAFE",
+        result_status=result.get("status"),
+        evidence_paths=[details["result_path"]],
+    )
+    message = "policy registry migrated" if success else "policy registry migration failed"
+    return ActionExecutionResult("MIGRATE_POLICY_REGISTRY_SAFE", success, message, details)
+
+
+def _execute_ui_preflight_safe() -> ActionExecutionResult:
+    result = run_ui_preflight(artifacts_dir=ROOT / "artifacts")
+    details = {
+        "result_path": _relpath(ROOT / "artifacts" / "ui_preflight_result.json"),
+        "status": result.get("status"),
+        "failures": result.get("failures", []),
+    }
+    success = result.get("status") == "PASS"
+    write_event(
+        "UI_PREFLIGHT_RUN",
+        "Action Center ran UI preflight.",
+        severity="INFO" if success else "ERROR",
+        action_id="RUN_UI_PREFLIGHT_SAFE",
+        result_status=result.get("status"),
+        evidence_paths=[details["result_path"]],
+    )
+    message = "ui preflight completed" if success else "ui preflight failed"
+    return ActionExecutionResult("RUN_UI_PREFLIGHT_SAFE", success, message, details)
+
+
 def _execute_review_git_dirty() -> ActionExecutionResult:
     plan = git_hygiene_fix.build_plan()
     payload = {
@@ -741,6 +829,12 @@ def _execute_action(action_id: str) -> ActionExecutionResult:
         return _execute_fix_git_red_safe()
     if action_id == "REVIEW_GIT_DIRTY":
         return _execute_review_git_dirty()
+    if action_id == "FIX_GIT_HEALTH_SAFE":
+        return _execute_fix_git_health_safe()
+    if action_id == "MIGRATE_POLICY_REGISTRY_SAFE":
+        return _execute_migrate_policy_registry_safe()
+    if action_id == "RUN_UI_PREFLIGHT_SAFE":
+        return _execute_ui_preflight_safe()
     if action_id == "ENABLE_OVERTRADING_GUARDRAILS_SAFE":
         return _execute_enable_overtrading_guardrails()
     if action_id == "RUN_OVERTRADING_CALIBRATION":

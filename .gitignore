@@ -48,6 +48,7 @@ qa_packets/
 qa_answers/
 Reports/
 artifacts/
+_local_backup/
 
 # Optional: keep Data and Logs folders but ignore other runtime artifacts
 Data/*.tmp
