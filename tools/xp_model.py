@@ -251,6 +251,98 @@ def compute_xp_snapshot(
                 evidence=[evidence_paths.get("trade_activity_report")],
                 notes="Penalizes trade-activity violations or missing audit status.",
             )
+        calibration = (
+            trade_activity_report.get("calibration")
+            if isinstance(trade_activity_report.get("calibration"), dict)
+            else {}
+        )
+        regime_info = (
+            trade_activity_report.get("regime")
+            if isinstance(trade_activity_report.get("regime"), dict)
+            else {}
+        )
+        budget_payload = (
+            trade_activity_report.get("budget")
+            if isinstance(trade_activity_report.get("budget"), dict)
+            else {}
+        )
+        budget_values = (
+            budget_payload.get("budget")
+            if isinstance(budget_payload.get("budget"), dict)
+            else {}
+        )
+        calibration_status = str(calibration.get("status") or "MISSING")
+        calibration_sample = calibration.get("sample_size")
+        min_samples = calibration.get("min_samples_per_regime")
+        regime_label = regime_info.get("label") if isinstance(regime_info, dict) else None
+
+        if calibration_status == "OK" and isinstance(budget_values, dict) and budget_values:
+            over_budget = []
+            trades_peak = trade_activity_report.get("trades_per_day_peak")
+            turnover = trade_activity_report.get("turnover_gross")
+            min_seconds = trade_activity_report.get("min_seconds_between_trades")
+            cost_per_trade = trade_activity_report.get("cost_per_trade")
+            max_trades = budget_values.get("max_trades_per_day")
+            max_turnover = budget_values.get("max_turnover_per_day")
+            min_allowed = budget_values.get("min_seconds_between_trades")
+            max_cost = budget_values.get("max_cost_per_trade")
+            if isinstance(trades_peak, (int, float)) and isinstance(max_trades, (int, float)) and trades_peak > max_trades:
+                over_budget.append("trades_per_day")
+            if isinstance(turnover, (int, float)) and isinstance(max_turnover, (int, float)) and turnover > max_turnover:
+                over_budget.append("turnover")
+            if isinstance(min_seconds, (int, float)) and isinstance(min_allowed, (int, float)) and min_seconds < min_allowed:
+                over_budget.append("min_seconds_between_trades")
+            if isinstance(cost_per_trade, (int, float)) and isinstance(max_cost, (int, float)) and cost_per_trade > max_cost:
+                over_budget.append("cost_per_trade")
+            over_text = ", ".join(over_budget) if over_budget else "within_budget"
+            points = -12 if over_budget else 5
+            add_item(
+                key="overtrading_calibrated_budget",
+                label="Overtrading vs calibrated budget",
+                value=over_text,
+                points=points,
+                evidence=[
+                    evidence_paths.get("trade_activity_report"),
+                    evidence_paths.get("overtrading_calibration"),
+                ],
+                notes=f"Regime={regime_label or 'UNKNOWN'}",
+            )
+        else:
+            add_insufficient(
+                "missing_overtrading_calibration",
+                -6,
+                [
+                    evidence_paths.get("trade_activity_report"),
+                    evidence_paths.get("overtrading_calibration"),
+                ],
+            )
+
+        if (
+            isinstance(calibration_sample, (int, float))
+            and isinstance(min_samples, (int, float))
+            and calibration_status == "OK"
+        ):
+            sample_ok = calibration_sample >= min_samples
+            points = 3 if sample_ok else -4
+            add_item(
+                key="regime_sample_confidence",
+                label="Regime confidence / sample size",
+                value=f"{regime_label or 'UNKNOWN'} n={int(calibration_sample)}/{int(min_samples)}",
+                points=points,
+                evidence=[
+                    evidence_paths.get("overtrading_calibration"),
+                    evidence_paths.get("regime_report"),
+                ],
+            )
+        else:
+            add_insufficient(
+                "missing_regime_confidence",
+                -4,
+                [
+                    evidence_paths.get("overtrading_calibration"),
+                    evidence_paths.get("regime_report"),
+                ],
+            )
     else:
         add_insufficient("missing_trade_activity_report", -8, [evidence_paths.get("trade_activity_report")])
 
@@ -315,6 +407,8 @@ def compute_xp_snapshot(
         "walk_forward_windows": _safe_relpath(evidence_paths.get("walk_forward_windows")),
         "no_lookahead_audit": _safe_relpath(evidence_paths.get("no_lookahead_audit")),
         "trade_activity_report": _safe_relpath(evidence_paths.get("trade_activity_report")),
+        "overtrading_calibration": _safe_relpath(evidence_paths.get("overtrading_calibration")),
+        "regime_report": _safe_relpath(evidence_paths.get("regime_report")),
         "doctor_report": _safe_relpath(evidence_paths.get("doctor_report")),
         "repo_hygiene": _safe_relpath(evidence_paths.get("repo_hygiene")),
     }

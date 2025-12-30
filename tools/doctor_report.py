@@ -42,6 +42,7 @@ ACTION_RUN_RETENTION_REPORT = "RUN_RETENTION_REPORT"
 ACTION_PRUNE_OLD_RUNS_SAFE = "PRUNE_OLD_RUNS_SAFE"
 ACTION_REBUILD_RECENT_INDEX = "REBUILD_RECENT_INDEX"
 ACTION_ENABLE_OVERTRADING_GUARDRAILS = "ENABLE_OVERTRADING_GUARDRAILS_SAFE"
+ACTION_RUN_OVERTRADING_CALIBRATION = "RUN_OVERTRADING_CALIBRATION"
 
 IMPORT_CHECK_MODULES = ("tools.action_center_report", "tools.action_center_apply", "tools.doctor_report")
 
@@ -362,6 +363,10 @@ def build_report() -> dict[str, Any]:
     overtrading_level = "DANGEROUS"
     overtrading_violations: list[str] = []
     overtrading_evidence = [to_repo_relative(TRADE_ACTIVITY_REPORT_PATH)]
+    calibration_status = "MISSING"
+    calibration_sample = None
+    calibration_freshness = None
+    regime_label = None
     if overtrading_payload:
         overtrading_status = str(overtrading_payload.get("status") or "UNKNOWN")
         violations = overtrading_payload.get("violations", [])
@@ -370,6 +375,20 @@ def build_report() -> dict[str, Any]:
                 str(item.get("code", item)) if isinstance(item, dict) else str(item)
                 for item in violations
             ]
+        calibration_payload = (
+            overtrading_payload.get("calibration")
+            if isinstance(overtrading_payload.get("calibration"), dict)
+            else {}
+        )
+        calibration_status = str(calibration_payload.get("status") or "MISSING")
+        calibration_sample = calibration_payload.get("sample_size")
+        calibration_freshness = calibration_payload.get("freshness_hours")
+        regime_payload = (
+            overtrading_payload.get("regime")
+            if isinstance(overtrading_payload.get("regime"), dict)
+            else {}
+        )
+        regime_label = regime_payload.get("label")
         if overtrading_status == "PASS" and not overtrading_violations:
             overtrading_level = "SAFE"
             budget = overtrading_payload.get("budget", {})
@@ -400,6 +419,16 @@ def build_report() -> dict[str, Any]:
                 "summary": f"Overtrading status {overtrading_level} (audit={overtrading_status}).",
                 "evidence_paths_rel": overtrading_evidence,
                 "suggested_actions": [ACTION_ENABLE_OVERTRADING_GUARDRAILS],
+            }
+        )
+    if calibration_status != "OK":
+        issues.append(
+            {
+                "id": "OVERTRADING_CALIBRATION",
+                "severity": "WARN",
+                "summary": f"Overtrading calibration {calibration_status}; sample={calibration_sample}.",
+                "evidence_paths_rel": overtrading_evidence,
+                "suggested_actions": [ACTION_RUN_OVERTRADING_CALIBRATION],
             }
         )
 
@@ -459,6 +488,12 @@ def build_report() -> dict[str, Any]:
             "level": overtrading_level,
             "violations": overtrading_violations,
             "report_path": to_repo_relative(TRADE_ACTIVITY_REPORT_PATH),
+            "regime": regime_label,
+            "calibration": {
+                "status": calibration_status,
+                "sample_size": calibration_sample,
+                "freshness_hours": calibration_freshness,
+            },
         },
         "issues": issues,
     }

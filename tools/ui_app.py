@@ -588,6 +588,9 @@ class App(tk.Tk):
         self.progress_overtrading_status_var = tk.StringVar(value="Overtrading status: -")
         self.progress_overtrading_kpi_var = tk.StringVar(value="Overtrading KPIs: -")
         self.progress_overtrading_cooldown_var = tk.StringVar(value="Cooldown violations: -")
+        self.progress_overtrading_regime_var = tk.StringVar(value="Regime: -")
+        self.progress_overtrading_budget_var = tk.StringVar(value="Budget vs metrics: -")
+        self.progress_overtrading_calibration_var = tk.StringVar(value="Calibration: -")
         self.progress_overtrading_evidence_var = tk.StringVar(value="Overtrading evidence: -")
         self.progress_diag_status_var = tk.StringVar(value="Diagnosis: -")
         self.progress_diag_summary_var = tk.StringVar(value="Progress diagnosis will appear here.")
@@ -3259,6 +3262,15 @@ class App(tk.Tk):
         tk.Label(overtrading_frame, textvariable=self.progress_overtrading_cooldown_var, anchor="w").pack(
             anchor="w"
         )
+        tk.Label(overtrading_frame, textvariable=self.progress_overtrading_regime_var, anchor="w").pack(
+            anchor="w"
+        )
+        tk.Label(overtrading_frame, textvariable=self.progress_overtrading_budget_var, anchor="w").pack(
+            anchor="w"
+        )
+        tk.Label(overtrading_frame, textvariable=self.progress_overtrading_calibration_var, anchor="w").pack(
+            anchor="w"
+        )
         tk.Label(
             overtrading_frame,
             textvariable=self.progress_overtrading_evidence_var,
@@ -3267,6 +3279,18 @@ class App(tk.Tk):
             wraplength=1000,
             fg="#6b7280",
         ).pack(anchor="w")
+        overtrading_actions = tk.Frame(overtrading_frame)
+        overtrading_actions.pack(fill=tk.X, pady=2)
+        tk.Button(
+            overtrading_actions,
+            text="Open calibration artifact",
+            command=self._open_overtrading_calibration,
+        ).pack(side=tk.LEFT, padx=3)
+        tk.Button(
+            overtrading_actions,
+            text="Copy calibration path",
+            command=self._copy_overtrading_calibration_path,
+        ).pack(side=tk.LEFT, padx=3)
         xp_frame = tk.LabelFrame(self.progress_tab, text="Truthful XP (SIM-only)", padx=6, pady=6)
         xp_frame.pack(fill=tk.X, padx=6, pady=4)
         tk.Label(xp_frame, textvariable=self.progress_xp_status_var, font=("Helvetica", 13, "bold")).pack(
@@ -3680,7 +3704,26 @@ class App(tk.Tk):
         violation_list = payload.get("violations", [])
         violation_count = len(violation_list) if isinstance(violation_list, list) else 0
         trades_per_day = payload.get("trades_per_day")
+        trades_peak = payload.get("trades_per_day_peak")
         turnover = payload.get("turnover_gross")
+        min_seconds = payload.get("min_seconds_between_trades")
+        cost_per_trade = payload.get("cost_per_trade")
+        regime_payload = payload.get("regime") if isinstance(payload.get("regime"), dict) else {}
+        regime_label = regime_payload.get("label", "-")
+        regime_metrics = regime_payload.get("metrics") if isinstance(regime_payload.get("metrics"), dict) else {}
+        volatility = regime_metrics.get("volatility")
+        trend_strength = regime_metrics.get("trend_strength")
+        calibration_payload = payload.get("calibration") if isinstance(payload.get("calibration"), dict) else {}
+        calibration_status = calibration_payload.get("status", "MISSING")
+        calibration_sample = calibration_payload.get("sample_size")
+        calibration_freshness = calibration_payload.get("freshness_hours")
+        calibration_path = calibration_payload.get("calibration_path") or calibration_payload.get("latest_path")
+        budget_payload = payload.get("budget") if isinstance(payload.get("budget"), dict) else {}
+        budget_values = budget_payload.get("budget") if isinstance(budget_payload.get("budget"), dict) else {}
+        max_trades = budget_values.get("max_trades_per_day")
+        max_turnover = budget_values.get("max_turnover_per_day")
+        min_allowed = budget_values.get("min_seconds_between_trades")
+        max_cost = budget_values.get("max_cost_per_trade")
         cooldown_violations = 0
         if isinstance(violation_list, list):
             cooldown_violations = sum(
@@ -3696,6 +3739,20 @@ class App(tk.Tk):
         )
         self.progress_overtrading_cooldown_var.set(
             f"Cooldown violations: {cooldown_violations}"
+        )
+        self.progress_overtrading_regime_var.set(
+            f"Regime: {regime_label} | vol={volatility} | trend={trend_strength}"
+        )
+        self.progress_overtrading_budget_var.set(
+            "Budget vs metrics: "
+            f"trades_peak={trades_peak}/{max_trades} | "
+            f"turnover={turnover}/{max_turnover} | "
+            f"min_gap={min_seconds}/{min_allowed} | "
+            f"cost/trade={cost_per_trade}/{max_cost}"
+        )
+        self.progress_overtrading_calibration_var.set(
+            f"Calibration: {calibration_status} | sample={calibration_sample} | "
+            f"freshness_hours={calibration_freshness} | path={calibration_path or '-'}"
         )
         if payload.get("status") == "missing":
             missing = payload.get("missing_reason", "unknown")
@@ -4108,6 +4165,42 @@ class App(tk.Tk):
             subprocess.Popen(["xdg-open", str(path)], env=_utf8_env())
         except Exception:  # pragma: no cover - UI feedback
             self._show_copyable_text("Replay", "Copy the path below:", report_rel)
+
+    def _open_overtrading_calibration(self) -> None:
+        payload = self._trade_activity_payload or {}
+        calibration = payload.get("calibration") if isinstance(payload.get("calibration"), dict) else {}
+        report_rel = calibration.get("calibration_path") or calibration.get("latest_path")
+        if not report_rel:
+            messagebox.showinfo("Overtrading", "Calibration artifact not found")
+            return
+        path = ROOT / report_rel
+        if not path.exists():
+            messagebox.showinfo("Overtrading", f"Calibration artifact not found: {report_rel}")
+            return
+        try:
+            if hasattr(os, "startfile"):
+                os.startfile(str(path))  # type: ignore[attr-defined]
+                return
+            if sys.platform == "darwin":
+                subprocess.Popen(["open", str(path)], env=_utf8_env())
+                return
+            subprocess.Popen(["xdg-open", str(path)], env=_utf8_env())
+        except Exception:  # pragma: no cover - UI feedback
+            self._show_copyable_text("Overtrading", "Copy the path below:", report_rel)
+
+    def _copy_overtrading_calibration_path(self) -> None:
+        payload = self._trade_activity_payload or {}
+        calibration = payload.get("calibration") if isinstance(payload.get("calibration"), dict) else {}
+        report_rel = calibration.get("calibration_path") or calibration.get("latest_path")
+        if not report_rel:
+            messagebox.showinfo("Overtrading", "Calibration artifact not found")
+            return
+        try:
+            self.clipboard_clear()
+            self.clipboard_append(report_rel)
+            messagebox.showinfo("Overtrading", "Calibration path copied to clipboard.")
+        except Exception:  # pragma: no cover - UI feedback
+            self._show_copyable_text("Overtrading", "Copy the path below:", report_rel)
 
     def _copy_replay_latest_path(self) -> None:
         payload = self._replay_index_payload or {}

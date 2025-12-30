@@ -96,6 +96,8 @@ Missing safety evidence adds `INSUFFICIENT_DATA` penalties.
 Source: `Logs/train_runs/_latest/trade_activity_report_latest.json`
 
 - Any trade-activity violations or `status != PASS` → explicit penalty line item.
+- Calibrated budgets (when available) add a line item: **Overtrading vs calibrated budget**.
+- Regime sample size adds a line item: **Regime confidence / sample size**.
 - Missing trade-activity evidence adds an `INSUFFICIENT_DATA` penalty.
 
 ### 6) Walk-forward stability

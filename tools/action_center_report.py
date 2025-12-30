@@ -58,6 +58,7 @@ CONFIRM_TOKENS = {
     "FIX_GIT_RED_SAFE": "GITSAFE",
     "REVIEW_GIT_DIRTY": "REVIEW",
     "ENABLE_OVERTRADING_GUARDRAILS_SAFE": "GUARDRAILS",
+    "RUN_OVERTRADING_CALIBRATION": "CALIBRATE",
 }
 
 ACTION_DEFINITIONS = {
@@ -171,6 +172,13 @@ ACTION_DEFINITIONS = {
         "confirmation_token": CONFIRM_TOKENS["ENABLE_OVERTRADING_GUARDRAILS_SAFE"],
         "safety_notes": "SIM-only. Writes runtime overtrading budget config; no broker access.",
         "effect_summary": "Copies Data/overtrading_budget.json into Logs/runtime/overtrading_budget.json.",
+        "risk_level": "SAFE",
+    },
+    "RUN_OVERTRADING_CALIBRATION": {
+        "title": "Run Overtrading Calibration (Report-only)",
+        "confirmation_token": CONFIRM_TOKENS["RUN_OVERTRADING_CALIBRATION"],
+        "safety_notes": "SIM-only. Generates calibration artifacts; no broker access.",
+        "effect_summary": "Runs python -m tools.overtrading_calibrate to write evidence artifacts.",
         "risk_level": "SAFE",
     },
 }
@@ -663,6 +671,45 @@ def _execute_enable_overtrading_guardrails() -> ActionExecutionResult:
     )
 
 
+def _execute_overtrading_calibration() -> ActionExecutionResult:
+    output_path = ROOT / "artifacts" / "overtrading_calibration.json"
+    latest_path = RUNS_DIR / "_latest" / "overtrading_calibration_latest.json"
+    cmd = [
+        sys.executable,
+        "-m",
+        "tools.overtrading_calibrate",
+        "--artifacts-output",
+        str(output_path),
+    ]
+    result = subprocess.run(
+        cmd,
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    success = result.returncode == 0
+    changes = []
+    if output_path.exists():
+        changes.append(_relpath(output_path))
+    if latest_path.exists():
+        changes.append(_relpath(latest_path))
+    details = {
+        "output_path": _relpath(output_path),
+        "latest_path": _relpath(latest_path),
+        "changes_made": changes,
+        "stdout": result.stdout,
+        "stderr": result.stderr,
+    }
+    return ActionExecutionResult(
+        "RUN_OVERTRADING_CALIBRATION",
+        success,
+        "overtrading calibration completed" if success else "overtrading calibration failed",
+        details,
+    )
+
+
 def _execute_action(action_id: str) -> ActionExecutionResult:
     if action_id == "CLEAR_KILL_SWITCH":
         return _execute_clear_kill_switch()
@@ -696,6 +743,8 @@ def _execute_action(action_id: str) -> ActionExecutionResult:
         return _execute_review_git_dirty()
     if action_id == "ENABLE_OVERTRADING_GUARDRAILS_SAFE":
         return _execute_enable_overtrading_guardrails()
+    if action_id == "RUN_OVERTRADING_CALIBRATION":
+        return _execute_overtrading_calibration()
     raise ValueError(f"Unknown action_id: {action_id}")
 
 
