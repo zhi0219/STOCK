@@ -312,6 +312,18 @@ fi
 
 if [[ ${rc} -eq 0 ]]; then
   set +e
+  python3 -m tools.compile_check --targets tools --artifacts-dir "${artifacts_dir}"
+  compile_exit=$?
+  set -e
+  if [[ ${compile_exit} -ne 0 ]]; then
+    status="FAIL"
+    failing_gate="compile_check"
+    rc=${compile_exit}
+  fi
+fi
+
+if [[ ${rc} -eq 0 ]]; then
+  set +e
   python3 -m tools.syntax_guard --artifacts-dir "${artifacts_dir}"
   syntax_guard_exit=$?
   set -e

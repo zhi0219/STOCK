@@ -21,6 +21,19 @@ Run a safe fix (restores tracked runtime artifacts and tracked seed files, remov
 python -m tools.repo_hygiene fix --mode safe
 ```
 
+Run a runtime-only safe action (stashes or discards only runtime artifacts when no code changes are present):
+
+```
+python -m tools.runtime_hygiene scan
+python -m tools.runtime_hygiene fix --mode stash
+python -m tools.runtime_hygiene fix --mode discard
+```
+
+Artifacts:
+
+- `artifacts/runtime_hygiene_report.json`
+- `artifacts/runtime_hygiene_result.json`
+
 Action Center (SIM-only) also exposes **Fix Git Red (Safe)** (shown as **Fix All (Safe)** in the UI) and writes:
 
 - `artifacts/git_hygiene_fix_plan.json`

@@ -42,6 +42,27 @@ UI Proof（PR18 gate, PowerShell 复制即用）：
 - `PR18_GATE_SUMMARY` 为 PASS 表示 UI smoke + scroll 检查完成。
 - 若无显示环境（headless）或未能提供 UI display，将返回 `degraded=1` 且标注 `ui_display_unavailable`。
 
+## Windows UI 一键启动（PowerShell）
+
+推荐（包含预检 + compileall 闸门，失败即停止）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\run_ui_windows.ps1
+```
+
+可选（直接启动，仍会先跑 compileall 闸门）：
+
+```powershell
+.\.venv\Scripts\python.exe -m tools.launch_ui
+```
+
+行为说明：
+
+- 若工作区有改动，脚本会提示：
+  - 选项 1：stash 全部改动（包含 untracked）并继续。
+  - 选项 2：中止并给出提示（不会自动 reset）。
+- 若 compileall 失败：输出 `UI_COMPILEALL_FAIL` 并提示查看 `artifacts/compile_check.log`。
+
 ## PR19 — SIM 训练产物持续生成（候选/锦标赛/晋升/法官）
 
 PR19 让 SIM-only 训练守护循环持续产出候选、锦标赛、晋升决策与进度法官（Truthful Progress）工件，并提供稳定的 `_latest` 路径供 UI 直接读取；所有决策仍保持只读/可审计/可复现。
