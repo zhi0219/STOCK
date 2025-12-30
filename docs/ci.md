@@ -9,8 +9,9 @@ The CI entrypoint is:
 ```
 
 This script discovers the canonical gate runner, executes it, and emits auditable artifacts under `artifacts/`.
-For PR38, the canonical gate runner is `tools/verify_pr38_gate.py`. The preflight runner remains
-`tools/verify_pr36_gate.py`.
+For PR39, the canonical gate runner is `tools/verify_pr39_gate.py`. The preflight runner remains
+`tools/verify_pr36_gate.py`. CI also runs `tools.compile_check` early to fail closed on syntax
+errors in `tools/`.
 
 ## Job Summary
 
@@ -34,8 +35,8 @@ CI always writes and uploads the following files under `artifacts/`:
 - `artifacts/trade_activity_report.json` (PR38 trade activity audit)
 - `artifacts/ci_job_summary.md` (human-readable CI summary)
 - `artifacts/repo_hygiene.json` (repo hygiene scan output)
-- `artifacts/compile_check.log` (PR36 compile check log)
-- `artifacts/compile_check_result.json` (PR36 compile check result)
+- `artifacts/compile_check.log` (compile check log)
+- `artifacts/compile_check_result.json` (compile check result)
 - `artifacts/syntax_guard_result.json` (syntax guard results)
 - `artifacts/syntax_guard_excerpt.txt` (syntax guard excerpt)
 - `artifacts/walk_forward_result.json` (PR32 walk-forward summary)
@@ -76,7 +77,7 @@ To trigger a controlled failure for evidence-pack validation, run the workflow m
 1. Open the **CI Gates** workflow in GitHub Actions.
 2. Select **Run workflow** and set `force_fail` to `true`.
 
-This sets `CI_FORCE_FAIL=1` only for that manual run, causing the gates to fail after execution while still producing and uploading the evidence pack. PR31 adds `PR31_FORCE_FAIL=1` for local evidence-pack validation. PR32 adds `PR32_FORCE_FAIL=1` to fail after walk-forward/no-lookahead artifacts are emitted. PR33 adds `PR33_FORCE_FAIL=1` to fail after replay artifacts are emitted. PR34 adds `PR34_FORCE_FAIL=1` to fail after retention artifacts are emitted. PR35 adds `PR35_FORCE_FAIL=1` to fail after stress artifacts are emitted. PR36 adds `PR36_FORCE_FAIL=1` to fail after compile-check artifacts are emitted. PR38 adds `PR38_FORCE_FAIL=1` to fail after syntax-guard/compile-check artifacts are emitted. PR39 adds `PR39_FORCE_FAIL=1` to fail after regime/calibration artifacts are emitted.
+This sets `CI_FORCE_FAIL=1` only for that manual run, causing the gates to fail after execution while still producing and uploading the evidence pack. PR31 adds `PR31_FORCE_FAIL=1` for local evidence-pack validation. PR32 adds `PR32_FORCE_FAIL=1` to fail after walk-forward/no-lookahead artifacts are emitted. PR33 adds `PR33_FORCE_FAIL=1` to fail after replay artifacts are emitted. PR34 adds `PR34_FORCE_FAIL=1` to fail after retention artifacts are emitted. PR35 adds `PR35_FORCE_FAIL=1` to fail after stress artifacts are emitted. PR36 adds `PR36_FORCE_FAIL=1` to fail after compile-check artifacts are emitted. PR38 adds `PR38_FORCE_FAIL=1` to fail after syntax-guard/compile-check artifacts are emitted. PR39 adds `PR39_FORCE_FAIL=1` to force the compile check to fail via a temporary bad file.
 
 ## PR38 gate (local)
 
@@ -90,6 +91,7 @@ To confirm fail-closed behavior while still emitting artifacts:
 
 ```
 PR38_FORCE_FAIL=1 ./scripts/ci_gates.sh
+```
 
 ## PR39 gate (local)
 
@@ -103,7 +105,6 @@ To confirm fail-closed behavior while still emitting artifacts:
 
 ```
 PR39_FORCE_FAIL=1 ./scripts/ci_gates.sh
-```
 ```
 
 To run the syntax guard directly:

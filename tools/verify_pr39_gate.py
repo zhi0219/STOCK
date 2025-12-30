@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
+from tools.compile_check import run_compile_check
 from tools.promotion_gate_v2 import GateConfig, evaluate_promotion_gate
 from tools.replay_artifacts import write_replay_artifacts
 from tools.paths import to_repo_relative
@@ -173,6 +174,17 @@ def _run_command(cmd: list[str]) -> tuple[int, str]:
 def main() -> int:
     ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
     errors: list[str] = []
+
+    compile_payload = run_compile_check(targets=["tools"], artifacts_dir=ARTIFACTS_DIR)
+    if compile_payload.get("status") != "PASS":
+        errors.append("compile_check_failed")
+        exception_summary = compile_payload.get("exception_summary")
+        if exception_summary:
+            errors.append(f"compile_check_exception:{exception_summary}")
+        print("verify_pr39_gate FAIL")
+        for err in errors:
+            print(f" - {err}")
+        return 1
 
     RUNS_ROOT.mkdir(parents=True, exist_ok=True)
     run_id = "pr39_gate_run"
