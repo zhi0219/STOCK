@@ -166,6 +166,38 @@ if syntax_guard_excerpt_path.exists():
     syntax_guard_excerpt = "\n".join(syntax_lines[-60:])
     syntax_guard_excerpt = sanitize_excerpt(syntax_guard_excerpt)
 
+ps_parse_result_path = artifacts_dir / "ps_parse_result.json"
+ps_parse_status = "UNKNOWN"
+ps_parse_reason = "unknown"
+ps_parse_errors = 0
+if ps_parse_result_path.exists():
+    try:
+        ps_parse_result = json.loads(
+            ps_parse_result_path.read_text(encoding="utf-8", errors="replace")
+        )
+    except Exception:
+        ps_parse_result = {"status": "UNKNOWN", "reason": "unknown", "errors": []}
+    if isinstance(ps_parse_result, dict):
+        ps_parse_status = str(ps_parse_result.get("status", "UNKNOWN"))
+        ps_parse_reason = str(ps_parse_result.get("reason", "unknown"))
+        ps_parse_errors = len(ps_parse_result.get("errors") or [])
+
+ui_preflight_result_path = artifacts_dir / "ui_preflight_result.json"
+ui_preflight_status = "UNKNOWN"
+ui_preflight_reason = "unknown"
+ui_preflight_repo_root = None
+if ui_preflight_result_path.exists():
+    try:
+        ui_preflight_result = json.loads(
+            ui_preflight_result_path.read_text(encoding="utf-8", errors="replace")
+        )
+    except Exception:
+        ui_preflight_result = {"status": "UNKNOWN", "reason": "unknown", "repo_root": None}
+    if isinstance(ui_preflight_result, dict):
+        ui_preflight_status = str(ui_preflight_result.get("status", "UNKNOWN"))
+        ui_preflight_reason = str(ui_preflight_result.get("reason", "unknown"))
+        ui_preflight_repo_root = ui_preflight_result.get("repo_root")
+
 compile_result_path = artifacts_dir / "compile_check_result.json"
 compile_log_path = artifacts_dir / "compile_check.log"
 compile_result: dict[str, object] | None = None
@@ -225,6 +257,12 @@ summary = {
     "syntax_guard_status": syntax_guard_status,
     "syntax_guard_hits": syntax_guard_hits,
     "syntax_guard_excerpt_path": str(syntax_guard_excerpt_path),
+    "ps_parse_status": ps_parse_status,
+    "ps_parse_reason": ps_parse_reason,
+    "ps_parse_errors": ps_parse_errors,
+    "ui_preflight_status": ui_preflight_status,
+    "ui_preflight_reason": ui_preflight_reason,
+    "ui_preflight_repo_root": ui_preflight_repo_root,
     "compile_check_status": compile_status,
     "compile_check_exception": compile_exception,
     "compile_check_error_location": {
@@ -267,6 +305,12 @@ summary_lines = [
     f"- **syntax_guard_excerpt**:\n\n```\n{syntax_guard_excerpt}\n```"
     if syntax_guard_excerpt
     else "- **syntax_guard_excerpt**: `n/a`",
+    f"- **ps_parse_status**: `{ps_parse_status}`",
+    f"- **ps_parse_reason**: `{ps_parse_reason}`",
+    f"- **ps_parse_errors**: `{ps_parse_errors}`",
+    f"- **ui_preflight_status**: `{ui_preflight_status}`",
+    f"- **ui_preflight_reason**: `{ui_preflight_reason}`",
+    f"- **ui_preflight_repo_root**: `{ui_preflight_repo_root or 'n/a'}`",
     f"- **compile_check_status**: `{compile_status}`",
     f"- **compile_check_exception**: `{compile_exception or 'none'}`",
     f"- **compile_check_error_file**: `{compile_error_file or 'n/a'}`",
@@ -312,7 +356,7 @@ fi
 
 if [[ ${rc} -eq 0 ]]; then
   set +e
-  python3 -m tools.compile_check --targets tools --artifacts-dir "${artifacts_dir}"
+  python3 -m tools.compile_check --targets tools scripts --artifacts-dir "${artifacts_dir}"
   compile_exit=$?
   set -e
   if [[ ${compile_exit} -ne 0 ]]; then
@@ -331,6 +375,30 @@ if [[ ${rc} -eq 0 ]]; then
     status="FAIL"
     failing_gate="syntax_guard"
     rc=${syntax_guard_exit}
+  fi
+fi
+
+if [[ ${rc} -eq 0 ]]; then
+  set +e
+  python3 -m tools.ps_parse_guard --script scripts/run_ui_windows.ps1 --artifacts-dir "${artifacts_dir}"
+  ps_parse_exit=$?
+  set -e
+  if [[ ${ps_parse_exit} -ne 0 ]]; then
+    status="FAIL"
+    failing_gate="ps_parse_guard"
+    rc=${ps_parse_exit}
+  fi
+fi
+
+if [[ ${rc} -eq 0 ]]; then
+  set +e
+  python3 -m tools.ui_preflight --ci --artifacts-dir "${artifacts_dir}"
+  ui_preflight_exit=$?
+  set -e
+  if [[ ${ui_preflight_exit} -ne 0 ]]; then
+    status="FAIL"
+    failing_gate="ui_preflight"
+    rc=${ui_preflight_exit}
   fi
 fi
 

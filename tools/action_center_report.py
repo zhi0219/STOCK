@@ -94,8 +94,8 @@ ACTION_DEFINITIONS = {
         "title": "Repo hygiene fix (safe)",
         "confirmation_token": CONFIRM_TOKENS["REPO_HYGIENE_FIX_SAFE"],
         "safety_notes": "SIM-only. Restores tracked runtime artifacts and removes untracked runtime files.",
-        "effect_summary": "Runs python -m tools.repo_hygiene fix --mode safe.",
-        "risk_level": "CAUTION",
+        "effect_summary": "Runs python -m tools.git_hygiene_fix to apply safe git hygiene fixes.",
+        "risk_level": "SAFE",
     },
     "CLEAR_STALE_TEMP": {
         "title": "Clear stale temp files",
@@ -409,14 +409,18 @@ def _execute_generate_doctor_report() -> ActionExecutionResult:
 
 
 def _execute_repo_hygiene_fix_safe() -> ActionExecutionResult:
-    proc = _run_command([sys.executable, "-m", "tools.repo_hygiene", "fix", "--mode", "safe"])
+    plan = git_hygiene_fix.build_plan()
+    git_hygiene_fix.write_plan(plan)
+    result = git_hygiene_fix.apply_fix(plan)
+    git_hygiene_fix.write_result(result)
+    success = result.get("status") == "PASS"
     details = {
-        "command": _sanitize_command(list(proc.args)),
-        "returncode": proc.returncode,
-        "stdout": proc.stdout,
-        "stderr": proc.stderr,
+        "plan_path": _relpath(git_hygiene_fix.PLAN_PATH),
+        "result_path": _relpath(git_hygiene_fix.RESULT_PATH),
+        "changes_made": result.get("changes_made", []),
+        "status": result.get("status"),
+        "message": result.get("message"),
     }
-    success = proc.returncode == 0
     message = "repo hygiene fix completed" if success else "repo hygiene fix failed"
     return ActionExecutionResult("REPO_HYGIENE_FIX_SAFE", success, message, details)
 
