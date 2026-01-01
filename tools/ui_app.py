@@ -62,6 +62,15 @@ FRICTION_POLICY_PATH = ROOT / "Data" / "friction_policy.json"
 XP_SNAPSHOT_DIR = ROOT / "Logs" / "train_runs" / "progress_xp"
 XP_SNAPSHOT_LATEST_PATH = XP_SNAPSHOT_DIR / "xp_snapshot_latest.json"
 UI_SMOKE_LATEST_PATH = ROOT / "Logs" / "ui_smoke_latest.json"
+# PATCHBOT_AUTOFIX_START:policy_registry_runtime_path_import
+try:
+    from tools.paths import policy_registry_runtime_path  # type: ignore
+except Exception:
+    def policy_registry_runtime_path():
+        from pathlib import Path
+        # fallback: repo-local default (no I/O assumptions)
+        return Path("Logs") / "policy_registry_runtime.json"
+# PATCHBOT_AUTOFIX_END:policy_registry_runtime_path_import
 POLICY_REGISTRY_PATH = policy_registry_runtime_path()
 BASELINE_GUIDE_SCRIPT = ROOT / "tools" / "baseline_fix_guide.py"
 BASELINE_GUIDE_PATH = ROOT / "Logs" / "baseline_guide.txt"
