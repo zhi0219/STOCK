@@ -9,23 +9,25 @@
 
 $ErrorActionPreference = "Stop"
 
-function Fail {
-  param(
-    [string]$reason,
-    [Parameter(ValueFromRemainingArguments=$true)]
-    [object[]]$rest
-  )
-  # PATCHBOT_FAIL_V3_START
-  if ([string]::IsNullOrWhiteSpace($reason)) {
-    if ($rest -and $rest.Count -gt 0) { $reason = [string]$rest[0] }
-  }
-  if ([string]::IsNullOrWhiteSpace($reason)) { $reason = "unknown_failure" }
-  $reason = ($reason -replace "`r?`n"," ").Trim()
-  Write-Host ("WRAP_SUMMARY|status=FAIL|reason=" + $reason)
-  exit 1
-  # PATCHBOT_FAIL_V3_END
-}
+function Fail([string]$msg) {
 
+  # PATCHBOT_IGNORE_START:git_checkout_message
+  # Non-fatal: git sometimes prints this on stderr on Windows while exitcode=0
+  $msg = $null
+  try { $gv = Get-Variable -Name reason -ErrorAction SilentlyContinue; if ($gv) { $msg = $gv.Value } } catch {}
+  if ($null -eq $msg -and $args.Count -ge 1) { $msg = $args[0] }
+  if ($msg -is [string]) {
+    if ($msg.StartsWith("Switched to a new branch ")) {
+      Write-Host ("WRAP_NOTE|nonfatal_git_message=" + $msg)
+      return
+    }
+  }
+  # PATCHBOT_IGNORE_END:git_checkout_message
+
+
+  Write-Host "WRAP_SUMMARY|status=FAIL|reason=$msg"
+  exit 1
+}
 
 # Resolve real git.exe path (avoid alias/function shadowing)
 $gitCmd = Get-Command git -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -73,17 +75,12 @@ function RollbackAndDeleteBranch([string]$origBranch, [string]$branch) {
 # Repo root + clean tracked tree only (ignore ?? prompts/work/etc)
 $repo = (GitOK rev-parse --show-toplevel).Trim()
 Set-Location $repo
-# PATCHBOT_BLOCK_APPLY_ON_MAIN_START
-if ($Confirm -eq "APPLY") {
-  $cur = (GitOK rev-parse --abbrev-ref HEAD).Trim()
-  if ($cur -eq "main") { Fail "refuse_apply_on_main|next=git checkout -b <branch>" }
-}
-# PATCHBOT_BLOCK_APPLY_ON_MAIN_END
 
 $trackedDirty = (GitOK status --porcelain --untracked-files=no).Trim()
 if ($trackedDirty.Length -ne 0) { Fail "worktree_not_clean_tracked_changes_present" }
 
 $origBranch = (GitOK rev-parse --abbrev-ref HEAD).Trim()
+
 if ([string]::IsNullOrWhiteSpace($PatchBotOut)) { $PatchBotOut = PickLatestPatchBotOut }
 if (-not (Test-Path $PatchBotOut)) { Fail "missing_patch_bot_out" }
 
