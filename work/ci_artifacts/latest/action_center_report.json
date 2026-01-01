@@ -1,0 +1,431 @@
+{
+  "action_rows": [
+    {
+      "action_id": "CLEAR_KILL_SWITCH",
+      "evidence_paths": [],
+      "last_seen_ts_utc": "2025-12-30T03:11:19.630219+00:00",
+      "recommended_command": "python -m tools.action_center_apply --action-id CLEAR_KILL_SWITCH --confirm CLEAR",
+      "risk_level": "CAUTION",
+      "severity": "INFO",
+      "summary": "No active issues detected."
+    },
+    {
+      "action_id": "ACTION_REBUILD_PROGRESS_INDEX",
+      "evidence_paths": [
+        "Logs/train_runs/progress_index.json"
+      ],
+      "last_seen_ts_utc": "2025-12-30T03:11:19.630219+00:00",
+      "recommended_command": "python -m tools.action_center_apply --action-id ACTION_REBUILD_PROGRESS_INDEX --confirm REBUILD",
+      "risk_level": "CAUTION",
+      "severity": "WARN",
+      "summary": "progress_index.json missing; UI summaries may be incomplete."
+    },
+    {
+      "action_id": "ACTION_RESTART_SERVICES_SIM_ONLY",
+      "evidence_paths": [
+        "Logs/train_runs/_latest/candidates_latest.json",
+        "Logs/train_runs/_latest/policy_history_latest.json",
+        "Logs/train_runs/_latest/progress_judge_latest.json",
+        "Logs/train_runs/_latest/promotion_decision_latest.json",
+        "Logs/train_runs/_latest/tournament_latest.json"
+      ],
+      "last_seen_ts_utc": "2025-12-30T03:11:19.630219+00:00",
+      "recommended_command": "python -m tools.action_center_apply --action-id ACTION_RESTART_SERVICES_SIM_ONLY --confirm RESTART",
+      "risk_level": "CAUTION",
+      "severity": "WARN",
+      "summary": "Latest pointer(s) missing: candidates_latest.json, tournament_latest.json, promotion_decision_latest.json, policy_history_latest.json, progress_judge_latest.json."
+    },
+    {
+      "action_id": "GEN_DOCTOR_REPORT",
+      "evidence_paths": [
+        "artifacts/doctor_report.json"
+      ],
+      "last_seen_ts_utc": "2025-12-30T03:11:19.630219+00:00",
+      "recommended_command": "python -m tools.action_center_apply --action-id GEN_DOCTOR_REPORT --confirm RUN",
+      "risk_level": "SAFE",
+      "severity": "WARN",
+      "summary": "Doctor report missing; run Doctor to refresh diagnostics."
+    },
+    {
+      "action_id": "REPO_HYGIENE_FIX_SAFE",
+      "evidence_paths": [],
+      "last_seen_ts_utc": "2025-12-30T03:11:19.630219+00:00",
+      "recommended_command": "python -m tools.action_center_apply --action-id REPO_HYGIENE_FIX_SAFE --confirm HYGIENE",
+      "risk_level": "SAFE",
+      "severity": "INFO",
+      "summary": "No active issues detected."
+    },
+    {
+      "action_id": "CLEAR_STALE_TEMP",
+      "evidence_paths": [],
+      "last_seen_ts_utc": "2025-12-30T03:11:19.630219+00:00",
+      "recommended_command": "python -m tools.action_center_apply --action-id CLEAR_STALE_TEMP --confirm CLEAN",
+      "risk_level": "CAUTION",
+      "severity": "INFO",
+      "summary": "No active issues detected."
+    },
+    {
+      "action_id": "ENSURE_RUNTIME_DIRS",
+      "evidence_paths": [],
+      "last_seen_ts_utc": "2025-12-30T03:11:19.630219+00:00",
+      "recommended_command": "python -m tools.action_center_apply --action-id ENSURE_RUNTIME_DIRS --confirm MKDIR",
+      "risk_level": "SAFE",
+      "severity": "INFO",
+      "summary": "No active issues detected."
+    },
+    {
+      "action_id": "DIAG_RUNTIME_WRITE",
+      "evidence_paths": [],
+      "last_seen_ts_utc": "2025-12-30T03:11:19.630219+00:00",
+      "recommended_command": "python -m tools.action_center_apply --action-id DIAG_RUNTIME_WRITE --confirm DIAG",
+      "risk_level": "SAFE",
+      "severity": "INFO",
+      "summary": "No active issues detected."
+    },
+    {
+      "action_id": "ABS_PATH_SANITIZE_HINT",
+      "evidence_paths": [],
+      "last_seen_ts_utc": "2025-12-30T03:11:19.630219+00:00",
+      "recommended_command": "python -m tools.action_center_apply --action-id ABS_PATH_SANITIZE_HINT --confirm SANITIZE",
+      "risk_level": "SAFE",
+      "severity": "INFO",
+      "summary": "No active issues detected."
+    },
+    {
+      "action_id": "ENABLE_GIT_HOOKS",
+      "evidence_paths": [],
+      "last_seen_ts_utc": "2025-12-30T03:11:19.630219+00:00",
+      "recommended_command": "python -m tools.action_center_apply --action-id ENABLE_GIT_HOOKS --confirm HOOKS",
+      "risk_level": "SAFE",
+      "severity": "INFO",
+      "summary": "No active issues detected."
+    },
+    {
+      "action_id": "RUN_RETENTION_REPORT",
+      "evidence_paths": [],
+      "last_seen_ts_utc": "2025-12-30T03:11:19.630219+00:00",
+      "recommended_command": "python -m tools.action_center_apply --action-id RUN_RETENTION_REPORT --confirm REPORT",
+      "risk_level": "SAFE",
+      "severity": "INFO",
+      "summary": "No active issues detected."
+    },
+    {
+      "action_id": "PRUNE_OLD_RUNS_SAFE",
+      "evidence_paths": [],
+      "last_seen_ts_utc": "2025-12-30T03:11:19.630219+00:00",
+      "recommended_command": "python -m tools.action_center_apply --action-id PRUNE_OLD_RUNS_SAFE --confirm PRUNE",
+      "risk_level": "SAFE",
+      "severity": "INFO",
+      "summary": "No active issues detected."
+    },
+    {
+      "action_id": "REBUILD_RECENT_INDEX",
+      "evidence_paths": [],
+      "last_seen_ts_utc": "2025-12-30T03:11:19.630219+00:00",
+      "recommended_command": "python -m tools.action_center_apply --action-id REBUILD_RECENT_INDEX --confirm INDEX",
+      "risk_level": "SAFE",
+      "severity": "INFO",
+      "summary": "No active issues detected."
+    },
+    {
+      "action_id": "FIX_GIT_RED_SAFE",
+      "evidence_paths": [],
+      "last_seen_ts_utc": "2025-12-30T03:11:19.630219+00:00",
+      "recommended_command": "python -m tools.action_center_apply --action-id FIX_GIT_RED_SAFE --confirm GITSAFE",
+      "risk_level": "SAFE",
+      "severity": "INFO",
+      "summary": "No active issues detected."
+    },
+    {
+      "action_id": "REVIEW_GIT_DIRTY",
+      "evidence_paths": [],
+      "last_seen_ts_utc": "2025-12-30T03:11:19.630219+00:00",
+      "recommended_command": "python -m tools.action_center_apply --action-id REVIEW_GIT_DIRTY --confirm REVIEW",
+      "risk_level": "CAUTION",
+      "severity": "INFO",
+      "summary": "No active issues detected."
+    },
+    {
+      "action_id": "ENABLE_OVERTRADING_GUARDRAILS_SAFE",
+      "evidence_paths": [],
+      "last_seen_ts_utc": "2025-12-30T03:11:19.630219+00:00",
+      "recommended_command": "python -m tools.action_center_apply --action-id ENABLE_OVERTRADING_GUARDRAILS_SAFE --confirm GUARDRAILS",
+      "risk_level": "SAFE",
+      "severity": "INFO",
+      "summary": "No active issues detected."
+    },
+    {
+      "action_id": "RUN_OVERTRADING_CALIBRATION",
+      "evidence_paths": [],
+      "last_seen_ts_utc": "2025-12-30T03:11:19.630219+00:00",
+      "recommended_command": "python -m tools.action_center_apply --action-id RUN_OVERTRADING_CALIBRATION --confirm CALIBRATE",
+      "risk_level": "SAFE",
+      "severity": "INFO",
+      "summary": "No active issues detected."
+    }
+  ],
+  "detected_issues": [
+    {
+      "code": "NO_COMPLETE_RUNS",
+      "evidence_paths": [
+        "Logs/train_runs"
+      ],
+      "recommended_actions": [],
+      "severity": "WARN",
+      "summary": "No run_complete.json artifacts detected. No safe auto-action available."
+    },
+    {
+      "code": "PROGRESS_INDEX_MISSING",
+      "evidence_paths": [
+        "Logs/train_runs/progress_index.json"
+      ],
+      "recommended_actions": [
+        "ACTION_REBUILD_PROGRESS_INDEX"
+      ],
+      "severity": "WARN",
+      "summary": "progress_index.json missing; UI summaries may be incomplete."
+    },
+    {
+      "code": "LATEST_POINTERS_MISSING",
+      "evidence_paths": [
+        "Logs/train_runs/_latest/candidates_latest.json",
+        "Logs/train_runs/_latest/policy_history_latest.json",
+        "Logs/train_runs/_latest/progress_judge_latest.json",
+        "Logs/train_runs/_latest/promotion_decision_latest.json",
+        "Logs/train_runs/_latest/tournament_latest.json"
+      ],
+      "recommended_actions": [
+        "ACTION_RESTART_SERVICES_SIM_ONLY"
+      ],
+      "severity": "WARN",
+      "summary": "Latest pointer(s) missing: candidates_latest.json, tournament_latest.json, promotion_decision_latest.json, policy_history_latest.json, progress_judge_latest.json."
+    },
+    {
+      "code": "JUDGE_ARTIFACT_MISSING",
+      "evidence_paths": [
+        "Logs/train_runs/_latest/progress_judge_latest.json",
+        "Logs/train_runs/progress_judge/latest.json"
+      ],
+      "recommended_actions": [],
+      "severity": "WARN",
+      "summary": "Progress judge artifacts missing. No safe auto-action available."
+    },
+    {
+      "code": "DOCTOR_REPORT_MISSING",
+      "evidence_paths": [
+        "artifacts/doctor_report.json"
+      ],
+      "recommended_actions": [
+        "GEN_DOCTOR_REPORT"
+      ],
+      "severity": "WARN",
+      "summary": "Doctor report missing; run Doctor to refresh diagnostics."
+    }
+  ],
+  "doctor_summary": {
+    "issues_count": 0,
+    "status": "MISSING",
+    "ts_utc": null
+  },
+  "environment_notes": [
+    {
+      "code": "ui_display_unavailable",
+      "detail": "DISPLAY not set for GUI rendering."
+    },
+    {
+      "code": "venv_unavailable",
+      "detail": "No active virtualenv detected."
+    },
+    {
+      "code": "baseline_unavailable",
+      "detail": "baseline probe status=UNAVAILABLE details=shallow_repo"
+    }
+  ],
+  "recommended_actions": [
+    {
+      "action_id": "CLEAR_KILL_SWITCH",
+      "confirmation_token": "CLEAR",
+      "effect_summary": "Clears kill switch files via supervisor clear-kill-switch.",
+      "related_evidence_paths": [],
+      "requires_typed_confirmation": true,
+      "risk_level": "CAUTION",
+      "safety_notes": "SIM-only. Removes local kill switch files and does not place trades.",
+      "title": "Clear kill switch (SIM-only)"
+    },
+    {
+      "action_id": "ACTION_REBUILD_PROGRESS_INDEX",
+      "confirmation_token": "REBUILD",
+      "effect_summary": "Runs tools/progress_index.py to refresh the progress index.",
+      "related_evidence_paths": [
+        "Logs/train_runs/progress_index.json"
+      ],
+      "requires_typed_confirmation": true,
+      "risk_level": "CAUTION",
+      "safety_notes": "SIM-only. Regenerates Logs/train_runs/progress_index.json from local files.",
+      "title": "Rebuild progress index"
+    },
+    {
+      "action_id": "ACTION_RESTART_SERVICES_SIM_ONLY",
+      "confirmation_token": "RESTART",
+      "effect_summary": "Stops and starts supervisor services (quotes/alerts).",
+      "related_evidence_paths": [
+        "Logs/train_runs/_latest/candidates_latest.json",
+        "Logs/train_runs/_latest/policy_history_latest.json",
+        "Logs/train_runs/_latest/progress_judge_latest.json",
+        "Logs/train_runs/_latest/promotion_decision_latest.json",
+        "Logs/train_runs/_latest/tournament_latest.json"
+      ],
+      "requires_typed_confirmation": true,
+      "risk_level": "CAUTION",
+      "safety_notes": "SIM-only. Restarts local supervisor-managed services; no broker access.",
+      "title": "Restart SIM services"
+    },
+    {
+      "action_id": "GEN_DOCTOR_REPORT",
+      "confirmation_token": "RUN",
+      "effect_summary": "Runs tools.doctor_report to capture health evidence.",
+      "related_evidence_paths": [
+        "artifacts/doctor_report.json"
+      ],
+      "requires_typed_confirmation": false,
+      "risk_level": "SAFE",
+      "safety_notes": "SIM-only. Writes artifacts/doctor_report.json for diagnostics.",
+      "title": "Generate Doctor report"
+    },
+    {
+      "action_id": "REPO_HYGIENE_FIX_SAFE",
+      "confirmation_token": "HYGIENE",
+      "effect_summary": "Runs python -m tools.git_hygiene_fix to apply safe git hygiene fixes.",
+      "related_evidence_paths": [],
+      "requires_typed_confirmation": false,
+      "risk_level": "SAFE",
+      "safety_notes": "SIM-only. Restores tracked runtime artifacts and removes untracked runtime files.",
+      "title": "Repo hygiene fix (safe)"
+    },
+    {
+      "action_id": "CLEAR_STALE_TEMP",
+      "confirmation_token": "CLEAN",
+      "effect_summary": "Removes stale temp files from Logs/runtime and Logs/.",
+      "related_evidence_paths": [],
+      "requires_typed_confirmation": true,
+      "risk_level": "CAUTION",
+      "safety_notes": "SIM-only. Deletes stale *.tmp files older than the Doctor threshold.",
+      "title": "Clear stale temp files"
+    },
+    {
+      "action_id": "ENSURE_RUNTIME_DIRS",
+      "confirmation_token": "MKDIR",
+      "effect_summary": "Creates Logs/runtime, Logs/train_service, and artifacts directories.",
+      "related_evidence_paths": [],
+      "requires_typed_confirmation": false,
+      "risk_level": "SAFE",
+      "safety_notes": "SIM-only. Creates runtime directories if missing.",
+      "title": "Ensure runtime directories"
+    },
+    {
+      "action_id": "DIAG_RUNTIME_WRITE",
+      "confirmation_token": "DIAG",
+      "effect_summary": "Writes artifacts/doctor_runtime_write.json for evidence.",
+      "related_evidence_paths": [],
+      "requires_typed_confirmation": false,
+      "risk_level": "SAFE",
+      "safety_notes": "SIM-only. Re-runs runtime write checks and stores results.",
+      "title": "Diagnose runtime write"
+    },
+    {
+      "action_id": "ABS_PATH_SANITIZE_HINT",
+      "confirmation_token": "SANITIZE",
+      "effect_summary": "Writes artifacts/abs_path_sanitize_hint.json with guidance.",
+      "related_evidence_paths": [],
+      "requires_typed_confirmation": false,
+      "risk_level": "SAFE",
+      "safety_notes": "SIM-only. Writes a sanitized-paths guidance artifact.",
+      "title": "Generate absolute-path sanitization hints"
+    },
+    {
+      "action_id": "ENABLE_GIT_HOOKS",
+      "confirmation_token": "HOOKS",
+      "effect_summary": "Runs scripts/enable_githooks.* if available.",
+      "related_evidence_paths": [],
+      "requires_typed_confirmation": false,
+      "risk_level": "SAFE",
+      "safety_notes": "SIM-only. Best-effort enable githooks for repo hygiene.",
+      "title": "Enable git hooks (best effort)"
+    },
+    {
+      "action_id": "RUN_RETENTION_REPORT",
+      "confirmation_token": "REPORT",
+      "effect_summary": "Runs python -m tools.retention_engine report.",
+      "related_evidence_paths": [],
+      "requires_typed_confirmation": false,
+      "risk_level": "SAFE",
+      "safety_notes": "SIM-only. Generates retention report for storage health evidence.",
+      "title": "Run retention report"
+    },
+    {
+      "action_id": "PRUNE_OLD_RUNS_SAFE",
+      "confirmation_token": "PRUNE",
+      "effect_summary": "Runs python -m tools.retention_engine prune --mode safe.",
+      "related_evidence_paths": [],
+      "requires_typed_confirmation": false,
+      "risk_level": "SAFE",
+      "safety_notes": "SIM-only. Conservative retention prune with safety checks.",
+      "title": "Prune old runs (safe)"
+    },
+    {
+      "action_id": "REBUILD_RECENT_INDEX",
+      "confirmation_token": "INDEX",
+      "effect_summary": "Runs python -m tools.recent_runs_index.",
+      "related_evidence_paths": [],
+      "requires_typed_confirmation": false,
+      "risk_level": "SAFE",
+      "safety_notes": "SIM-only. Rebuilds Logs/train_runs/recent_runs_index.json.",
+      "title": "Rebuild recent runs index"
+    },
+    {
+      "action_id": "FIX_GIT_RED_SAFE",
+      "confirmation_token": "GITSAFE",
+      "effect_summary": "Applies safe git hygiene fixes and writes evidence artifacts.",
+      "related_evidence_paths": [],
+      "requires_typed_confirmation": false,
+      "risk_level": "SAFE",
+      "safety_notes": "SIM-only. Restores tracked runtime artifacts and removes untracked runtime files only.",
+      "title": "Fix Git Red (Safe)"
+    },
+    {
+      "action_id": "REVIEW_GIT_DIRTY",
+      "confirmation_token": "REVIEW",
+      "effect_summary": "Writes a review guidance artifact for manual inspection.",
+      "related_evidence_paths": [],
+      "requires_typed_confirmation": true,
+      "risk_level": "CAUTION",
+      "safety_notes": "SIM-only. Generates guidance for unknown git changes; no auto-apply.",
+      "title": "Review unknown git changes"
+    },
+    {
+      "action_id": "ENABLE_OVERTRADING_GUARDRAILS_SAFE",
+      "confirmation_token": "GUARDRAILS",
+      "effect_summary": "Copies Data/overtrading_budget.json into Logs/runtime/overtrading_budget.json.",
+      "related_evidence_paths": [],
+      "requires_typed_confirmation": false,
+      "risk_level": "SAFE",
+      "safety_notes": "SIM-only. Writes runtime overtrading budget config; no broker access.",
+      "title": "Enable Overtrading Guardrails (Safe Defaults)"
+    },
+    {
+      "action_id": "RUN_OVERTRADING_CALIBRATION",
+      "confirmation_token": "CALIBRATE",
+      "effect_summary": "Runs python -m tools.overtrading_calibrate to write evidence artifacts.",
+      "related_evidence_paths": [],
+      "requires_typed_confirmation": false,
+      "risk_level": "SAFE",
+      "safety_notes": "SIM-only. Generates calibration artifacts; no broker access.",
+      "title": "Run Overtrading Calibration (Report-only)"
+    }
+  ],
+  "repo_ref": {
+    "branch_if_known": "main",
+    "git_commit_short": "32b2990"
+  },
+  "ts_utc": "2025-12-30T03:11:19.630219+00:00"
+}

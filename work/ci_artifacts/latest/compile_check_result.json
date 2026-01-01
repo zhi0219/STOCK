@@ -1,0 +1,25 @@
+{
+  "command": [
+    "/opt/hostedtoolcache/Python/3.11.14/x64/bin/python3",
+    "-m",
+    "compileall",
+    "-q",
+    "tools",
+    "alerts.py",
+    "main.py",
+    "quotes.py"
+  ],
+  "error_location": null,
+  "exception_summary": null,
+  "force_fail": false,
+  "log_path": "artifacts/compile_check.log",
+  "returncode": 0,
+  "schema_version": 1,
+  "status": "PASS",
+  "targets": [
+    "tools",
+    "alerts.py",
+    "main.py",
+    "quotes.py"
+  ]
+}

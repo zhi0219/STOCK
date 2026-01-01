@@ -1,0 +1,15 @@
+{
+  "entries": [],
+  "excerpt_path": "/home/runner/work/STOCK/STOCK/artifacts/syntax_guard_excerpt.txt",
+  "files_scanned": 138,
+  "hits": 0,
+  "patterns": [
+    "f\\\"",
+    "rf\\\"",
+    "fr\\\"",
+    "unexpected_indent",
+    "tokenize_error"
+  ],
+  "status": "PASS",
+  "ts_utc": "2025-12-30T03:11:19Z"
+}
