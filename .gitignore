@@ -56,3 +56,11 @@ Logs/*.tmp
 
 # runtime artifacts
 Logs/policy_registry.json
+
+# ---- local runtime artifacts (SIM-only project) ----
+artifacts/
+work/
+prompts/*.txt
+docs/_edits_pipeline_smoke.md
+*.patch
+*.diff
