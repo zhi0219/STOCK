@@ -563,3 +563,6 @@ find . -path "./artifacts" -prune -o -type f -name "*_latest.json" -print0 | \
   done
 
 exit ${rc}
+  
+# --- foundation gate (P0) ---
+python -m tools.verify_foundation --artifacts-dir artifacts
