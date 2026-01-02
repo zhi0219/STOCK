@@ -1,0 +1,57 @@
+{
+  "compile_check_error_location": {
+    "code": null,
+    "file": null,
+    "line": null
+  },
+  "compile_check_exception": null,
+  "compile_check_excerpt": "",
+  "compile_check_status": "PASS",
+  "environment": {
+    "ci": true,
+    "os": "Linux-6.11.0-1018-azure-x86_64-with-glibc2.39",
+    "python_version": "3.11.14"
+  },
+  "error_excerpt": "",
+  "failing_gate": "",
+  "files": [
+    "artifacts/action_center_report.json",
+    "artifacts/compile_check.log",
+    "artifacts/compile_check_result.json",
+    "artifacts/gates.log",
+    "artifacts/import_contract_result.json",
+    "artifacts/ps_parse_result.json",
+    "artifacts/syntax_guard_excerpt.txt",
+    "artifacts/syntax_guard_result.json",
+    "artifacts/ui_preflight_result.json",
+    "artifacts/proof_summary.json",
+    "artifacts/ci_job_summary.md"
+  ],
+  "git_commit": "32b2990",
+  "import_contract": {
+    "result": {
+      "exception_message": null,
+      "exception_type": null,
+      "module": "tools.verify_pr40_gate",
+      "status": "PASS",
+      "traceback_file": null
+    },
+    "traceback_excerpt": ""
+  },
+  "log_bytes_final": 647,
+  "log_bytes_original": 647,
+  "log_truncated": false,
+  "max_log_bytes": 2097152,
+  "overall_status": "PASS",
+  "ps_parse_errors": 0,
+  "ps_parse_reason": "ok",
+  "ps_parse_status": "PASS",
+  "runner": "python3 tools/verify_pr40_gate.py",
+  "syntax_guard_excerpt_path": "artifacts/syntax_guard_excerpt.txt",
+  "syntax_guard_hits": 0,
+  "syntax_guard_status": "PASS",
+  "ts_utc": "2025-12-30T03:11:19Z",
+  "ui_preflight_reason": "ok",
+  "ui_preflight_repo_root": ".",
+  "ui_preflight_status": "PASS"
+}

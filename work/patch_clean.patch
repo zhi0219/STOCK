@@ -1,0 +1,14 @@
+diff --git a/tools/ui_app.py b/tools/ui_app.py
+index 1a2b3c4..5d6e7f8 100644
+--- a/tools/ui_app.py
++++ b/tools/ui_app.py
+@@ -64,7 +64,7 @@ from pathlib import Path
+ from typing import List, Sequence
+ 
+ try:
+-    import tkinter as tk
++    from tkinter import *
+     from tkinter import messagebox
+     from tkinter import ttk
+     from tkinter.scrolledtext import ScrolledText
+

@@ -1,0 +1,9 @@
+{
+  "errors": [],
+  "pwsh_returncode": 0,
+  "raw_output": "{\n  \"errors\": [],\n  \"ts_utc\": \"2025-12-30T03:11:18Z\",\n  \"script\": \"scripts/run_ui_windows.ps1\",\n  \"status\": \"PASS\"\n}\n",
+  "reason": "ok",
+  "script": "scripts/run_ui_windows.ps1",
+  "status": "PASS",
+  "ts_utc": "2025-12-30T03:11:18Z"
+}
