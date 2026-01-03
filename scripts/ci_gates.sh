@@ -414,6 +414,32 @@ if [[ ${rc} -eq 0 ]]; then
   fi
 fi
 
+if [[ ${rc} -eq 0 ]]; then
+  set +e
+  python3 -m tools.apply_edits --repo . --edits fixtures/edits_contract/good.json --artifacts-dir "${artifacts_dir}" --dry-run
+  edits_apply_exit=$?
+  set -e
+  if [[ ${edits_apply_exit} -ne 0 ]]; then
+    status="FAIL"
+    failing_gate="apply_edits_dry_run"
+    rc=${edits_apply_exit}
+  fi
+fi
+
+if [[ ${rc} -eq 0 ]]; then
+  set +e
+  python3 -m tools.extract_json_strict \
+    --raw-text fixtures/extract_json_strict/bad_fenced.txt \
+    --out-json "${artifacts_dir}/extract_json_strict_bad.json"
+  extract_exit=$?
+  set -e
+  if [[ ${extract_exit} -eq 0 ]]; then
+    status="FAIL"
+    failing_gate="extract_json_strict_negative"
+    rc=1
+  fi
+fi
+
 if ls tools/verify_pr*_gate.py >/dev/null 2>&1; then
   mapfile -t pr_gates < <(ls tools/verify_pr*_gate.py 2>/dev/null | sort -V)
   last_index=$(( ${#pr_gates[@]} - 1 ))
