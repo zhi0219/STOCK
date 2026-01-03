@@ -182,6 +182,22 @@ if ps_parse_result_path.exists():
         ps_parse_reason = str(ps_parse_result.get("reason", "unknown"))
         ps_parse_errors = len(ps_parse_result.get("errors") or [])
 
+safe_push_contract_path = artifacts_dir / "safe_push_contract_result.json"
+safe_push_contract_status = "UNKNOWN"
+safe_push_contract_errors = []
+if safe_push_contract_path.exists():
+    try:
+        safe_push_contract_result = json.loads(
+            safe_push_contract_path.read_text(encoding="utf-8", errors="replace")
+        )
+    except Exception:
+        safe_push_contract_result = {"status": "UNKNOWN", "errors": []}
+    if isinstance(safe_push_contract_result, dict):
+        safe_push_contract_status = str(
+            safe_push_contract_result.get("status", "UNKNOWN")
+        )
+        safe_push_contract_errors = safe_push_contract_result.get("errors") or []
+
 ui_preflight_result_path = artifacts_dir / "ui_preflight_result.json"
 ui_preflight_status = "UNKNOWN"
 ui_preflight_reason = "unknown"
@@ -260,6 +276,8 @@ summary = {
     "ps_parse_status": ps_parse_status,
     "ps_parse_reason": ps_parse_reason,
     "ps_parse_errors": ps_parse_errors,
+    "safe_push_contract_status": safe_push_contract_status,
+    "safe_push_contract_errors": safe_push_contract_errors,
     "ui_preflight_status": ui_preflight_status,
     "ui_preflight_reason": ui_preflight_reason,
     "ui_preflight_repo_root": ui_preflight_repo_root,
@@ -308,6 +326,8 @@ summary_lines = [
     f"- **ps_parse_status**: `{ps_parse_status}`",
     f"- **ps_parse_reason**: `{ps_parse_reason}`",
     f"- **ps_parse_errors**: `{ps_parse_errors}`",
+    f"- **safe_push_contract_status**: `{safe_push_contract_status}`",
+    f"- **safe_push_contract_errors**: `{safe_push_contract_errors}`",
     f"- **ui_preflight_status**: `{ui_preflight_status}`",
     f"- **ui_preflight_reason**: `{ui_preflight_reason}`",
     f"- **ui_preflight_repo_root**: `{ui_preflight_repo_root or 'n/a'}`",
@@ -387,6 +407,18 @@ if [[ ${rc} -eq 0 ]]; then
     status="FAIL"
     failing_gate="ps_parse_guard"
     rc=${ps_parse_exit}
+  fi
+fi
+
+if [[ ${rc} -eq 0 ]]; then
+  set +e
+  python3 -m tools.safe_push_contract --artifacts-dir "${artifacts_dir}"
+  safe_push_contract_exit=$?
+  set -e
+  if [[ ${safe_push_contract_exit} -ne 0 ]]; then
+    status="FAIL"
+    failing_gate="safe_push_contract"
+    rc=${safe_push_contract_exit}
   fi
 fi
 

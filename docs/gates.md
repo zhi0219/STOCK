@@ -24,6 +24,26 @@ Aggregates lightweight health checks for CI consistency.
 - Legacy gates: opt-in via `--include-legacy-gates` (default skips `verify_pr20_gate.py`).
 - Rationale: legacy artifacts should not block main by default while remaining auditable on demand.
 
+## Safe Push (Windows Local)
+Use the safe push wrapper to prevent broken local pushes (fail-closed).
+
+### When to pull vs push
+- Cloud/Codex PRs: after merge, you **pull** updates locally.
+- Local-model PRs (Windows): you **push** from Windows, but only through the safe wrapper.
+
+### Always use the safe push wrapper
+Run the safe push script from repo root:
+`.\scripts\safe_push_v1.ps1`
+
+Optional overrides:
+`.\scripts\safe_push_v1.ps1 -Remote origin -Branch HEAD`
+
+The wrapper runs mandatory gates before `git push` and emits stable markers:
+- `SAFE_PUSH_START|...`
+- `SAFE_PUSH_GATE|name=...|status=PASS/FAIL|log=...`
+- `SAFE_PUSH_SUMMARY|status=PASS/FAIL|reason=...|next=...`
+- `SAFE_PUSH_END`
+
 ### Strict JSON-only contract (v1)
 All local model outputs that drive edits must be a single JSON object:
 ```json
