@@ -8,6 +8,7 @@ One-shot, fail-closed aggregator gate used by CI and UI.
 - Runs: docs_contract, pr_template_contract, defensive_redteam, windows_smoke, import-smoke (tools.ui_app)
 - Outputs: artifacts/foundation_summary.json + per-step logs under artifacts/
 - Rule: unknown => FAIL with an artifacts path to inspect
+- Windows note: zoneinfo relies on tzdata; install requirements.txt to avoid timezone failures.
 
 ## Edits Contract Gate (P0)
 Validates strict JSON-only edits outputs.
