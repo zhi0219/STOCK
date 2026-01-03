@@ -12,7 +12,7 @@ from typing import Any, Iterable
 from tools.paths import repo_root, to_repo_relative
 
 ROOT = repo_root()
-DEFAULT_TARGETS = ["tools"]
+DEFAULT_TARGETS = ["tools", "scripts", "tests"]
 LOG_FILENAME = "compile_check.log"
 RESULT_FILENAME = "compile_check_result.json"
 
