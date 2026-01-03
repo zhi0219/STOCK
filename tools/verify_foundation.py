@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -96,7 +97,7 @@ def run_gate(script_name: str) -> GateResult:
     )
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     """Run all foundation gates and return a consolidated exit code.
 
     Exit semantics:
@@ -105,6 +106,14 @@ def main() -> int:
       `degraded=1` in the summary but preserve exit code 0.
     - Marker lines bound the output so downstream tools can parse the block.
     """
+    parser = argparse.ArgumentParser(description="Run foundation gates.")
+    parser.add_argument(
+        "--artifacts-dir",
+        default="artifacts",
+        help="Artifacts directory (reserved for future use).",
+    )
+    parser.parse_args(argv)
+
     if configure_stdio_utf8:
         try:
             configure_stdio_utf8()

@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import json
 import queue
+import shutil
 import subprocess
 import sys
 import threading
@@ -46,6 +47,13 @@ ACTION_CENTER_APPLY_MODULE = "tools.action_center_apply"
 ACTION_CENTER_APPLY_RESULT_PATH = ROOT / "artifacts" / "action_center_apply_result.json"
 DOCTOR_REPORT_PATH = ROOT / "artifacts" / "doctor_report.json"
 ARTIFACTS_DIR = ROOT / "artifacts"
+LOCAL_MODEL_MARKERS = (
+    "RUN_LOCAL_MODEL_START",
+    "RUN_LOCAL_MODEL_SUMMARY",
+    "RUN_LOCAL_MODEL_END",
+    "VERIFY_EDITS_PAYLOAD_SUMMARY",
+    "APPLY_EDITS_SUMMARY",
+)
 LATEST_DIR = ROOT / "Logs" / "train_runs" / "_latest"
 PROGRESS_JUDGE_LATEST_PATH = LATEST_DIR / "progress_judge_latest.json"
 LEGACY_PROGRESS_JUDGE_LATEST_PATH = ROOT / "Logs" / "train_runs" / "progress_judge" / "latest.json"
@@ -560,6 +568,7 @@ class App(tk.Tk):
         self._verify_output_queue: "queue.Queue[str]" = queue.Queue()
         self._summary_queue: "queue.Queue[str]" = queue.Queue()
         self._training_output_queue: "queue.Queue[str]" = queue.Queue()
+        self._local_model_output_queue: "queue.Queue[str]" = queue.Queue()
         self._events_cache: List[dict] = []
         self._events_rows: dict[str, dict] = {}
         self.last_packet_path: Path | None = None
@@ -569,6 +578,12 @@ class App(tk.Tk):
         self._hud_last_summary_rendered: Path | None = None
         self._latest_wakeup_run_dir: Path | None = None
         self._latest_wakeup_summary_path: Path | None = None
+        self.local_model_model_var = tk.StringVar(value="")
+        self.local_model_prompt_var = tk.StringVar(value="")
+        self.local_model_artifacts_var = tk.StringVar(value=str(ARTIFACTS_DIR))
+        self.local_model_status_var = tk.StringVar(value="Local model: idle")
+        self.local_model_artifact_paths: list[Path] = []
+        self.last_local_model_artifacts_dir: Path | None = None
         self.progress_index_path = PROGRESS_INDEX_PATH
         self.progress_entries: list[dict[str, object]] = []
         self.progress_selected_entry: dict[str, object] | None = None
@@ -742,6 +757,7 @@ class App(tk.Tk):
         _, self.action_center_tab = self._create_scrollable_tab(notebook, "Action Center")
         _, self.summary_tab = self._create_scrollable_tab(notebook, "摘要")
         _, self.qa_tab = self._create_scrollable_tab(notebook, "AI Q&A")
+        _, self.local_model_tab = self._create_scrollable_tab(notebook, "Local Model (Dry-Run)")
         _, self.verify_tab = self._create_scrollable_tab(notebook, "Verify")
 
         self._build_run_tab()
@@ -752,10 +768,12 @@ class App(tk.Tk):
         self._build_action_center_tab()
         self._build_summary_tab()
         self._build_qa_panel()
+        self._build_local_model_tab()
         self._build_verify_tab()
 
         self.after(300, self._drain_qa_output)
         self.after(400, self._drain_verify_output)
+        self.after(450, self._drain_local_model_output)
         self.after(500, self._drain_summary_queue)
         self.after(450, self._drain_training_output)
 
@@ -4609,6 +4627,95 @@ class App(tk.Tk):
         except Exception as exc:  # pragma: no cover - UI feedback
             messagebox.showerror("AI Q&A", f"Failed to open folder: {exc}")
 
+    def _open_local_model_artifacts(self) -> None:
+        target = self.last_local_model_artifacts_dir
+        if target is None:
+            raw = self.local_model_artifacts_var.get().strip()
+            if raw:
+                target = (ROOT / Path(raw)).resolve() if not Path(raw).is_absolute() else Path(raw).resolve()
+        if target is None:
+            messagebox.showinfo("Local Model", "No artifacts folder yet")
+            return
+        try:
+            if hasattr(os, "startfile"):
+                os.startfile(str(target))  # type: ignore[attr-defined]
+            else:
+                subprocess.Popen(["xdg-open", str(target)], env=_utf8_env())
+        except Exception as exc:  # pragma: no cover - UI feedback
+            messagebox.showerror("Local Model", f"Failed to open folder: {exc}")
+
+    def _copy_local_model_artifact_path(self) -> None:
+        selection = getattr(self, "local_model_artifacts_list", None)
+        target = None
+        if selection:
+            try:
+                idx = selection.curselection()
+                if idx:
+                    target = selection.get(idx[0])
+            except Exception:
+                target = None
+        if not target and self.last_local_model_artifacts_dir:
+            target = str(self.last_local_model_artifacts_dir)
+        if not target:
+            messagebox.showinfo("Local Model", "No artifact path to copy yet")
+            return
+        self.clipboard_clear()
+        self.clipboard_append(target)
+        messagebox.showinfo("Local Model", "Artifact path copied")
+
+    def _emit_local_model_line(self, line: str) -> None:
+        if not line:
+            return
+        self._local_model_output_queue.put(line)
+        _append_ui_log(line)
+
+    def _emit_local_model_lines(self, text: str) -> None:
+        if not text:
+            return
+        for line in text.splitlines():
+            self._emit_local_model_line(line)
+
+    def _write_local_model_summary(
+        self,
+        artifacts_dir: Path,
+        summary_path: Path,
+        status: str,
+        reason: str,
+        detail: str,
+        next_hint: str,
+        dry_run: bool,
+    ) -> None:
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
+        detail_text = detail.strip()
+        summary_lines = [
+            f"RUN_LOCAL_MODEL_SUMMARY|status={status}|reason={reason}|next={next_hint}",
+            f"repo_root={ROOT}",
+            f"artifacts_dir={artifacts_dir}",
+            f"dry_run={dry_run}",
+            f"detail={detail_text}",
+        ]
+        summary_path.write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
+        result_path = artifacts_dir / "apply_edits_result.json"
+        if not result_path.exists():
+            payload = {
+                "version": "v1",
+                "status": status,
+                "reason": reason,
+                "detail": detail_text,
+                "repo_root": str(ROOT),
+                "dry_run": dry_run,
+                "next": next_hint,
+            }
+            result_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    def _update_local_model_artifacts(self, paths: list[Path]) -> None:
+        self.local_model_artifact_paths = paths
+        if not hasattr(self, "local_model_artifacts_list"):
+            return
+        self.local_model_artifacts_list.delete(0, tk.END)
+        for path in paths:
+            self.local_model_artifacts_list.insert(tk.END, str(path))
+
     def _drain_qa_output(self) -> None:
         while True:
             try:
@@ -4629,6 +4736,18 @@ class App(tk.Tk):
             self.verify_output.see(tk.END)
             self.verify_output.configure(state=tk.DISABLED)
         self.after(500, self._drain_verify_output)
+
+    def _drain_local_model_output(self) -> None:
+        while True:
+            try:
+                message = self._local_model_output_queue.get_nowait()
+            except queue.Empty:
+                break
+            self.local_model_output.configure(state=tk.NORMAL)
+            self.local_model_output.insert(tk.END, message + "\n")
+            self.local_model_output.see(tk.END)
+            self.local_model_output.configure(state=tk.DISABLED)
+        self.after(500, self._drain_local_model_output)
 
     def _drain_training_output(self) -> None:
         while True:
@@ -5177,6 +5296,272 @@ class App(tk.Tk):
         self.summary_text = ScrolledText(summary_frame, wrap=tk.WORD)
         self.summary_text.pack(fill=tk.BOTH, expand=True)
         self.summary_text.configure(state=tk.DISABLED)
+
+    def _build_local_model_tab(self) -> None:
+        panel = tk.LabelFrame(self.local_model_tab, text="Local Model (Dry-Run)", padx=6, pady=6)
+        panel.pack(fill=tk.BOTH, expand=True, padx=6, pady=6)
+
+        input_frame = tk.LabelFrame(panel, text="Inputs", padx=5, pady=5)
+        input_frame.pack(fill=tk.X, pady=4)
+
+        model_row = tk.Frame(input_frame)
+        model_row.pack(fill=tk.X, pady=2)
+        tk.Label(model_row, text="Model name:", width=16, anchor="w").pack(side=tk.LEFT)
+        tk.Entry(model_row, textvariable=self.local_model_model_var, width=40).pack(
+            side=tk.LEFT, fill=tk.X, expand=True
+        )
+
+        prompt_row = tk.Frame(input_frame)
+        prompt_row.pack(fill=tk.X, pady=2)
+        tk.Label(prompt_row, text="Prompt path:", width=16, anchor="w").pack(side=tk.LEFT)
+        tk.Entry(prompt_row, textvariable=self.local_model_prompt_var, width=60).pack(
+            side=tk.LEFT, fill=tk.X, expand=True
+        )
+
+        artifacts_row = tk.Frame(input_frame)
+        artifacts_row.pack(fill=tk.X, pady=2)
+        tk.Label(artifacts_row, text="Artifacts dir:", width=16, anchor="w").pack(side=tk.LEFT)
+        tk.Entry(artifacts_row, textvariable=self.local_model_artifacts_var, width=60).pack(
+            side=tk.LEFT, fill=tk.X, expand=True
+        )
+
+        action_row = tk.Frame(panel)
+        action_row.pack(fill=tk.X, pady=4)
+        tk.Button(
+            action_row,
+            text="Run Local Model (Dry-Run)",
+            command=self._handle_local_model_dry_run,
+        ).pack(side=tk.LEFT, padx=4)
+        tk.Button(
+            action_row,
+            text="Open artifacts folder",
+            command=self._open_local_model_artifacts,
+        ).pack(side=tk.LEFT, padx=4)
+        tk.Button(
+            action_row,
+            text="Copy artifact path",
+            command=self._copy_local_model_artifact_path,
+        ).pack(side=tk.LEFT, padx=4)
+        tk.Label(action_row, textvariable=self.local_model_status_var, anchor="w").pack(
+            side=tk.LEFT, padx=8
+        )
+
+        artifacts_frame = tk.LabelFrame(panel, text="Artifacts", padx=5, pady=5)
+        artifacts_frame.pack(fill=tk.BOTH, expand=True, pady=4)
+        self.local_model_artifacts_list = tk.Listbox(artifacts_frame, height=6)
+        self.local_model_artifacts_list.pack(fill=tk.BOTH, expand=True)
+
+        self.local_model_output = ScrolledText(panel, height=12, wrap=tk.WORD)
+        self.local_model_output.pack(fill=tk.BOTH, expand=True, padx=2, pady=4)
+        self.local_model_output.configure(state=tk.DISABLED)
+
+    def _handle_local_model_dry_run(self) -> None:
+        threading.Thread(target=self._run_local_model_dry_run, daemon=True).start()
+
+    def _run_local_model_dry_run(self) -> None:
+        model = self.local_model_model_var.get().strip()
+        prompt_raw = self.local_model_prompt_var.get().strip()
+        artifacts_raw = self.local_model_artifacts_var.get().strip() or "artifacts"
+        artifacts_dir = Path(artifacts_raw)
+        if not artifacts_dir.is_absolute():
+            artifacts_dir = (ROOT / artifacts_dir).resolve()
+        else:
+            artifacts_dir = artifacts_dir.resolve()
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
+        self.last_local_model_artifacts_dir = artifacts_dir
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        raw_out = artifacts_dir / f"ollama_raw_{timestamp}.txt"
+        edits_json = artifacts_dir / f"edits_{timestamp}.json"
+        summary_path = artifacts_dir / f"run_local_model_summary_{timestamp}.txt"
+
+        start_model = model or "(missing)"
+        self._emit_local_model_line(
+            f"RUN_LOCAL_MODEL_START|repo={ROOT}|model={start_model}|out_dir={artifacts_dir}|dry_run=True"
+        )
+
+        expected_paths = [
+            raw_out,
+            edits_json,
+            artifacts_dir / "verify_edits_payload.txt",
+            artifacts_dir / "verify_edits_payload.json",
+            artifacts_dir / "apply_edits_result.json",
+            summary_path,
+        ]
+
+        def fail(reason: str, detail: str, next_hint: str) -> None:
+            self._write_local_model_summary(
+                artifacts_dir=artifacts_dir,
+                summary_path=summary_path,
+                status="FAIL",
+                reason=reason,
+                detail=detail,
+                next_hint=next_hint,
+                dry_run=True,
+            )
+            existing_paths = [path for path in expected_paths if path.exists()]
+            for path in existing_paths:
+                self._emit_local_model_line(f"ARTIFACT_PATH|path={path}")
+            self._emit_local_model_line(
+                f"RUN_LOCAL_MODEL_SUMMARY|status=FAIL|reason={reason}|detail={detail}|next={next_hint}"
+            )
+            self._emit_local_model_line("RUN_LOCAL_MODEL_END")
+            self._enqueue_ui(lambda: self._update_local_model_artifacts(existing_paths))
+            self._enqueue_ui(
+                lambda: self.local_model_status_var.set(f"Local model: FAIL ({reason})")
+            )
+
+        if not model:
+            fail("missing_model", "model_required", "set_model_name")
+            return
+        if not prompt_raw:
+            fail("missing_prompt", "prompt_required", "set_prompt_path")
+            return
+
+        prompt_path = Path(prompt_raw)
+        if not prompt_path.is_absolute():
+            prompt_path = (ROOT / prompt_path).resolve()
+        else:
+            prompt_path = prompt_path.resolve()
+        if not prompt_path.exists():
+            fail("prompt_path_missing", str(prompt_path), "write_prompt_file")
+            return
+
+        if shutil.which("ollama") is None:
+            fail("ollama_not_found", "ollama_missing", "install_ollama")
+            return
+
+        cmd = [
+            sys.executable,
+            "-m",
+            "tools.run_ollama",
+            "--model",
+            model,
+            "--prompt-file",
+            str(prompt_path),
+            "--out-file",
+            str(raw_out),
+        ]
+        proc = subprocess.run(
+            cmd,
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=_utf8_env(),
+        )
+        self._emit_local_model_lines(proc.stdout or "")
+        self._emit_local_model_lines(proc.stderr or "")
+        if proc.returncode != 0:
+            combined = (proc.stderr or "") + (proc.stdout or "")
+            reason = "ollama_failed"
+            next_hint = "inspect_ollama_output"
+            if "not found" in combined.lower() or "pull" in combined.lower():
+                reason = "ollama_model_missing"
+                next_hint = "ollama_pull_model"
+            fail(reason, f"exit_code={proc.returncode}", next_hint)
+            return
+
+        if not raw_out.exists():
+            fail("ollama_missing_output", str(raw_out), "inspect_ollama_output")
+            return
+        if not raw_out.read_text(encoding="utf-8", errors="strict").strip():
+            fail("ollama_empty_output", "empty_stdout", "regenerate_output")
+            return
+
+        extract_cmd = [
+            sys.executable,
+            "-m",
+            "tools.extract_json_strict",
+            "--raw-text",
+            str(raw_out),
+            "--out-json",
+            str(edits_json),
+        ]
+        extract_proc = subprocess.run(
+            extract_cmd,
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=_utf8_env(),
+        )
+        self._emit_local_model_lines(extract_proc.stdout or "")
+        self._emit_local_model_lines(extract_proc.stderr or "")
+        if extract_proc.returncode != 0:
+            fail("extract_json_strict_failed", f"exit_code={extract_proc.returncode}", "inspect_extractor_errors")
+            return
+
+        verify_cmd = [
+            sys.executable,
+            "-m",
+            "tools.verify_edits_payload",
+            "--edits-path",
+            str(edits_json),
+            "--artifacts-dir",
+            str(artifacts_dir),
+        ]
+        verify_proc = subprocess.run(
+            verify_cmd,
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=_utf8_env(),
+        )
+        self._emit_local_model_lines(verify_proc.stdout or "")
+        self._emit_local_model_lines(verify_proc.stderr or "")
+        if verify_proc.returncode != 0:
+            fail("verify_edits_payload_failed", f"exit_code={verify_proc.returncode}", "inspect_verify_edits_payload")
+            return
+
+        apply_cmd = [
+            sys.executable,
+            "-m",
+            "tools.apply_edits",
+            "--repo",
+            str(ROOT),
+            "--edits",
+            str(edits_json),
+            "--artifacts-dir",
+            str(artifacts_dir),
+            "--dry-run",
+        ]
+        apply_proc = subprocess.run(
+            apply_cmd,
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=_utf8_env(),
+        )
+        self._emit_local_model_lines(apply_proc.stdout or "")
+        self._emit_local_model_lines(apply_proc.stderr or "")
+        if apply_proc.returncode != 0:
+            fail("apply_edits_failed", f"exit_code={apply_proc.returncode}", "inspect_apply_edits_result")
+            return
+
+        self._write_local_model_summary(
+            artifacts_dir=artifacts_dir,
+            summary_path=summary_path,
+            status="PASS",
+            reason="none",
+            detail="ok",
+            next_hint="review_artifacts_and_run_ci_gates",
+            dry_run=True,
+        )
+        existing_paths = [path for path in expected_paths if path.exists()]
+        for path in existing_paths:
+            self._emit_local_model_line(f"ARTIFACT_PATH|path={path}")
+        self._emit_local_model_line(
+            "RUN_LOCAL_MODEL_SUMMARY|status=PASS|next=review_artifacts_and_run_ci_gates"
+        )
+        self._emit_local_model_line("RUN_LOCAL_MODEL_END")
+        self._enqueue_ui(lambda: self._update_local_model_artifacts(existing_paths))
+        self._enqueue_ui(lambda: self.local_model_status_var.set("Local model: PASS"))
 
     def _build_verify_tab(self) -> None:
         button_frame = tk.Frame(self.verify_tab)
