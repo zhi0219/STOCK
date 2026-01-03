@@ -11,3 +11,7 @@ Hard rules:
 - no path traversal
 - anchor hits must equal 1
 - fail-closed
+
+Contract notes:
+- Edits outputs must be JSON-only (no fences or prose).
+- Use tools/normalize_edits.py to normalize raw output before apply.
