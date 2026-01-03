@@ -286,6 +286,33 @@ def check_ascii_markers() -> List[CheckResult]:
     return results
 
 
+def check_local_model_ui_markers() -> List[CheckResult]:
+    path = TOOLS_DIR / "ui_app.py"
+    text = _read_text(path)
+    if not text:
+        return [CheckResult("local model UI markers", True, "ui_app.py not present (skipped)")]
+
+    required = [
+        "Local Model (Dry-Run)",
+        "RUN_LOCAL_MODEL_START",
+        "RUN_LOCAL_MODEL_SUMMARY",
+        "RUN_LOCAL_MODEL_END",
+        "VERIFY_EDITS_PAYLOAD_SUMMARY",
+        "APPLY_EDITS_SUMMARY",
+        "ARTIFACT_PATH|path=",
+    ]
+    missing = [marker for marker in required if marker not in text]
+    if missing:
+        return [
+            CheckResult(
+                "local model UI markers",
+                False,
+                f"Missing markers: {', '.join(sorted(missing))}",
+            )
+        ]
+    return [CheckResult("local model UI markers", True)]
+
+
 def check_sim_safety_pack_assets() -> List[CheckResult]:
     expected_files = [TOOLS_DIR / "sim_autopilot.py", TOOLS_DIR / "verify_sim_safety_pack.py"]
     missing = [str(p.name) for p in expected_files if not p.exists()]
@@ -734,6 +761,7 @@ def main(argv: List[str] | None = None) -> int:
         check_sys_executable_usage,
         check_ui_encoding,
         check_ascii_markers,
+        check_local_model_ui_markers,
         check_sim_safety_pack_assets,
         check_sim_tournament_presence,
         lambda: check_py_compile(python_exec),

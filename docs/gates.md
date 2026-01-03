@@ -49,6 +49,29 @@ Rules:
 3) Dry-run apply: `.\scripts\apply_edits_v1.ps1 -RepoRoot <repo> -EditsPath artifacts\edits.normalized.json -DryRun`
 4) Apply: `.\scripts\apply_edits_v1.ps1 -RepoRoot <repo> -EditsPath artifacts\edits.normalized.json`
 
+### UI Local Model (Dry-Run) runbook
+Use the UI panel to run the local model pipeline without modifying the repo:
+1) Open `tools/ui_app.py` and click the **Local Model (Dry-Run)** tab.
+2) Provide:
+   - Model name (ollama local model ID).
+   - Prompt path (file path relative to repo root or absolute).
+   - Artifacts dir (default `artifacts/`).
+3) Click **Run Local Model (Dry-Run)**.
+4) Review marker lines:
+   - `RUN_LOCAL_MODEL_START|...`
+   - `VERIFY_EDITS_PAYLOAD_SUMMARY|...`
+   - `APPLY_EDITS_SUMMARY|...`
+   - `RUN_LOCAL_MODEL_SUMMARY|...`
+   - `RUN_LOCAL_MODEL_END`
+5) Use **Open artifacts folder** or **Copy artifact path** for evidence files.
+
+Artifacts expected in the artifacts dir:
+- `ollama_raw_<timestamp>.txt` (raw model output)
+- `edits_<timestamp>.json` (extracted JSON edits)
+- `verify_edits_payload.txt` / `verify_edits_payload.json`
+- `apply_edits_result.json`
+- `run_local_model_summary_<timestamp>.txt`
+
 ### Common failure reasons
 - `markdown_fence_detected`: output contains ``` fences.
 - `leading_prose_detected`: output starts with non-JSON text.
