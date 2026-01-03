@@ -402,6 +402,18 @@ if [[ ${rc} -eq 0 ]]; then
   fi
 fi
 
+if [[ ${rc} -eq 0 ]]; then
+  set +e
+  python3 -m tools.verify_edits_contract --artifacts-dir "${artifacts_dir}"
+  edits_contract_exit=$?
+  set -e
+  if [[ ${edits_contract_exit} -ne 0 ]]; then
+    status="FAIL"
+    failing_gate="verify_edits_contract"
+    rc=${edits_contract_exit}
+  fi
+fi
+
 if ls tools/verify_pr*_gate.py >/dev/null 2>&1; then
   mapfile -t pr_gates < <(ls tools/verify_pr*_gate.py 2>/dev/null | sort -V)
   last_index=$(( ${#pr_gates[@]} - 1 ))
