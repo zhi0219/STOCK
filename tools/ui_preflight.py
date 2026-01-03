@@ -149,7 +149,9 @@ def run_preflight(repo_root: Path) -> PreflightResult:
             ],
         )
 
-    compile_payload = run_compile_check(targets=["tools"], artifacts_dir=repo_root / "artifacts")
+    compile_payload = run_compile_check(
+        targets=["tools", "scripts", "tests"], artifacts_dir=repo_root / "artifacts"
+    )
     if compile_payload.get("status") != "PASS":
         return PreflightResult(
             status="FAIL",
@@ -158,7 +160,7 @@ def run_preflight(repo_root: Path) -> PreflightResult:
             python=sys.executable,
             dirty_files=[],
             suggested_actions=[
-                "python -m tools.compile_check --targets tools scripts --artifacts-dir artifacts"
+                "python -m tools.compile_check --targets tools scripts tests --artifacts-dir artifacts"
             ],
         )
 
