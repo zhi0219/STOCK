@@ -5,7 +5,7 @@ import json
 import subprocess
 import sys
 import tempfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import List
 
@@ -84,6 +84,11 @@ def main() -> None:
 
         sample = equity[-1]
         _require("mode" in sample and "drawdown_pct" in sample, "risk HUD fields missing in equity curve")
+        ts_et = datetime.fromisoformat(sample["ts_et"])
+        _require(
+            ts_et.utcoffset() == timedelta(hours=-5),
+            "ts_et must use America/New_York offset for 2024-01-01",
+        )
 
         orders_path = logs_dir / "orders_sim.jsonl"
         orders = _read_jsonl(orders_path)

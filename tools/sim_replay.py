@@ -22,6 +22,15 @@ class ReplayError(Exception):
     pass
 
 
+def _load_et_tz() -> ZoneInfo:
+    try:
+        return ZoneInfo("America/New_York")
+    except Exception as exc:
+        raise ReplayError(
+            "ZoneInfo timezone data unavailable. Install requirements.txt (including tzdata) to enable America/New_York."
+        ) from exc
+
+
 def _iter_rows(path: Path) -> Iterable[Tuple[int, Dict[str, str]]]:
     with path.open("r", newline="", encoding="utf-8") as fh:
         reader = csv.DictReader(fh)
@@ -108,6 +117,7 @@ def run_replay(args: argparse.Namespace) -> int:
     start_ts = _parse_ts(args.start_ts) if args.start_ts else None
     start_row = int(args.start_row) if args.start_row else None
     sleep_delay = 0.0 if args.speed <= 0 else 1.0 / float(args.speed)
+    et_tz = _load_et_tz()
 
     get_policy, run_step = _load_dependencies()
     policy_version, policy = get_policy()
@@ -146,7 +156,7 @@ def run_replay(args: argparse.Namespace) -> int:
         cash = float(sim_state.get("cash_usd", 0.0))
         drawdown_pct = float(risk_state.get("drawdown", 0.0)) * 100 if "drawdown" in risk_state else 0.0
         ts_utc = ts_obj.astimezone(timezone.utc)
-        ts_et = ts_utc.astimezone(ZoneInfo("US/Eastern"))
+        ts_et = ts_utc.astimezone(et_tz)
 
         _write_equity_curve(
             eq_path,
