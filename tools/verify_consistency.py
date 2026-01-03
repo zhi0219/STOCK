@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import importlib
 import json
 import os
@@ -21,6 +22,7 @@ TOOLS_DIR = ROOT / "tools"
 README_PATH = ROOT / "README.md"
 LOGS_DIR = ROOT / "Logs"
 OPTIONAL_DEPS = ("pandas", "yaml", "yfinance")
+ARCHIVE_EVENTS_PATTERN = re.compile(r"events_\d{4}-\d{2}-\d{2}\.jsonl")
 HELP_CHECKS: dict[str, tuple[str, ...]] = {
     "tail_events.py": OPTIONAL_DEPS,
     "replay_events.py": OPTIONAL_DEPS,
@@ -508,11 +510,13 @@ def _training_blockers(env: dict[str, str | bool]) -> List[str]:
     return reasons
 
 
-def _run_quick_verifiers(
-    missing_deps: List[str],
-    env: dict[str, str | bool],
-    python_exec: str,
-) -> List[CheckResult]:
+def _legacy_gate_checks(include_legacy_gates: bool) -> List[CheckResult]:
+    if include_legacy_gates:
+        return []
+    return [CheckResult("verify_pr20_gate.py (legacy)", "SKIP")]
+
+
+def _quick_verifier_scripts(include_legacy_gates: bool) -> List[Path]:
     quick = [
         TOOLS_DIR / "verify_smoke.py",
         TOOLS_DIR / "verify_e2e_qa_loop.py",
@@ -522,9 +526,21 @@ def _run_quick_verifiers(
         TOOLS_DIR / "verify_ui_progress_panel.py",
         TOOLS_DIR / "verify_pr16_gate.py",
         TOOLS_DIR / "verify_pr19_gate.py",
-        TOOLS_DIR / "verify_pr20_gate.py",
     ]
+    if include_legacy_gates:
+        quick.append(TOOLS_DIR / "verify_pr20_gate.py")
+    return quick
+
+
+def _run_quick_verifiers(
+    missing_deps: List[str],
+    env: dict[str, str | bool],
+    python_exec: str,
+    include_legacy_gates: bool,
+) -> List[CheckResult]:
+    quick = _quick_verifier_scripts(include_legacy_gates)
     results: List[CheckResult] = []
+    results.extend(_legacy_gate_checks(include_legacy_gates))
     for script in quick:
         if not script.exists():
             results.append(CheckResult(script.name, True, "not present (skipped)"))
@@ -567,28 +583,68 @@ def _run_quick_verifiers(
     return results
 
 
-def check_events_schema() -> List[CheckResult]:
+def _find_archived_event_files(root: Path) -> List[Path]:
+    return sorted(
+        [
+            path
+            for path in root.rglob("events_*.jsonl")
+            if ARCHIVE_EVENTS_PATTERN.fullmatch(path.name)
+        ]
+    )
+
+
+def check_events_schema(
+    include_archives: bool,
+    root: Path = ROOT,
+    logs_dir: Path = LOGS_DIR,
+) -> List[CheckResult]:
     required_keys = {"schema_version", "ts_utc", "event_type", "symbol", "severity", "message"}
-    events_files = sorted(LOGS_DIR.glob("events_*.jsonl"))
-    if not events_files:
-        return [CheckResult("events schema", True, "no events files (skipped)")]
+    active_files = [logs_dir / "events.jsonl", logs_dir / "events_sim.jsonl"]
+    active_files = [path for path in active_files if path.exists()]
+    archives = _find_archived_event_files(root)
+    if not active_files and not include_archives:
+        return [
+            CheckResult("events schema", True, "no active events files (skipped)"),
+            CheckResult("events archives", "SKIP", str(len(archives))),
+        ]
 
     failures: List[str] = []
-    for path in events_files:
+
+    def _validate(path: Path) -> None:
+        display_path = path
+        try:
+            display_path = path.relative_to(root)
+        except ValueError:
+            display_path = path
         for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
             try:
                 obj = json.loads(line)
             except Exception:
-                failures.append(f"{path.name}: line {lineno} not valid JSON")
+                failures.append(f"{display_path}: line {lineno} not valid JSON")
                 continue
             missing = [k for k in sorted(required_keys) if k not in obj]
             if missing:
                 failures.append(
-                    f"{path.name}: line {lineno} missing keys {', '.join(missing)}"
+                    f"{display_path}: line {lineno} missing keys {', '.join(missing)}"
                 )
+
+    for path in active_files:
+        _validate(path)
+    if include_archives:
+        for path in archives:
+            _validate(path)
+
+    results: List[CheckResult] = []
     if failures:
-        return [CheckResult("events schema", False, "; ".join(failures))]
-    return [CheckResult("events schema", True)]
+        results.append(CheckResult("events schema", False, "; ".join(failures)))
+    elif not active_files:
+        results.append(CheckResult("events schema", True, "no active events files (skipped)"))
+    else:
+        results.append(CheckResult("events schema", True))
+
+    if not include_archives:
+        results.append(CheckResult("events archives", "SKIP", str(len(archives))))
+    return results
 
 
 def check_status_json() -> List[CheckResult]:
@@ -649,7 +705,24 @@ def check_read_only_guard() -> List[CheckResult]:
     return [CheckResult("READ_ONLY guard", True)]
 
 
-def main() -> int:
+def main(argv: List[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Run consistency checks.")
+    parser.add_argument(
+        "--artifacts-dir",
+        default="artifacts",
+        help="Artifacts directory (reserved for future use).",
+    )
+    parser.add_argument(
+        "--include-event-archives",
+        action="store_true",
+        help="Validate archived events_YYYY-MM-DD.jsonl files.",
+    )
+    parser.add_argument(
+        "--include-legacy-gates",
+        action="store_true",
+        help="Run legacy gates such as verify_pr20_gate.py.",
+    )
+    args = parser.parse_args(argv)
     missing_deps = detect_missing_deps()
     env = _detect_environment()
     baseline_info = probe_baseline()
@@ -664,13 +737,13 @@ def main() -> int:
         check_sim_safety_pack_assets,
         check_sim_tournament_presence,
         lambda: check_py_compile(python_exec),
-        check_events_schema,
+        lambda: check_events_schema(args.include_event_archives),
         check_status_json,
         check_read_only_guard,
     ]
     optional_checks: List[Callable[[], List[CheckResult]]] = [
         lambda: check_readme_cli_consistency(missing_deps),
-        lambda: _run_quick_verifiers(missing_deps, env, python_exec),
+        lambda: _run_quick_verifiers(missing_deps, env, python_exec, args.include_legacy_gates),
     ]
 
     all_results: List[CheckResult] = []

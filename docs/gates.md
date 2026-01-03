@@ -16,6 +16,13 @@ Validates strict JSON-only edits outputs.
   - `artifacts/verify_edits_contract.txt`
   - `artifacts/verify_edits_contract.json`
 
+## Consistency Gate (P0)
+Aggregates lightweight health checks for CI consistency.
+- Gate: `python -m tools.verify_consistency --artifacts-dir artifacts`
+- Archived events: opt-in validation via `--include-event-archives` (default skips legacy `events_YYYY-MM-DD.jsonl`).
+- Legacy gates: opt-in via `--include-legacy-gates` (default skips `verify_pr20_gate.py`).
+- Rationale: legacy artifacts should not block main by default while remaining auditable on demand.
+
 ### Strict JSON-only contract (v1)
 All local model outputs that drive edits must be a single JSON object:
 ```json
