@@ -130,6 +130,7 @@ Version: v1
 - **verify_pr38_gate** (py_module): `tools/verify_pr38_gate.py` -> `python -m tools.verify_pr38_gate`
 - **verify_pr39_gate** (py_module): `tools/verify_pr39_gate.py` -> `python -m tools.verify_pr39_gate`
 - **verify_pr40_gate** (py_module): `tools/verify_pr40_gate.py` -> `python -m tools.verify_pr40_gate`
+- **verify_pr_ready** (py_module): `tools/verify_pr_ready.py` -> `python -m tools.verify_pr_ready --help`
 - **verify_pr_template_contract** (py_module): `tools/verify_pr_template_contract.py` -> `python -m tools.verify_pr_template_contract --help`
 - **verify_progress_index** (py_module): `tools/verify_progress_index.py` -> `python -m tools.verify_progress_index`
 - **verify_progress_truth** (py_module): `tools/verify_progress_truth.py` -> `python -m tools.verify_progress_truth`
@@ -231,6 +232,9 @@ Version: v1
 - `artifacts/latest` (produced_by: scripts/clip_ci_artifacts.ps1)
 - `artifacts/migrate_event_archives.json` (produced_by: tools/migrate_event_archives.py)
 - `artifacts/migrate_event_archives.txt` (produced_by: tools/migrate_event_archives.py)
+- `artifacts/pr_ready.txt` (produced_by: tools/verify_pr_ready.py)
+- `artifacts/pr_ready_gates.log` (produced_by: tools/verify_pr_ready.py)
+- `artifacts/pr_ready_summary.json` (produced_by: tools/verify_pr_ready.py)
 - `artifacts/pr_template_contract.txt` (produced_by: scripts/build_verify_edits_v1.ps1)
 - `artifacts/proof_summary.json` (produced_by: scripts/ci_gates.sh)
 - `artifacts/ps_parse_result.json` (produced_by: scripts/ci_gates.sh, tools/ps_parse_guard.py)
@@ -905,6 +909,11 @@ Version: v1
   - commands: python -m tools.verify_pr40_gate
   - gates: none
   - artifacts: none
+- **verify_pr_ready**
+  - files: tools/verify_pr_ready.py
+  - commands: python -m tools.verify_pr_ready --help
+  - gates: none
+  - artifacts: artifacts/pr_ready.txt, artifacts/pr_ready_gates.log, artifacts/pr_ready_summary.json
 - **verify_pr_template_contract**
   - files: tools/verify_pr_template_contract.py
   - commands: python -m tools.verify_pr_template_contract --help

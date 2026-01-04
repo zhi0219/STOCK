@@ -1,6 +1,7 @@
 param(
   [string]$Remote = "origin",
-  [string]$Branch = "HEAD"
+  [string]$Branch = "HEAD",
+  [switch]$AllowMain = $false
 )
 
 $ErrorActionPreference = "Stop"
@@ -56,32 +57,16 @@ function Run-Git {
   return @($code, $txt.Trim())
 }
 
-function Run-Gate {
-  param(
-    [string]$Name,
-    [string]$LogPath,
-    [scriptblock]$Command
-  )
-  $output = & $Command 2>&1 | Tee-Object -FilePath $LogPath
-  $exit = $LASTEXITCODE
-  if ($exit -ne 0) {
-    Write-Host ("SAFE_PUSH_GATE|name=" + $Name + "|status=FAIL|log=" + $LogPath)
-    Fail ("gate_failed:" + $Name) ("inspect " + $LogPath)
-  }
-  Write-Host ("SAFE_PUSH_GATE|name=" + $Name + "|status=PASS|log=" + $LogPath)
-  return $output
-}
-
-function Get-ConsistencyStatus {
+function Get-PrReadyStatus {
   param([string]$LogPath)
   if (-not (Test-Path $LogPath)) { return $null }
   $raw = Get-Content -Raw -Path $LogPath
-  $m = [regex]::Match($raw, "CONSISTENCY_SUMMARY\|status=([A-Z]+)")
+  $m = [regex]::Match($raw, "PR_READY_SUMMARY\|status=([A-Z]+)")
   if (-not $m.Success) { return $null }
   return $m.Groups[1].Value
 }
 
-function Is-ConsistencyStatusOk {
+function Is-PrReadyStatusOk {
   param([string]$Status)
   if ([string]::IsNullOrWhiteSpace($Status)) { return $false }
   return @("PASS", "DEGRADED") -contains $Status
@@ -115,8 +100,16 @@ if ($branchResult[0] -ne 0) {
   Fail "branch_lookup_failed" "git status"
 }
 $branchName = $branchResult[1]
-if ($branchName -eq "main") {
+if ($branchName -eq "main" -and -not $AllowMain) {
   Fail "refuse_push_on_main" "git checkout -b <branch>"
+}
+
+$statusResult = Run-Git -GitExe $gitExe status --porcelain
+if ($statusResult[0] -ne 0) {
+  Fail "git_status_failed" "git status"
+}
+if (-not [string]::IsNullOrWhiteSpace($statusResult[1])) {
+  Fail "dirty_worktree" "git status --porcelain"
 }
 
 $env:PYTHONPATH = $repoRoot
@@ -126,44 +119,28 @@ if (-not (Test-Path $pythonExe)) { $pythonExe = "python" }
 
 New-Item -ItemType Directory -Force -Path "artifacts" | Out-Null
 
-$compileLog = Join-Path "artifacts" "safe_push_compile_check.txt"
-$gitHealthLog = Join-Path "artifacts" "safe_push_git_health.txt"
-$foundationLog = Join-Path "artifacts" "safe_push_verify_foundation.txt"
-$consistencyLog = Join-Path "artifacts" "safe_push_verify_consistency.txt"
+$prReadyLog = Join-Path "artifacts" "safe_push_verify_pr_ready.txt"
 
-Run-Gate -Name "compile_check" -LogPath $compileLog -Command {
-  & $pythonExe -m tools.compile_check --targets tools scripts tests --artifacts-dir artifacts
+$output = & $pythonExe -m tools.verify_pr_ready --artifacts-dir artifacts 2>&1 | Tee-Object -FilePath $prReadyLog
+$prReadyExit = $LASTEXITCODE
+$prReadyStatus = Get-PrReadyStatus -LogPath $prReadyLog
+if (-not (Is-PrReadyStatusOk -Status $prReadyStatus)) {
+  Write-Host ("SAFE_PUSH_GATE|name=verify_pr_ready|status=FAIL|log=" + $prReadyLog)
+  Fail ("verify_pr_ready_status=" + ($prReadyStatus | ForEach-Object { $_ } | Out-String).Trim()) ("inspect " + $prReadyLog)
 }
+if ($prReadyExit -ne 0) {
+  Write-Host ("SAFE_PUSH_GATE|name=verify_pr_ready|status=FAIL|log=" + $prReadyLog)
+  Fail "verify_pr_ready_exit_nonzero" ("inspect " + $prReadyLog)
+}
+Write-Host ("SAFE_PUSH_GATE|name=verify_pr_ready|status=PASS|log=" + $prReadyLog)
 
-Run-Gate -Name "git_health" -LogPath $gitHealthLog -Command {
-  & $pythonExe -m tools.git_health report
+$pushBranch = $Branch
+if ([string]::IsNullOrWhiteSpace($pushBranch) -or $pushBranch -eq "HEAD") {
+  $pushBranch = $branchName
 }
-
-Run-Gate -Name "verify_foundation" -LogPath $foundationLog -Command {
-  & $pythonExe -m tools.verify_foundation --artifacts-dir artifacts
-}
-
-$output = & $pythonExe -m tools.verify_consistency --artifacts-dir artifacts 2>&1 | Tee-Object -FilePath $consistencyLog
-$consistencyExit = $LASTEXITCODE
-$consistencyStatus = Get-ConsistencyStatus -LogPath $consistencyLog
-if (-not (Is-ConsistencyStatusOk -Status $consistencyStatus)) {
-  Write-Host ("SAFE_PUSH_GATE|name=verify_consistency|status=FAIL|log=" + $consistencyLog)
-  Fail ("verify_consistency_status=" + ($consistencyStatus | ForEach-Object { $_ } | Out-String).Trim()) ("inspect " + $consistencyLog)
-}
-if ($consistencyExit -ne 0) {
-  Write-Host ("SAFE_PUSH_GATE|name=verify_consistency|status=FAIL|log=" + $consistencyLog)
-  Fail "verify_consistency_exit_nonzero" ("inspect " + $consistencyLog)
-}
-Write-Host ("SAFE_PUSH_GATE|name=verify_consistency|status=PASS|log=" + $consistencyLog)
-
-$pushLog = Join-Path "artifacts" "safe_push_git_push.txt"
-$pushOut = & $gitExe push -u $Remote $Branch 2>&1 | Tee-Object -FilePath $pushLog
-$pushExit = $LASTEXITCODE
-if ($pushExit -ne 0) {
-  Fail "git_push_failed" ("inspect " + $pushLog)
-}
+$nextCommand = "git push -u " + $Remote + " " + $pushBranch
 
 Write-ReadyToMerge -Value "YES"
-Write-Summary -Status "PASS" -Reason "push_succeeded" -Next "monitor_ci"
+Write-Summary -Status "PASS" -Reason "pr_ready" -Next $nextCommand
 Write-Host "SAFE_PUSH_END"
 exit 0

@@ -95,12 +95,32 @@ Aggregates lightweight health checks for CI consistency.
     - `CONSISTENCY_FAIL|next=python tools/verify_consistency.py`
   - Only FAIL emits a next-action marker; PASS/DEGRADED must not print any "Next step:" line.
 
+## PR Ready Gate (P0)
+Single deterministic signal for local PR readiness (fail-closed).
+- Gate: `python -m tools.verify_pr_ready --artifacts-dir artifacts`
+- Runs (in order):
+  - `python -m tools.compile_check --targets tools scripts tests --artifacts-dir artifacts`
+  - `python -m tools.verify_docs_contract --artifacts-dir artifacts`
+  - `python -m tools.verify_inventory_contract --artifacts-dir artifacts`
+  - `python -m tools.verify_foundation --artifacts-dir artifacts`
+  - `python -m tools.verify_consistency --artifacts-dir artifacts` (PASS/DEGRADED allowed)
+- Artifacts:
+  - `artifacts/pr_ready_summary.json`
+  - `artifacts/pr_ready.txt`
+  - `artifacts/pr_ready_gates.log`
+- Output markers:
+  - `PR_READY_START`
+  - `PR_READY_GATE|name=...|status=PASS/FAIL/DEGRADED|exit=...`
+  - `PR_READY_SUMMARY|status=PASS/FAIL/DEGRADED|failed=N|degraded=M|next=...`
+  - `PR_READY_END`
+
 ## Safe Push (Windows Local)
 Use the safe push wrapper to prevent broken local pushes (fail-closed).
 
 ### When to pull vs push
 - Cloud/Codex PRs: after merge, you **pull** updates locally.
 - Local-model PRs (Windows): you **push** from Windows, but only through the safe wrapper.
+  - Reminder: after a cloud merge, run `git pull` locally to sync files.
 
 ### Always use the safe push wrapper
 Run the safe push script from repo root:
@@ -109,11 +129,14 @@ Run the safe push script from repo root:
 Optional overrides:
 `.\scripts\safe_push_v1.ps1 -Remote origin -Branch HEAD`
 
-The wrapper runs mandatory gates before `git push` and emits stable markers:
+The wrapper runs the PR_READY gate before printing the next command and emits stable markers:
 - `SAFE_PUSH_START|...`
 - `SAFE_PUSH_GATE|name=...|status=PASS/FAIL|log=...`
 - `SAFE_PUSH_SUMMARY|status=PASS/FAIL|reason=...|next=...`
 - `SAFE_PUSH_END`
+
+The safe push wrapper is **print-only**. It never executes `git push`; instead it prints:
+`next=git push -u origin <branch>`
 
 ### Strict JSON-only contract (v1)
 All local model outputs that drive edits must be a single JSON object:
