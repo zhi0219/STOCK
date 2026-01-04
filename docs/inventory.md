@@ -95,6 +95,7 @@ Version: v1
 - **verify_e2e_qa_loop** (py_module): `tools/verify_e2e_qa_loop.py` -> `python -m tools.verify_e2e_qa_loop`
 - **verify_edits_contract** (py_module): `tools/verify_edits_contract.py` -> `python -m tools.verify_edits_contract --help`
 - **verify_edits_payload** (py_module): `tools/verify_edits_payload.py` -> `python -m tools.verify_edits_payload --help`
+- **verify_execution_model** (py_module): `tools/verify_execution_model.py` -> `python -m tools.verify_execution_model --help`
 - **verify_explain_now** (py_module): `tools/verify_explain_now.py` -> `python -m tools.verify_explain_now`
 - **verify_foundation** (py_module): `tools/verify_foundation.py` -> `python -m tools.verify_foundation --help`
 - **verify_import_contract** (py_module): `tools/verify_import_contract.py` -> `python -m tools.verify_import_contract --help`
@@ -198,6 +199,9 @@ Version: v1
 - **tools.verify_inventory_contract**: `python3 -m tools.verify_inventory_contract --artifacts-dir "${artifacts_dir}"`
   - markers_expected: none
   - artifacts_expected: artifacts/inventory_diff.txt, artifacts/verify_inventory_contract.json, artifacts/verify_inventory_contract.txt
+- **tools.verify_execution_model**: `python3 -m tools.verify_execution_model --artifacts-dir "${artifacts_dir}"`
+  - markers_expected: none
+  - artifacts_expected: artifacts/execution_model_report.json, artifacts/execution_model_report.txt, artifacts/execution_model_runs
 - **tools.apply_edits**: `python3 -m tools.apply_edits --repo . --edits fixtures/edits_contract/good.json --artifacts-dir "${artifacts_dir}" --dry-run`
   - markers_expected: none
   - artifacts_expected: none
@@ -228,6 +232,9 @@ Version: v1
 - `artifacts/doctor_report.json` (produced_by: tools/action_center_report.py, tools/doctor_report.py, tools/ui_app.py, tools/verify_pr30_gate.py)
 - `artifacts/doctor_runtime_write.json` (produced_by: tools/action_center_report.py, tools/ui_app.py)
 - `artifacts/edits.json` (produced_by: scripts/apply_edits_v1.ps1)
+- `artifacts/execution_model_report.json` (produced_by: tools/verify_execution_model.py)
+- `artifacts/execution_model_report.txt` (produced_by: tools/verify_consistency.py, tools/verify_execution_model.py)
+- `artifacts/execution_model_runs` (produced_by: tools/verify_execution_model.py)
 - `artifacts/gates.log` (produced_by: scripts/ci_gates.sh, tools/action_center_report.py)
 - `artifacts/import_contract_result.json` (produced_by: scripts/ci_gates.sh, tools/doctor_report.py, tools/verify_import_contract.py)
 - `artifacts/import_contract_traceback.txt` (produced_by: scripts/ci_gates.sh, tools/verify_import_contract.py)
@@ -705,7 +712,7 @@ Version: v1
   - files: tools/verify_consistency.py
   - commands: python -m tools.verify_consistency --help
   - gates: none
-  - artifacts: artifacts/verify_docs_contract.txt, artifacts/verify_inventory_contract.txt
+  - artifacts: artifacts/execution_model_report.txt, artifacts/verify_docs_contract.txt, artifacts/verify_inventory_contract.txt
 - **verify_cooldown**
   - files: tools/verify_cooldown.py
   - commands: python -m tools.verify_cooldown
@@ -741,6 +748,11 @@ Version: v1
   - commands: python -m tools.verify_edits_payload --help
   - gates: none
   - artifacts: artifacts/verify_edits_payload.json, artifacts/verify_edits_payload.txt
+- **verify_execution_model**
+  - files: tools/verify_execution_model.py
+  - commands: python -m tools.verify_execution_model --help
+  - gates: tools.verify_execution_model
+  - artifacts: artifacts/execution_model_report.json, artifacts/execution_model_report.txt, artifacts/execution_model_runs
 - **verify_explain_now**
   - files: tools/verify_explain_now.py
   - commands: python -m tools.verify_explain_now
