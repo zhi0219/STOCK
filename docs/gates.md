@@ -34,19 +34,25 @@ Each gate must emit PASS/FAIL semantics and fail-closed by default.
 7) **verify_edits_contract** (`python -m tools.verify_edits_contract --artifacts-dir artifacts`)
    - PASS: edits contract valid.
    - FAIL: edits contract violation.
-8) **apply_edits_dry_run** (`python -m tools.apply_edits --repo . --edits fixtures/edits_contract/good.json --artifacts-dir artifacts --dry-run`)
+8) **inventory_repo** (`python -m tools.inventory_repo --artifacts-dir artifacts --write-docs`)
+   - PASS: inventory artifacts and docs generated.
+   - FAIL: inventory generation failed.
+9) **verify_inventory_contract** (`python -m tools.verify_inventory_contract --artifacts-dir artifacts`)
+   - PASS: docs/inventory.md matches generator output.
+   - FAIL: inventory docs mismatch or missing.
+10) **apply_edits_dry_run** (`python -m tools.apply_edits --repo . --edits fixtures/edits_contract/good.json --artifacts-dir artifacts --dry-run`)
    - PASS: edits dry-run succeeded.
    - FAIL: edits dry-run failed.
-9) **extract_json_strict_negative** (`python -m tools.extract_json_strict --raw-text fixtures/extract_json_strict/bad_fenced.txt --out-json artifacts/extract_json_strict_bad.json`)
+11) **extract_json_strict_negative** (`python -m tools.extract_json_strict --raw-text fixtures/extract_json_strict/bad_fenced.txt --out-json artifacts/extract_json_strict_bad.json`)
    - PASS: gate fails as expected on bad input.
    - FAIL: unexpected success on bad input.
-10) **verify_pr36_gate** (preflight, if present)
+12) **verify_pr36_gate** (preflight, if present)
    - PASS: preflight gate OK.
    - FAIL: preflight gate failed.
-11) **import_contract** (`python -m tools.verify_import_contract --module <canonical_gate> --artifacts-dir artifacts`)
+13) **import_contract** (`python -m tools.verify_import_contract --module <canonical_gate> --artifacts-dir artifacts`)
    - PASS: canonical gate module imports.
    - FAIL: import contract failed.
-12) **canonical gate runner** (one of the following):
+14) **canonical gate runner** (one of the following):
    - `python tools/verify_prNN_gate.py` (highest available PR gate, e.g., verify_pr40_gate)
    - `python tools/verify_foundation.py` (fallback)
    - `python tools/verify_consistency.py` (fallback)

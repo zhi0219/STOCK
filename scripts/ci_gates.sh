@@ -460,6 +460,30 @@ fi
 
 if [[ ${rc} -eq 0 ]]; then
   set +e
+  python3 -m tools.inventory_repo --artifacts-dir "${artifacts_dir}" --write-docs
+  inventory_exit=$?
+  set -e
+  if [[ ${inventory_exit} -ne 0 ]]; then
+    status="FAIL"
+    failing_gate="inventory_repo"
+    rc=${inventory_exit}
+  fi
+fi
+
+if [[ ${rc} -eq 0 ]]; then
+  set +e
+  python3 -m tools.verify_inventory_contract --artifacts-dir "${artifacts_dir}"
+  inventory_contract_exit=$?
+  set -e
+  if [[ ${inventory_contract_exit} -ne 0 ]]; then
+    status="FAIL"
+    failing_gate="verify_inventory_contract"
+    rc=${inventory_contract_exit}
+  fi
+fi
+
+if [[ ${rc} -eq 0 ]]; then
+  set +e
   python3 -m tools.apply_edits --repo . --edits fixtures/edits_contract/good.json --artifacts-dir "${artifacts_dir}" --dry-run
   edits_apply_exit=$?
   set -e

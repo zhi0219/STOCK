@@ -124,6 +124,8 @@ def main(argv: list[str] | None = None) -> int:
                 "ui_preflight",
                 "docs_contract",
                 "verify_edits_contract",
+                "inventory_repo",
+                "verify_inventory_contract",
                 "apply_edits_dry_run",
                 "extract_json_strict_negative",
                 "verify_pr36_gate",
