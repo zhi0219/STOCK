@@ -732,6 +732,29 @@ def check_read_only_guard() -> List[CheckResult]:
     return [CheckResult("READ_ONLY guard", True)]
 
 
+def check_docs_contract(artifacts_dir: Path, python_exec: str) -> List[CheckResult]:
+    cmd = [
+        python_exec,
+        "-m",
+        "tools.verify_docs_contract",
+        "--artifacts-dir",
+        str(artifacts_dir),
+    ]
+    try:
+        completed = subprocess.run(
+            cmd,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except Exception as exc:  # pragma: no cover - subprocess guard
+        return [CheckResult("docs contract", False, f"error={exc}")]
+    if completed.returncode == 0:
+        return [CheckResult("docs contract", True)]
+    detail = f"exit_code={completed.returncode}; see {artifacts_dir / 'verify_docs_contract.txt'}"
+    return [CheckResult("docs contract", False, detail)]
+
+
 def main(argv: List[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run consistency checks.")
     parser.add_argument(
@@ -768,6 +791,7 @@ def main(argv: List[str] | None = None) -> int:
         lambda: check_events_schema(args.include_event_archives),
         check_status_json,
         check_read_only_guard,
+        lambda: check_docs_contract(Path(args.artifacts_dir), python_exec),
     ]
     optional_checks: List[Callable[[], List[CheckResult]]] = [
         lambda: check_readme_cli_consistency(missing_deps),

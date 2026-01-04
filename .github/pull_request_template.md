@@ -1,4 +1,11 @@
-TBD
+Summary
+- 
+
+Risks
+- 
+
+Testing
+- 
 
 MEMORY_COMMIT:
 - (autofix) This file is part of the canonical project constraints.
@@ -6,29 +13,32 @@ MEMORY_COMMIT:
 ## Summary
 - (fill)
 
+## Acceptance Criteria
+- (clear, testable requirements)
+
 ## Gates
 - (list gates + pass/fail)
 
-## Evidence
-- (artifacts paths)
+## Evidence / Artifacts
+- (artifact paths)
 
-## Data hash
+## Data Hash
 - (fill)
 
-## Code hash
+## Code Hash
 - (fill)
 
-## Failure signals
+## Failure Signals
 - (what indicates failure + earliest warning)
 
 ## Rollback
 - (exact rollback steps)
+
+## MEMORY_COMMIT
+- (bullet list of constraints applied)
 
 ANTI_REGRESSION
 - [x] SIM-only preserved
 - [x] READ_ONLY preserved
 - [x] Deterministic decision layer unchanged
 - [x] Fail-closed maintained
-
-MEMORY_COMMIT
-- (bullet list of constraints applied)

@@ -1,6 +1,8 @@
-TBD
+# Canonical Backlog
 
-## IMP Index (auto-added)
+This is the single source of truth for IMP-001..IMP-040, grouped by priority.
+
+## P0
 - IMP-001
 - IMP-002
 - IMP-003
@@ -11,6 +13,8 @@ TBD
 - IMP-008
 - IMP-009
 - IMP-010
+
+## P1
 - IMP-011
 - IMP-012
 - IMP-013
@@ -26,6 +30,8 @@ TBD
 - IMP-023
 - IMP-024
 - IMP-025
+
+## P2
 - IMP-026
 - IMP-027
 - IMP-028
@@ -41,7 +47,6 @@ TBD
 - IMP-038
 - IMP-039
 - IMP-040
-
 
 MEMORY_COMMIT:
 - (autofix) This file is part of the canonical project constraints.
