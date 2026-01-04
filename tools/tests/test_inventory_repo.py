@@ -1,4 +1,5 @@
 import json
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -25,6 +26,12 @@ class InventoryRepoTests(unittest.TestCase):
 
             self.assertEqual(first_json, second_json)
 
+    def test_deterministic_markdown_output(self) -> None:
+        root = Path(__file__).resolve().parents[2]
+        first_md = inventory_repo._render_markdown(inventory_repo.generate_inventory(root))
+        second_md = inventory_repo._render_markdown(inventory_repo.generate_inventory(root))
+        self.assertEqual(first_md, second_md)
+
     def test_required_sections_exist(self) -> None:
         root = Path(__file__).resolve().parents[2]
         inventory = inventory_repo.generate_inventory(root)
@@ -36,6 +43,19 @@ class InventoryRepoTests(unittest.TestCase):
         inventory = inventory_repo.generate_inventory(root)
         self.assertGreaterEqual(len(inventory["entrypoints"]), 5)
         self.assertGreaterEqual(len(inventory["gates"]), 3)
+
+    def test_inventory_has_no_timestamp_lines(self) -> None:
+        root = Path(__file__).resolve().parents[2]
+        markdown = inventory_repo._render_markdown(inventory_repo.generate_inventory(root))
+        timestamp_patterns = [
+            r"\b20\d{2}-\d{2}-\d{2}\b",
+            r"\b\d{2}:\d{2}:\d{2}\b",
+            r"timestamp",
+            r"generated on",
+        ]
+        for pattern in timestamp_patterns:
+            with self.subTest(pattern=pattern):
+                self.assertIsNone(re.search(pattern, markdown, re.IGNORECASE))
 
 
 if __name__ == "__main__":
