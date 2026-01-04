@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -15,10 +16,13 @@ REQUIRED_MARKERS = [
 ]
 
 REQUIRED_COMMAND_SNIPPETS = [
-    "-m tools.compile_check",
-    "-m tools.git_health report",
-    "-m tools.verify_foundation",
-    "-m tools.verify_consistency",
+    "-m tools.verify_pr_ready",
+    "git push -u",
+]
+
+FORBIDDEN_COMMAND_PATTERNS = [
+    r"&\s*\$gitExe\s+push",
+    r"\bRun-Git\b[^\r\n]*\bpush\b",
 ]
 
 
@@ -63,6 +67,10 @@ def _check_contract(script_path: Path) -> tuple[str, list[str]]:
     for snippet in REQUIRED_COMMAND_SNIPPETS:
         if snippet not in content:
             errors.append(f"missing_command:{snippet}")
+
+    for pattern in FORBIDDEN_COMMAND_PATTERNS:
+        if re.search(pattern, content, flags=re.IGNORECASE):
+            errors.append("forbidden_command:git_push_exec")
 
     status = "PASS" if not errors else "FAIL"
     return status, errors
