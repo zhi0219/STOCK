@@ -23,13 +23,13 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
 
 
 def _parse_iso8601(value: str) -> bool:
-    if not value.endswith("Z"):
-        return False
+    if value.endswith("Z"):
+        value = value.replace("Z", "+00:00")
     try:
-        datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(value)
     except ValueError:
         return False
-    return True
+    return parsed.tzinfo is not None
 
 
 def _load_text(path: Path) -> str:
