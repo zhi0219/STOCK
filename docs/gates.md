@@ -38,8 +38,8 @@ Each gate must emit PASS/FAIL semantics and fail-closed by default.
    - PASS: inventory artifacts and docs generated.
    - FAIL: inventory generation failed.
 9) **verify_inventory_contract** (`python -m tools.verify_inventory_contract --artifacts-dir artifacts`)
-   - PASS: docs/inventory.md matches generator output.
-   - FAIL: inventory docs mismatch or missing.
+   - PASS: docs/inventory.md matches generator output after LF normalization.
+   - FAIL: inventory docs mismatch, missing, or UTF-8 BOM detected.
 10) **apply_edits_dry_run** (`python -m tools.apply_edits --repo . --edits fixtures/edits_contract/good.json --artifacts-dir artifacts --dry-run`)
    - PASS: edits dry-run succeeded.
    - FAIL: edits dry-run failed.
