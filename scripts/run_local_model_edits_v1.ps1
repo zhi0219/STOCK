@@ -8,6 +8,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "powershell_runner.ps1")
 
 function Write-Utf8NoBomLf {
   param(
@@ -136,8 +137,8 @@ if (-not $pythonCmd) {
   Fail "missing_python" "python_not_found" $RepoRoot $OutDirAbs "install_python_or_venv" $summaryPath $DryRun.IsPresent
 }
 
-& $pythonCmd -m tools.run_ollama --model $Model --prompt-file $promptAbs --out-file $rawOut
-$ollamaExit = $LASTEXITCODE
+$ollamaRun = Invoke-PsRunner -Command $pythonCmd -Arguments @("-m", "tools.run_ollama", "--model", $Model, "--prompt-file", $promptAbs, "--out-file", $rawOut) -RepoRoot $RepoRoot -ArtifactsDir "artifacts"
+$ollamaExit = $ollamaRun.ExitCode
 if ($ollamaExit -ne 0) {
   Fail "ollama_failed" ("exit_code=" + $ollamaExit) $RepoRoot $OutDirAbs "inspect_ollama_output" $summaryPath $DryRun.IsPresent
 }
@@ -151,29 +152,29 @@ if ([string]::IsNullOrWhiteSpace($rawText)) {
   Fail "ollama_empty_output" "empty_stdout" $RepoRoot $OutDirAbs "regenerate_output" $summaryPath $DryRun.IsPresent
 }
 
-& $pythonCmd -m tools.extract_json_strict --raw-text $rawOut --out-json $editsJson
-$extractExit = $LASTEXITCODE
+$extractRun = Invoke-PsRunner -Command $pythonCmd -Arguments @("-m", "tools.extract_json_strict", "--raw-text", $rawOut, "--out-json", $editsJson) -RepoRoot $RepoRoot -ArtifactsDir "artifacts"
+$extractExit = $extractRun.ExitCode
 if ($extractExit -ne 0) {
   Fail "extract_json_strict_failed" ("exit_code=" + $extractExit) $RepoRoot $OutDirAbs "inspect_extractor_errors" $summaryPath $DryRun.IsPresent
 }
 
 $scaffoldOut = Join-Path $OutDirAbs "scaffold_edits_payload.json"
-& $pythonCmd -m tools.scaffold_edits_payload --edits-json $editsJson --artifacts-dir $OutDirAbs
-$scaffoldExit = $LASTEXITCODE
+$scaffoldRun = Invoke-PsRunner -Command $pythonCmd -Arguments @("-m", "tools.scaffold_edits_payload", "--edits-json", $editsJson, "--artifacts-dir", $OutDirAbs) -RepoRoot $RepoRoot -ArtifactsDir "artifacts"
+$scaffoldExit = $scaffoldRun.ExitCode
 if ($scaffoldExit -ne 0) {
   Fail "scaffold_edits_payload_failed" ("exit_code=" + $scaffoldExit) $RepoRoot $OutDirAbs "inspect_scaffold_edits_payload" $summaryPath $DryRun.IsPresent
 }
 
-& $pythonCmd -m tools.verify_edits_payload --edits-path $scaffoldOut --artifacts-dir $OutDirAbs
-$verifyExit = $LASTEXITCODE
+$verifyRun = Invoke-PsRunner -Command $pythonCmd -Arguments @("-m", "tools.verify_edits_payload", "--edits-path", $scaffoldOut, "--artifacts-dir", $OutDirAbs) -RepoRoot $RepoRoot -ArtifactsDir "artifacts"
+$verifyExit = $verifyRun.ExitCode
 if ($verifyExit -ne 0) {
   Fail "verify_edits_payload_failed" ("exit_code=" + $verifyExit) $RepoRoot $OutDirAbs "inspect_verify_edits_payload" $summaryPath $DryRun.IsPresent
 }
 
 $applyArgs = @("-m", "tools.apply_edits", "--repo", $RepoRoot, "--edits", $scaffoldOut, "--artifacts-dir", $OutDirAbs)
 if ($DryRun.IsPresent) { $applyArgs += "--dry-run" }
-& $pythonCmd @applyArgs
-$applyExit = $LASTEXITCODE
+$applyRun = Invoke-PsRunner -Command $pythonCmd -Arguments $applyArgs -RepoRoot $RepoRoot -ArtifactsDir "artifacts"
+$applyExit = $applyRun.ExitCode
 if ($applyExit -ne 0) {
   Fail "apply_edits_failed" ("exit_code=" + $applyExit) $RepoRoot $OutDirAbs "inspect_apply_edits_result" $summaryPath $DryRun.IsPresent
 }
