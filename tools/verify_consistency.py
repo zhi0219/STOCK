@@ -23,6 +23,8 @@ README_PATH = ROOT / "README.md"
 LOGS_DIR = ROOT / "Logs"
 OPTIONAL_DEPS = ("pandas", "yaml", "yfinance")
 ARCHIVE_EVENTS_PATTERN = re.compile(r"events_\d{4}-\d{2}-\d{2}\.jsonl")
+CONSISTENCY_OPT_IN_FLAGS = "--include-event-archives,--include-legacy-gates"
+CONSISTENCY_NEXT_STEP_CMD = "python tools/verify_consistency.py"
 HELP_CHECKS: dict[str, tuple[str, ...]] = {
     "tail_events.py": OPTIONAL_DEPS,
     "replay_events.py": OPTIONAL_DEPS,
@@ -386,6 +388,31 @@ def _run_help(script: Path) -> tuple[int, str]:
 def _format_dep_list(items: Iterable[str]) -> str:
     collected = sorted(set(items))
     return ",".join(collected) if collected else "none"
+
+
+def _consistency_status_lines(
+    status: str,
+    skipped_checks: List[str],
+    how_to_opt_in: str,
+    next_step_cmd: str,
+) -> List[str]:
+    if status == "PASS":
+        return ["CONSISTENCY_OK|status=PASS"]
+    if status == "DEGRADED":
+        skipped = _format_dep_list(skipped_checks)
+        return [
+            "CONSISTENCY_OK_BUT_DEGRADED"
+            f"|skipped={skipped}"
+            "|next=review [SKIP] lines above (expected unless opt-in)"
+            f"|how_to_opt_in={how_to_opt_in}"
+        ]
+    if status == "FAIL":
+        return [f"CONSISTENCY_FAIL|next={next_step_cmd}"]
+    raise ValueError(f"Unknown status {status}")
+
+
+def _exit_code(has_failures: bool) -> int:
+    return 1 if has_failures else 0
 
 
 def check_readme_cli_consistency(missing_deps: List[str]) -> List[CheckResult]:
@@ -841,6 +868,13 @@ def main(argv: List[str] | None = None) -> int:
     print("===BEGIN===")
     print(summary_marker)
     print(summary_line)
+    for line in _consistency_status_lines(
+        status,
+        skipped_checks,
+        CONSISTENCY_OPT_IN_FLAGS,
+        CONSISTENCY_NEXT_STEP_CMD,
+    ):
+        print(line)
 
     for res in all_results:
         print(res.render())
@@ -854,8 +888,7 @@ def main(argv: List[str] | None = None) -> int:
     print(summary_marker)
     if has_failures:
         print("FAIL: consistency issues detected")
-    print("Next step: python tools/verify_consistency.py")
-    return 1 if has_failures else 0
+    return _exit_code(has_failures)
 
 
 if __name__ == "__main__":
