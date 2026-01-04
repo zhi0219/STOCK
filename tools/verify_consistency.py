@@ -821,6 +821,29 @@ def check_inventory_contract(artifacts_dir: Path, python_exec: str) -> List[Chec
     return [CheckResult("inventory contract", False, detail)]
 
 
+def check_execution_model(artifacts_dir: Path, python_exec: str) -> List[CheckResult]:
+    cmd = [
+        python_exec,
+        "-m",
+        "tools.verify_execution_model",
+        "--artifacts-dir",
+        str(artifacts_dir),
+    ]
+    try:
+        completed = subprocess.run(
+            cmd,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except Exception as exc:  # pragma: no cover - subprocess guard
+        return [CheckResult("execution model", False, f"error={exc}")]
+    if completed.returncode == 0:
+        return [CheckResult("execution model", True)]
+    detail = f"exit_code={completed.returncode}; see {artifacts_dir / 'execution_model_report.txt'}"
+    return [CheckResult("execution model", False, detail)]
+
+
 def main(argv: List[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run consistency checks.")
     parser.add_argument(
@@ -859,6 +882,7 @@ def main(argv: List[str] | None = None) -> int:
         check_read_only_guard,
         lambda: check_docs_contract(Path(args.artifacts_dir), python_exec),
         lambda: check_inventory_contract(Path(args.artifacts_dir), python_exec),
+        lambda: check_execution_model(Path(args.artifacts_dir), python_exec),
     ]
     optional_checks: List[Callable[[], List[CheckResult]]] = [
         lambda: check_readme_cli_consistency(missing_deps),

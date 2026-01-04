@@ -40,19 +40,22 @@ Each gate must emit PASS/FAIL semantics and fail-closed by default.
 9) **verify_inventory_contract** (`python -m tools.verify_inventory_contract --artifacts-dir artifacts`)
    - PASS: docs/inventory.md matches generator output after LF normalization.
    - FAIL: inventory docs mismatch, missing, or UTF-8 BOM detected.
-10) **apply_edits_dry_run** (`python -m tools.apply_edits --repo . --edits fixtures/edits_contract/good.json --artifacts-dir artifacts --dry-run`)
+10) **verify_execution_model** (`python -m tools.verify_execution_model --artifacts-dir artifacts`)
+   - PASS: execution model report generated and sensitivity stable.
+   - FAIL: missing artifacts or friction sensitivity instability.
+11) **apply_edits_dry_run** (`python -m tools.apply_edits --repo . --edits fixtures/edits_contract/good.json --artifacts-dir artifacts --dry-run`)
    - PASS: edits dry-run succeeded.
    - FAIL: edits dry-run failed.
-11) **extract_json_strict_negative** (`python -m tools.extract_json_strict --raw-text fixtures/extract_json_strict/bad_fenced.txt --out-json artifacts/extract_json_strict_bad.json`)
+12) **extract_json_strict_negative** (`python -m tools.extract_json_strict --raw-text fixtures/extract_json_strict/bad_fenced.txt --out-json artifacts/extract_json_strict_bad.json`)
    - PASS: gate fails as expected on bad input.
    - FAIL: unexpected success on bad input.
-12) **verify_pr36_gate** (preflight, if present)
+13) **verify_pr36_gate** (preflight, if present)
    - PASS: preflight gate OK.
    - FAIL: preflight gate failed.
-13) **import_contract** (`python -m tools.verify_import_contract --module <canonical_gate> --artifacts-dir artifacts`)
+14) **import_contract** (`python -m tools.verify_import_contract --module <canonical_gate> --artifacts-dir artifacts`)
    - PASS: canonical gate module imports.
    - FAIL: import contract failed.
-14) **canonical gate runner** (one of the following):
+15) **canonical gate runner** (one of the following):
    - `python tools/verify_prNN_gate.py` (highest available PR gate, e.g., verify_pr40_gate)
    - `python tools/verify_foundation.py` (fallback)
    - `python tools/verify_consistency.py` (fallback)
@@ -76,6 +79,7 @@ Validates strict JSON-only edits outputs.
 ## Consistency Gate (P0)
 Aggregates lightweight health checks for CI consistency.
 - Gate: `python -m tools.verify_consistency --artifacts-dir artifacts`
+- Runs: docs_contract, inventory_contract, execution_model plus basic sanity checks.
 - Archived events:
   - Canonical location: `Logs/event_archives/`.
   - Legacy location: `Logs/_event_archives/` (migrate to canonical when present).
@@ -95,6 +99,17 @@ Aggregates lightweight health checks for CI consistency.
     - `CONSISTENCY_FAIL|next=python tools/verify_consistency.py`
   - Only FAIL emits a next-action marker; PASS/DEGRADED must not print any "Next step:" line.
 
+## Execution Model Gate (P0)
+Deterministic execution-friction verification with sensitivity checks.
+- Gate: `python -m tools.verify_execution_model --artifacts-dir artifacts`
+- Input: defaults to `Data/quotes.csv`, falls back to `fixtures/quotes_sample.csv` when missing.
+- Artifacts:
+  - `artifacts/execution_model_report.json`
+  - `artifacts/execution_model_report.txt`
+- Output marker:
+  - `EXECUTION_MODEL_SUMMARY|status=PASS/FAIL|reason=...|report=...`
+- Fail-closed if ranking instability is detected between baseline and doubled friction scenarios.
+
 ## PR Ready Gate (P0)
 Single deterministic signal for local PR readiness (fail-closed).
 - Gate: `python -m tools.verify_pr_ready --artifacts-dir artifacts`
@@ -102,6 +117,7 @@ Single deterministic signal for local PR readiness (fail-closed).
   - `python -m tools.compile_check --targets tools scripts tests --artifacts-dir artifacts`
   - `python -m tools.verify_docs_contract --artifacts-dir artifacts`
   - `python -m tools.verify_inventory_contract --artifacts-dir artifacts`
+  - `python -m tools.verify_execution_model --artifacts-dir artifacts`
   - `python -m tools.verify_foundation --artifacts-dir artifacts`
   - `python -m tools.verify_consistency --artifacts-dir artifacts` (PASS/DEGRADED allowed)
 - Artifacts:

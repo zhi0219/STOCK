@@ -18,13 +18,15 @@ Fields:
 - `latency_ms`: simulated execution latency in milliseconds
 - `partial_fill_prob`: probability of a partial fill (default `0.0`)
 - `max_fill_fraction`: cap on fill fraction when partial fills are enabled
+- `reject_prob`: probability of simulated order rejection
+- `fail_prob`: probability of simulated execution failure
+- `gap_bps`: additional slippage applied when gaps exceed the threshold
+- `gap_threshold_pct`: minimum gap percentage to trigger `gap_bps`
 
 ## Determinism
 
-`tools.execution_friction.apply_friction(...)` is deterministic by default. Randomness is only used when:
-
-- `partial_fill_prob > 0`, and
-- a seeded `rng_seed` is provided.
+`tools.execution_friction.apply_friction(...)` is deterministic by default. A stable seed is derived from
+the order, market snapshot, and policy, or a caller-provided `rng_seed` can override it for controlled tests.
 
 Stress scenario C enables partial fills with a deterministic seed so results remain repeatable.
 

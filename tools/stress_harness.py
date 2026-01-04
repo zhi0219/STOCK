@@ -39,6 +39,12 @@ def _apply_multipliers(policy: Dict[str, float | int], multipliers: Dict[str, fl
     adjusted["slippage_bps"] = float(adjusted.get("slippage_bps", 0.0)) * multipliers.get("slippage", 1.0)
     adjusted["spread_bps"] = float(adjusted.get("spread_bps", 0.0)) * multipliers.get("spread", 1.0)
     adjusted["latency_ms"] = float(adjusted.get("latency_ms", 0.0)) * multipliers.get("latency", 1.0)
+    adjusted["gap_bps"] = float(adjusted.get("gap_bps", 0.0)) * multipliers.get("slippage", 1.0)
+    adjusted["partial_fill_prob"] = min(
+        1.0, float(adjusted.get("partial_fill_prob", 0.0)) * multipliers.get("slippage", 1.0)
+    )
+    adjusted["reject_prob"] = min(1.0, float(adjusted.get("reject_prob", 0.0)) * multipliers.get("fees", 1.0))
+    adjusted["fail_prob"] = min(1.0, float(adjusted.get("fail_prob", 0.0)) * multipliers.get("fees", 1.0))
     return adjusted
 
 

@@ -477,58 +477,86 @@ def run_step(
             except Exception:
                 fill_seed = int(cfg.get("friction_seed"))
         fill_result = apply_friction(intent, quotes_snapshot, friction_policy, rng_seed=fill_seed)
-        fill_qty = float(fill_result.get("fill_qty", 0.0))
-        fill_price = float(fill_result.get("fill_price", float(intent.get("price") or price)))
-        fee_usd = float(fill_result.get("fee_usd", 0.0))
-        if fill_qty < 0:
-            avg_cost = cost_basis.get(symbol, last_price or price)
-            intent["pnl"] = (fill_price - avg_cost) * abs(fill_qty) - fee_usd
-        else:
-            intent["pnl"] = -fee_usd
-        decision, reason = autopilot.process_intent(intent, status=status, now_ts=now_ts, sim_fill=fill_result)
-        if decision == "ALLOW":
-            if fill_qty != 0:
-                cash -= fill_qty * fill_price
-                cash -= fee_usd
-                positions[symbol] = positions.get(symbol, 0.0) + fill_qty
-                if positions[symbol] != 0:
-                    prev_cost = cost_basis.get(symbol, last_price or price)
-                    if fill_qty > 0:
-                        total_qty = positions[symbol]
-                        cost_basis[symbol] = (prev_cost * (total_qty - fill_qty) + fill_price * fill_qty) / total_qty
-                else:
-                    positions.pop(symbol, None)
-                    cost_basis.pop(symbol, None)
-                sim_state["friction_fill_count"] = int(sim_state.get("friction_fill_count", 0)) + 1
-            emitted_events.append(
-                {
-                    "event_type": "SIM_INTENT",
-                    "symbol": symbol,
-                    "decision": decision,
-                    "reason": reason,
-                    "fill_qty": fill_qty,
-                    "fill_price": fill_price,
-                    "fee_usd": fee_usd,
-                    "sim_fill": fill_result,
-                }
-            )
-        else:
+        fill_status = str(fill_result.get("fill_status") or "FILLED").upper()
+        execution_rejected = False
+        if fill_status != "FILLED":
+            reason = str(fill_result.get("reject_reason") or "execution_unfilled")
+            autopilot.state.record_reject(reason)
             autopilot._append_event(
                 {
                     "event_type": "SIM_DECISION",
-                    "severity": "INFO",
+                    "severity": "WARN",
                     "symbol": symbol,
-                    "message": f"Intent rejected: {decision} {reason or ''}".strip(),
+                    "decision": f"EXECUTION_{fill_status}",
+                    "reason": reason,
+                    "sim_fill": fill_result,
                 }
             )
             emitted_events.append(
                 {
                     "event_type": "SIM_DECISION",
                     "symbol": symbol,
-                    "decision": decision,
+                    "decision": f"EXECUTION_{fill_status}",
                     "reason": reason,
+                    "sim_fill": fill_result,
                 }
             )
+            execution_rejected = True
+            autopilot._persist_risk_state()
+            sim_state["risk_state"] = _risk_state_to_dict(autopilot.state)
+        if not execution_rejected:
+            fill_qty = float(fill_result.get("fill_qty", 0.0))
+            fill_price = float(fill_result.get("fill_price", float(intent.get("price") or price)))
+            fee_usd = float(fill_result.get("fee_usd", 0.0))
+            if fill_qty < 0:
+                avg_cost = cost_basis.get(symbol, last_price or price)
+                intent["pnl"] = (fill_price - avg_cost) * abs(fill_qty) - fee_usd
+            else:
+                intent["pnl"] = -fee_usd
+            decision, reason = autopilot.process_intent(intent, status=status, now_ts=now_ts, sim_fill=fill_result)
+            if decision == "ALLOW":
+                if fill_qty != 0:
+                    cash -= fill_qty * fill_price
+                    cash -= fee_usd
+                    positions[symbol] = positions.get(symbol, 0.0) + fill_qty
+                    if positions[symbol] != 0:
+                        prev_cost = cost_basis.get(symbol, last_price or price)
+                        if fill_qty > 0:
+                            total_qty = positions[symbol]
+                            cost_basis[symbol] = (prev_cost * (total_qty - fill_qty) + fill_price * fill_qty) / total_qty
+                    else:
+                        positions.pop(symbol, None)
+                        cost_basis.pop(symbol, None)
+                    sim_state["friction_fill_count"] = int(sim_state.get("friction_fill_count", 0)) + 1
+                emitted_events.append(
+                    {
+                        "event_type": "SIM_INTENT",
+                        "symbol": symbol,
+                        "decision": decision,
+                        "reason": reason,
+                        "fill_qty": fill_qty,
+                        "fill_price": fill_price,
+                        "fee_usd": fee_usd,
+                        "sim_fill": fill_result,
+                    }
+                )
+            else:
+                autopilot._append_event(
+                    {
+                        "event_type": "SIM_DECISION",
+                        "severity": "INFO",
+                        "symbol": symbol,
+                        "message": f"Intent rejected: {decision} {reason or ''}".strip(),
+                    }
+                )
+                emitted_events.append(
+                    {
+                        "event_type": "SIM_DECISION",
+                        "symbol": symbol,
+                        "decision": decision,
+                        "reason": reason,
+                    }
+                )
     else:
         autopilot._append_event(
             {
