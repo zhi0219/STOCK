@@ -1,0 +1,1087 @@
+# Repository Capability Inventory
+
+Version: v1
+
+## Entrypoints
+- **apply_edits_v1** (ps1): `scripts/apply_edits_v1.ps1` -> `scripts/apply_edits_v1.ps1`
+- **build_verify_edits_v1** (ps1): `scripts/build_verify_edits_v1.ps1` -> `scripts/build_verify_edits_v1.ps1 --help`
+- **clip_ci_artifacts** (ps1): `scripts/clip_ci_artifacts.ps1` -> `scripts/clip_ci_artifacts.ps1`
+- **enable_githooks** (ps1): `scripts/enable_githooks.ps1` -> `scripts/enable_githooks.ps1`
+- **local_patch_bot** (ps1): `scripts/local_patch_bot.ps1` -> `scripts/local_patch_bot.ps1`
+- **patch_wrapper_v1** (ps1): `scripts/patch_wrapper_v1.ps1` -> `scripts/patch_wrapper_v1.ps1 --help`
+- **run_local_model_edits_v1** (ps1): `scripts/run_local_model_edits_v1.ps1` -> `scripts/run_local_model_edits_v1.ps1`
+- **run_ui_windows** (ps1): `scripts/run_ui_windows.ps1` -> `scripts/run_ui_windows.ps1`
+- **safe_push_v1** (ps1): `scripts/safe_push_v1.ps1` -> `scripts/safe_push_v1.ps1`
+- **windows_launch_ui** (ps1): `scripts/windows_launch_ui.ps1` -> `scripts/windows_launch_ui.ps1`
+- **action_center_apply** (py_module): `tools/action_center_apply.py` -> `python -m tools.action_center_apply --help`
+- **action_center_report** (py_module): `tools/action_center_report.py` -> `python -m tools.action_center_report --help`
+- **apply_edits** (py_module): `tools/apply_edits.py` -> `python -m tools.apply_edits --help`
+- **baseline_fix_guide** (py_module): `tools/baseline_fix_guide.py` -> `python -m tools.baseline_fix_guide --help`
+- **brief_report** (py_module): `tools/brief_report.py` -> `python -m tools.brief_report --help`
+- **capture_ai_answer** (py_module): `tools/capture_ai_answer.py` -> `python -m tools.capture_ai_answer --help`
+- **compile_check** (py_module): `tools/compile_check.py` -> `python -m tools.compile_check --help`
+- **dashboard_model** (py_module): `tools/dashboard_model.py` -> `python -m tools.dashboard_model`
+- **doctor_report** (py_module): `tools/doctor_report.py` -> `python -m tools.doctor_report --help`
+- **dummy_source** (py_module): `tools/dummy_source.py` -> `python -m tools.dummy_source --help`
+- **execution_friction** (py_module): `tools/execution_friction.py` -> `python -m tools.execution_friction`
+- **explain_now** (py_module): `tools/explain_now.py` -> `python -m tools.explain_now`
+- **extract_json_strict** (py_module): `tools/extract_json_strict.py` -> `python -m tools.extract_json_strict --help`
+- **fs_atomic** (py_module): `tools/fs_atomic.py` -> `python -m tools.fs_atomic`
+- **git_baseline_probe** (py_module): `tools/git_baseline_probe.py` -> `python -m tools.git_baseline_probe`
+- **git_health** (py_module): `tools/git_health.py` -> `python -m tools.git_health --help`
+- **git_hygiene_fix** (py_module): `tools/git_hygiene_fix.py` -> `python -m tools.git_hygiene_fix`
+- **inject_quote** (py_module): `tools/inject_quote.py` -> `python -m tools.inject_quote --help`
+- **inventory_repo** (py_module): `tools/inventory_repo.py` -> `python -m tools.inventory_repo --help`
+- **launch_ui** (py_module): `tools/launch_ui.py` -> `python -m tools.launch_ui`
+- **make_ai_packet** (py_module): `tools/make_ai_packet.py` -> `python -m tools.make_ai_packet --help`
+- **migrate_event_archives** (py_module): `tools/migrate_event_archives.py` -> `python -m tools.migrate_event_archives --help`
+- **no_lookahead_audit** (py_module): `tools/no_lookahead_audit.py` -> `python -m tools.no_lookahead_audit --help`
+- **normalize_edits** (py_module): `tools/normalize_edits.py` -> `python -m tools.normalize_edits --help`
+- **overtrading_budget** (py_module): `tools/overtrading_budget.py` -> `python -m tools.overtrading_budget`
+- **overtrading_calibrate** (py_module): `tools/overtrading_calibrate.py` -> `python -m tools.overtrading_calibrate --help`
+- **overtrading_calibration** (py_module): `tools/overtrading_calibration.py` -> `python -m tools.overtrading_calibration`
+- **paths** (py_module): `tools/paths.py` -> `python -m tools.paths`
+- **policy_candidate** (py_module): `tools/policy_candidate.py` -> `python -m tools.policy_candidate --help`
+- **policy_registry** (py_module): `tools/policy_registry.py` -> `python -m tools.policy_registry`
+- **pr28_training_loop** (py_module): `tools/pr28_training_loop.py` -> `python -m tools.pr28_training_loop --help`
+- **progress_diagnose** (py_module): `tools/progress_diagnose.py` -> `python -m tools.progress_diagnose`
+- **progress_index** (py_module): `tools/progress_index.py` -> `python -m tools.progress_index --help`
+- **progress_judge** (py_module): `tools/progress_judge.py` -> `python -m tools.progress_judge --help`
+- **progress_plot** (py_module): `tools/progress_plot.py` -> `python -m tools.progress_plot`
+- **progress_throughput_diagnose** (py_module): `tools/progress_throughput_diagnose.py` -> `python -m tools.progress_throughput_diagnose --help`
+- **promotion_gate_v2** (py_module): `tools/promotion_gate_v2.py` -> `python -m tools.promotion_gate_v2 --help`
+- **ps_parse_guard** (py_module): `tools/ps_parse_guard.py` -> `python -m tools.ps_parse_guard --help`
+- **qa_flow** (py_module): `tools/qa_flow.py` -> `python -m tools.qa_flow --help`
+- **recent_runs_index** (py_module): `tools/recent_runs_index.py` -> `python -m tools.recent_runs_index --help`
+- **regime_classifier** (py_module): `tools/regime_classifier.py` -> `python -m tools.regime_classifier --help`
+- **replay_artifacts** (py_module): `tools/replay_artifacts.py` -> `python -m tools.replay_artifacts`
+- **replay_events** (py_module): `tools/replay_events.py` -> `python -m tools.replay_events --help`
+- **repo_hygiene** (py_module): `tools/repo_hygiene.py` -> `python -m tools.repo_hygiene --help`
+- **retention_engine** (py_module): `tools/retention_engine.py` -> `python -m tools.retention_engine --help`
+- **run_ollama** (py_module): `tools/run_ollama.py` -> `python -m tools.run_ollama --help`
+- **run_py** (py_module): `tools/run_py.py` -> `python -m tools.run_py`
+- **runtime_hygiene** (py_module): `tools/runtime_hygiene.py` -> `python -m tools.runtime_hygiene --help`
+- **safe_push_contract** (py_module): `tools/safe_push_contract.py` -> `python -m tools.safe_push_contract --help`
+- **safe_push_utils** (py_module): `tools/safe_push_utils.py` -> `python -m tools.safe_push_utils`
+- **select_evidence** (py_module): `tools/select_evidence.py` -> `python -m tools.select_evidence --help`
+- **sim_autopilot** (py_module): `tools/sim_autopilot.py` -> `python -m tools.sim_autopilot`
+- **sim_replay** (py_module): `tools/sim_replay.py` -> `python -m tools.sim_replay --help`
+- **sim_tournament** (py_module): `tools/sim_tournament.py` -> `python -m tools.sim_tournament --help`
+- **stdio_utf8** (py_module): `tools/stdio_utf8.py` -> `python -m tools.stdio_utf8`
+- **strategy_pool** (py_module): `tools/strategy_pool.py` -> `python -m tools.strategy_pool --help`
+- **stress_harness** (py_module): `tools/stress_harness.py` -> `python -m tools.stress_harness --help`
+- **supervisor** (py_module): `tools/supervisor.py` -> `python -m tools.supervisor --help`
+- **syntax_guard** (py_module): `tools/syntax_guard.py` -> `python -m tools.syntax_guard --help`
+- **tail_events** (py_module): `tools/tail_events.py` -> `python -m tools.tail_events --help`
+- **trade_activity_audit** (py_module): `tools/trade_activity_audit.py` -> `python -m tools.trade_activity_audit --help`
+- **train_daemon** (py_module): `tools/train_daemon.py` -> `python -m tools.train_daemon --help`
+- **train_service** (py_module): `tools/train_service.py` -> `python -m tools.train_service --help`
+- **train_service_hud** (py_module): `tools/train_service_hud.py` -> `python -m tools.train_service_hud`
+- **ui_app** (py_module): `tools/ui_app.py` -> `python -m tools.ui_app --help`
+- **ui_parsers** (py_module): `tools/ui_parsers.py` -> `python -m tools.ui_parsers`
+- **ui_preflight** (py_module): `tools/ui_preflight.py` -> `python -m tools.ui_preflight --help`
+- **ui_scroll** (py_module): `tools/ui_scroll.py` -> `python -m tools.ui_scroll`
+- **ui_streamlit** (py_module): `tools/ui_streamlit.py` -> `python -m tools.ui_streamlit`
+- **verify_ai_packet** (py_module): `tools/verify_ai_packet.py` -> `python -m tools.verify_ai_packet`
+- **verify_brief** (py_module): `tools/verify_brief.py` -> `python -m tools.verify_brief`
+- **verify_capture_ai_answer** (py_module): `tools/verify_capture_ai_answer.py` -> `python -m tools.verify_capture_ai_answer`
+- **verify_consistency** (py_module): `tools/verify_consistency.py` -> `python -m tools.verify_consistency --help`
+- **verify_cooldown** (py_module): `tools/verify_cooldown.py` -> `python -m tools.verify_cooldown`
+- **verify_dashboard** (py_module): `tools/verify_dashboard.py` -> `python -m tools.verify_dashboard`
+- **verify_defensive_redteam** (py_module): `tools/verify_defensive_redteam.py` -> `python -m tools.verify_defensive_redteam --help`
+- **verify_docs_contract** (py_module): `tools/verify_docs_contract.py` -> `python -m tools.verify_docs_contract --help`
+- **verify_e2e_qa_loop** (py_module): `tools/verify_e2e_qa_loop.py` -> `python -m tools.verify_e2e_qa_loop`
+- **verify_edits_contract** (py_module): `tools/verify_edits_contract.py` -> `python -m tools.verify_edits_contract --help`
+- **verify_edits_payload** (py_module): `tools/verify_edits_payload.py` -> `python -m tools.verify_edits_payload --help`
+- **verify_explain_now** (py_module): `tools/verify_explain_now.py` -> `python -m tools.verify_explain_now`
+- **verify_foundation** (py_module): `tools/verify_foundation.py` -> `python -m tools.verify_foundation --help`
+- **verify_import_contract** (py_module): `tools/verify_import_contract.py` -> `python -m tools.verify_import_contract --help`
+- **verify_inventory_contract** (py_module): `tools/verify_inventory_contract.py` -> `python -m tools.verify_inventory_contract --help`
+- **verify_kill_switch_recovery** (py_module): `tools/verify_kill_switch_recovery.py` -> `python -m tools.verify_kill_switch_recovery`
+- **verify_kill_switch_ui_flow** (py_module): `tools/verify_kill_switch_ui_flow.py` -> `python -m tools.verify_kill_switch_ui_flow`
+- **verify_latest_artifacts** (py_module): `tools/verify_latest_artifacts.py` -> `python -m tools.verify_latest_artifacts`
+- **verify_no_lookahead_sim** (py_module): `tools/verify_no_lookahead_sim.py` -> `python -m tools.verify_no_lookahead_sim`
+- **verify_policy_lifecycle** (py_module): `tools/verify_policy_lifecycle.py` -> `python -m tools.verify_policy_lifecycle`
+- **verify_policy_promotion** (py_module): `tools/verify_policy_promotion.py` -> `python -m tools.verify_policy_promotion --help`
+- **verify_pr11_gate** (py_module): `tools/verify_pr11_gate.py` -> `python -m tools.verify_pr11_gate`
+- **verify_pr12_gate** (py_module): `tools/verify_pr12_gate.py` -> `python -m tools.verify_pr12_gate`
+- **verify_pr13_gate** (py_module): `tools/verify_pr13_gate.py` -> `python -m tools.verify_pr13_gate`
+- **verify_pr14_gate** (py_module): `tools/verify_pr14_gate.py` -> `python -m tools.verify_pr14_gate`
+- **verify_pr15_gate** (py_module): `tools/verify_pr15_gate.py` -> `python -m tools.verify_pr15_gate`
+- **verify_pr16_gate** (py_module): `tools/verify_pr16_gate.py` -> `python -m tools.verify_pr16_gate`
+- **verify_pr17_gate** (py_module): `tools/verify_pr17_gate.py` -> `python -m tools.verify_pr17_gate`
+- **verify_pr18_gate** (py_module): `tools/verify_pr18_gate.py` -> `python -m tools.verify_pr18_gate`
+- **verify_pr19_gate** (py_module): `tools/verify_pr19_gate.py` -> `python -m tools.verify_pr19_gate`
+- **verify_pr20_gate** (py_module): `tools/verify_pr20_gate.py` -> `python -m tools.verify_pr20_gate`
+- **verify_pr21_gate** (py_module): `tools/verify_pr21_gate.py` -> `python -m tools.verify_pr21_gate`
+- **verify_pr23_gate** (py_module): `tools/verify_pr23_gate.py` -> `python -m tools.verify_pr23_gate --help`
+- **verify_pr26_gate** (py_module): `tools/verify_pr26_gate.py` -> `python -m tools.verify_pr26_gate --help`
+- **verify_pr27_gate** (py_module): `tools/verify_pr27_gate.py` -> `python -m tools.verify_pr27_gate --help`
+- **verify_pr28_gate** (py_module): `tools/verify_pr28_gate.py` -> `python -m tools.verify_pr28_gate`
+- **verify_pr29_gate** (py_module): `tools/verify_pr29_gate.py` -> `python -m tools.verify_pr29_gate`
+- **verify_pr30_gate** (py_module): `tools/verify_pr30_gate.py` -> `python -m tools.verify_pr30_gate --help`
+- **verify_pr31_gate** (py_module): `tools/verify_pr31_gate.py` -> `python -m tools.verify_pr31_gate`
+- **verify_pr32_gate** (py_module): `tools/verify_pr32_gate.py` -> `python -m tools.verify_pr32_gate`
+- **verify_pr33_gate** (py_module): `tools/verify_pr33_gate.py` -> `python -m tools.verify_pr33_gate`
+- **verify_pr34_gate** (py_module): `tools/verify_pr34_gate.py` -> `python -m tools.verify_pr34_gate`
+- **verify_pr35_gate** (py_module): `tools/verify_pr35_gate.py` -> `python -m tools.verify_pr35_gate`
+- **verify_pr36_gate** (py_module): `tools/verify_pr36_gate.py` -> `python -m tools.verify_pr36_gate`
+- **verify_pr37_gate** (py_module): `tools/verify_pr37_gate.py` -> `python -m tools.verify_pr37_gate`
+- **verify_pr38_gate** (py_module): `tools/verify_pr38_gate.py` -> `python -m tools.verify_pr38_gate`
+- **verify_pr39_gate** (py_module): `tools/verify_pr39_gate.py` -> `python -m tools.verify_pr39_gate`
+- **verify_pr40_gate** (py_module): `tools/verify_pr40_gate.py` -> `python -m tools.verify_pr40_gate`
+- **verify_pr_template_contract** (py_module): `tools/verify_pr_template_contract.py` -> `python -m tools.verify_pr_template_contract --help`
+- **verify_progress_index** (py_module): `tools/verify_progress_index.py` -> `python -m tools.verify_progress_index`
+- **verify_progress_truth** (py_module): `tools/verify_progress_truth.py` -> `python -m tools.verify_progress_truth`
+- **verify_replay** (py_module): `tools/verify_replay.py` -> `python -m tools.verify_replay`
+- **verify_repo_hygiene** (py_module): `tools/verify_repo_hygiene.py` -> `python -m tools.verify_repo_hygiene`
+- **verify_run_completeness_contract** (py_module): `tools/verify_run_completeness_contract.py` -> `python -m tools.verify_run_completeness_contract`
+- **verify_select_evidence** (py_module): `tools/verify_select_evidence.py` -> `python -m tools.verify_select_evidence`
+- **verify_sim_replay** (py_module): `tools/verify_sim_replay.py` -> `python -m tools.verify_sim_replay`
+- **verify_sim_safety_pack** (py_module): `tools/verify_sim_safety_pack.py` -> `python -m tools.verify_sim_safety_pack`
+- **verify_sim_tournament** (py_module): `tools/verify_sim_tournament.py` -> `python -m tools.verify_sim_tournament`
+- **verify_smoke** (py_module): `tools/verify_smoke.py` -> `python -m tools.verify_smoke --help`
+- **verify_streamlit_smoke** (py_module): `tools/verify_streamlit_smoke.py` -> `python -m tools.verify_streamlit_smoke`
+- **verify_supervisor** (py_module): `tools/verify_supervisor.py` -> `python -m tools.verify_supervisor`
+- **verify_train_daemon_safety** (py_module): `tools/verify_train_daemon_safety.py` -> `python -m tools.verify_train_daemon_safety`
+- **verify_train_retention** (py_module): `tools/verify_train_retention.py` -> `python -m tools.verify_train_retention`
+- **verify_train_semantic_loop** (py_module): `tools/verify_train_semantic_loop.py` -> `python -m tools.verify_train_semantic_loop --help`
+- **verify_train_service_safety** (py_module): `tools/verify_train_service_safety.py` -> `python -m tools.verify_train_service_safety --help`
+- **verify_ui_actions** (py_module): `tools/verify_ui_actions.py` -> `python -m tools.verify_ui_actions`
+- **verify_ui_hud_parsing** (py_module): `tools/verify_ui_hud_parsing.py` -> `python -m tools.verify_ui_hud_parsing`
+- **verify_ui_progress_panel** (py_module): `tools/verify_ui_progress_panel.py` -> `python -m tools.verify_ui_progress_panel`
+- **verify_ui_qapacket_path** (py_module): `tools/verify_ui_qapacket_path.py` -> `python -m tools.verify_ui_qapacket_path`
+- **verify_ui_scroll** (py_module): `tools/verify_ui_scroll.py` -> `python -m tools.verify_ui_scroll`
+- **verify_ui_smoke** (py_module): `tools/verify_ui_smoke.py` -> `python -m tools.verify_ui_smoke`
+- **verify_ui_time_math** (py_module): `tools/verify_ui_time_math.py` -> `python -m tools.verify_ui_time_math`
+- **verify_ui_training_panel** (py_module): `tools/verify_ui_training_panel.py` -> `python -m tools.verify_ui_training_panel`
+- **verify_ui_verify_buttons** (py_module): `tools/verify_ui_verify_buttons.py` -> `python -m tools.verify_ui_verify_buttons`
+- **verify_ui_wakeup_dashboard** (py_module): `tools/verify_ui_wakeup_dashboard.py` -> `python -m tools.verify_ui_wakeup_dashboard`
+- **verify_utf8_stdio** (py_module): `tools/verify_utf8_stdio.py` -> `python -m tools.verify_utf8_stdio`
+- **verify_windows_smoke** (py_module): `tools/verify_windows_smoke.py` -> `python -m tools.verify_windows_smoke --help`
+- **wakeup_dashboard** (py_module): `tools/wakeup_dashboard.py` -> `python -m tools.wakeup_dashboard`
+- **walk_forward_eval** (py_module): `tools/walk_forward_eval.py` -> `python -m tools.walk_forward_eval --help`
+- **write_xp_snapshot** (py_module): `tools/write_xp_snapshot.py` -> `python -m tools.write_xp_snapshot --help`
+- **xp_model** (py_module): `tools/xp_model.py` -> `python -m tools.xp_model`
+- **ci_gates** (sh): `scripts/ci_gates.sh` -> `scripts/ci_gates.sh --help`
+- **enable_githooks** (sh): `scripts/enable_githooks.sh` -> `scripts/enable_githooks.sh --help`
+
+## Gates (ordered)
+- **tools.compile_check**: `python3 -m tools.compile_check --targets tools scripts --artifacts-dir "${artifacts_dir}"`
+  - markers_expected: none
+  - artifacts_expected: none
+- **tools.syntax_guard**: `python3 -m tools.syntax_guard --artifacts-dir "${artifacts_dir}"`
+  - markers_expected: none
+  - artifacts_expected: artifacts/syntax_guard_excerpt.txt, artifacts/syntax_guard_result.json
+- **tools.ps_parse_guard**: `python3 -m tools.ps_parse_guard --script scripts/run_ui_windows.ps1 --artifacts-dir "${artifacts_dir}"`
+  - markers_expected: none
+  - artifacts_expected: artifacts/ps_parse_result.json
+- **tools.safe_push_contract**: `python3 -m tools.safe_push_contract --artifacts-dir "${artifacts_dir}"`
+  - markers_expected: none
+  - artifacts_expected: artifacts/safe_push_contract.txt, artifacts/safe_push_contract_result.json
+- **tools.ui_preflight**: `python3 -m tools.ui_preflight --ci --artifacts-dir "${artifacts_dir}"`
+  - markers_expected: none
+  - artifacts_expected: artifacts/ui_preflight_result.json
+- **tools.verify_docs_contract**: `python3 -m tools.verify_docs_contract --artifacts-dir "${artifacts_dir}"`
+  - markers_expected: none
+  - artifacts_expected: none
+- **tools.verify_edits_contract**: `python3 -m tools.verify_edits_contract --artifacts-dir "${artifacts_dir}"`
+  - markers_expected: none
+  - artifacts_expected: artifacts/verify_edits_contract.json, artifacts/verify_edits_contract.txt
+- **tools.inventory_repo**: `python3 -m tools.inventory_repo --artifacts-dir "${artifacts_dir}" --write-docs`
+  - markers_expected: none
+  - artifacts_expected: artifacts/repo_inventory.json, artifacts/repo_inventory.md
+- **tools.verify_inventory_contract**: `python3 -m tools.verify_inventory_contract --artifacts-dir "${artifacts_dir}"`
+  - markers_expected: none
+  - artifacts_expected: artifacts/inventory_diff.txt, artifacts/verify_inventory_contract.json, artifacts/verify_inventory_contract.txt
+- **tools.apply_edits**: `python3 -m tools.apply_edits --repo . --edits fixtures/edits_contract/good.json --artifacts-dir "${artifacts_dir}" --dry-run`
+  - markers_expected: none
+  - artifacts_expected: none
+- **tools.extract_json_strict**: `python3 -m tools.extract_json_strict \`
+  - markers_expected: none
+  - artifacts_expected: none
+- **tools.verify_import_contract**: `python3 tools/verify_import_contract.py \`
+  - markers_expected: IMPORT_END, IMPORT_START, IMPORT_SUMMARY
+  - artifacts_expected: artifacts/import_contract_result.json, artifacts/import_contract_traceback.txt
+- **tools.verify_foundation**: `python -m tools.verify_foundation --artifacts-dir artifacts`
+  - markers_expected: FOUNDATION_SUMMARY
+  - artifacts_expected: none
+- **tools.verify_pr36_gate**: `python3 tools/verify_pr36_gate.py (if present)`
+  - markers_expected: none
+  - artifacts_expected: none
+- **canonical_gate_runner**: `python tools/verify_prNN_gate.py | python tools/verify_foundation.py | python tools/verify_consistency.py`
+  - markers_expected: none
+  - artifacts_expected: none
+
+## Artifacts
+- `artifacts/abs_path_sanitize_hint.json` (produced_by: tools/action_center_report.py, tools/ui_app.py)
+- `artifacts/action_center_report.json` (produced_by: tools/verify_pr27_gate.py, tools/verify_pr30_gate.py)
+- `artifacts/apply_edits_result.json` (produced_by: tools/ui_app.py)
+- `artifacts/ci_job_summary.md` (produced_by: scripts/ci_gates.sh)
+- `artifacts/compile_check.log` (produced_by: scripts/ci_gates.sh)
+- `artifacts/compile_check_result.json` (produced_by: scripts/ci_gates.sh)
+- `artifacts/docs_contract.txt` (produced_by: scripts/build_verify_edits_v1.ps1)
+- `artifacts/doctor_report.json` (produced_by: tools/action_center_report.py, tools/doctor_report.py, tools/ui_app.py, tools/verify_pr30_gate.py)
+- `artifacts/doctor_runtime_write.json` (produced_by: tools/action_center_report.py, tools/ui_app.py)
+- `artifacts/edits.json` (produced_by: scripts/apply_edits_v1.ps1)
+- `artifacts/gates.log` (produced_by: scripts/ci_gates.sh, tools/action_center_report.py)
+- `artifacts/import_contract_result.json` (produced_by: scripts/ci_gates.sh, tools/doctor_report.py, tools/verify_import_contract.py)
+- `artifacts/import_contract_traceback.txt` (produced_by: scripts/ci_gates.sh, tools/verify_import_contract.py)
+- `artifacts/inventory_diff.txt` (produced_by: tools/verify_inventory_contract.py)
+- `artifacts/latest` (produced_by: scripts/clip_ci_artifacts.ps1)
+- `artifacts/migrate_event_archives.json` (produced_by: tools/migrate_event_archives.py)
+- `artifacts/migrate_event_archives.txt` (produced_by: tools/migrate_event_archives.py)
+- `artifacts/pr_template_contract.txt` (produced_by: scripts/build_verify_edits_v1.ps1)
+- `artifacts/proof_summary.json` (produced_by: scripts/ci_gates.sh)
+- `artifacts/ps_parse_result.json` (produced_by: scripts/ci_gates.sh, tools/ps_parse_guard.py)
+- `artifacts/redteam.txt` (produced_by: scripts/build_verify_edits_v1.ps1)
+- `artifacts/repo_inventory.json` (produced_by: tools/inventory_repo.py)
+- `artifacts/repo_inventory.md` (produced_by: tools/inventory_repo.py)
+- `artifacts/safe_push_contract.txt` (produced_by: tools/safe_push_contract.py)
+- `artifacts/safe_push_contract_result.json` (produced_by: scripts/ci_gates.sh, tools/safe_push_contract.py)
+- `artifacts/syntax_guard_excerpt.txt` (produced_by: scripts/ci_gates.sh, tools/syntax_guard.py)
+- `artifacts/syntax_guard_result.json` (produced_by: scripts/ci_gates.sh, tools/syntax_guard.py)
+- `artifacts/ui_preflight_result.json` (produced_by: scripts/ci_gates.sh, tools/ui_preflight.py)
+- `artifacts/verify_docs_contract.txt` (produced_by: tools/verify_consistency.py)
+- `artifacts/verify_edits_contract.json` (produced_by: tools/verify_edits_contract.py)
+- `artifacts/verify_edits_contract.txt` (produced_by: tools/verify_edits_contract.py)
+- `artifacts/verify_edits_payload.json` (produced_by: tools/ui_app.py, tools/verify_edits_payload.py)
+- `artifacts/verify_edits_payload.txt` (produced_by: tools/ui_app.py, tools/verify_edits_payload.py)
+- `artifacts/verify_inventory_contract.json` (produced_by: tools/verify_inventory_contract.py)
+- `artifacts/verify_inventory_contract.txt` (produced_by: tools/verify_consistency.py, tools/verify_inventory_contract.py)
+- `artifacts/windows_smoke.txt` (produced_by: scripts/build_verify_edits_v1.ps1)
+
+## Contracts
+- **backlog**: docs/backlog.md (enforced_by: docs_contract)
+- **gates**: docs/gates.md (enforced_by: docs_contract)
+- **pr_template**: .github/pull_request_template.md (enforced_by: docs_contract)
+- **vision**: docs/vision.md (enforced_by: docs_contract)
+
+## Allow Prefixes
+- `.github/`
+- `docs/`
+- `scripts/`
+- `tests/`
+- `tools/`
+
+## Feature Map
+- **action_center_apply**
+  - files: tools/action_center_apply.py
+  - commands: python -m tools.action_center_apply --help
+  - gates: none
+  - artifacts: none
+- **action_center_report**
+  - files: tools/action_center_report.py
+  - commands: python -m tools.action_center_report --help
+  - gates: none
+  - artifacts: artifacts/abs_path_sanitize_hint.json, artifacts/doctor_report.json, artifacts/doctor_runtime_write.json, artifacts/gates.log
+- **apply_edits**
+  - files: tools/apply_edits.py
+  - commands: python -m tools.apply_edits --help
+  - gates: tools.apply_edits
+  - artifacts: none
+- **apply_edits_v1**
+  - files: scripts/apply_edits_v1.ps1
+  - commands: scripts/apply_edits_v1.ps1
+  - gates: none
+  - artifacts: artifacts/edits.json
+- **baseline_fix_guide**
+  - files: tools/baseline_fix_guide.py
+  - commands: python -m tools.baseline_fix_guide --help
+  - gates: none
+  - artifacts: none
+- **brief_report**
+  - files: tools/brief_report.py
+  - commands: python -m tools.brief_report --help
+  - gates: none
+  - artifacts: none
+- **build_verify_edits_v1**
+  - files: scripts/build_verify_edits_v1.ps1
+  - commands: scripts/build_verify_edits_v1.ps1 --help
+  - gates: none
+  - artifacts: artifacts/docs_contract.txt, artifacts/pr_template_contract.txt, artifacts/redteam.txt, artifacts/windows_smoke.txt
+- **capture_ai_answer**
+  - files: tools/capture_ai_answer.py
+  - commands: python -m tools.capture_ai_answer --help
+  - gates: none
+  - artifacts: none
+- **ci_gates**
+  - files: scripts/ci_gates.sh
+  - commands: scripts/ci_gates.sh --help
+  - gates: none
+  - artifacts: artifacts/ci_job_summary.md, artifacts/compile_check.log, artifacts/compile_check_result.json, artifacts/gates.log, artifacts/import_contract_result.json, artifacts/import_contract_traceback.txt, artifacts/proof_summary.json, artifacts/ps_parse_result.json, artifacts/safe_push_contract_result.json, artifacts/syntax_guard_excerpt.txt, artifacts/syntax_guard_result.json, artifacts/ui_preflight_result.json
+- **clip_ci_artifacts**
+  - files: scripts/clip_ci_artifacts.ps1
+  - commands: scripts/clip_ci_artifacts.ps1
+  - gates: none
+  - artifacts: artifacts/latest
+- **compile_check**
+  - files: tools/compile_check.py
+  - commands: python -m tools.compile_check --help
+  - gates: tools.compile_check
+  - artifacts: none
+- **dashboard_model**
+  - files: tools/dashboard_model.py
+  - commands: python -m tools.dashboard_model
+  - gates: none
+  - artifacts: none
+- **doctor_report**
+  - files: tools/doctor_report.py
+  - commands: python -m tools.doctor_report --help
+  - gates: none
+  - artifacts: artifacts/doctor_report.json, artifacts/import_contract_result.json
+- **dummy_source**
+  - files: tools/dummy_source.py
+  - commands: python -m tools.dummy_source --help
+  - gates: none
+  - artifacts: none
+- **enable_githooks**
+  - files: scripts/enable_githooks.ps1
+  - commands: scripts/enable_githooks.ps1
+  - gates: none
+  - artifacts: none
+- **enable_githooks**
+  - files: scripts/enable_githooks.sh
+  - commands: scripts/enable_githooks.sh --help
+  - gates: none
+  - artifacts: none
+- **execution_friction**
+  - files: tools/execution_friction.py
+  - commands: python -m tools.execution_friction
+  - gates: none
+  - artifacts: none
+- **explain_now**
+  - files: tools/explain_now.py
+  - commands: python -m tools.explain_now
+  - gates: none
+  - artifacts: none
+- **extract_json_strict**
+  - files: tools/extract_json_strict.py
+  - commands: python -m tools.extract_json_strict --help
+  - gates: tools.extract_json_strict
+  - artifacts: none
+- **fs_atomic**
+  - files: tools/fs_atomic.py
+  - commands: python -m tools.fs_atomic
+  - gates: none
+  - artifacts: none
+- **git_baseline_probe**
+  - files: tools/git_baseline_probe.py
+  - commands: python -m tools.git_baseline_probe
+  - gates: none
+  - artifacts: none
+- **git_health**
+  - files: tools/git_health.py
+  - commands: python -m tools.git_health --help
+  - gates: none
+  - artifacts: none
+- **git_hygiene_fix**
+  - files: tools/git_hygiene_fix.py
+  - commands: python -m tools.git_hygiene_fix
+  - gates: none
+  - artifacts: none
+- **inject_quote**
+  - files: tools/inject_quote.py
+  - commands: python -m tools.inject_quote --help
+  - gates: none
+  - artifacts: none
+- **inventory_repo**
+  - files: tools/inventory_repo.py
+  - commands: python -m tools.inventory_repo --help
+  - gates: tools.inventory_repo
+  - artifacts: artifacts/repo_inventory.json, artifacts/repo_inventory.md
+- **launch_ui**
+  - files: tools/launch_ui.py
+  - commands: python -m tools.launch_ui
+  - gates: none
+  - artifacts: none
+- **local_patch_bot**
+  - files: scripts/local_patch_bot.ps1
+  - commands: scripts/local_patch_bot.ps1
+  - gates: none
+  - artifacts: none
+- **make_ai_packet**
+  - files: tools/make_ai_packet.py
+  - commands: python -m tools.make_ai_packet --help
+  - gates: none
+  - artifacts: none
+- **migrate_event_archives**
+  - files: tools/migrate_event_archives.py
+  - commands: python -m tools.migrate_event_archives --help
+  - gates: none
+  - artifacts: artifacts/migrate_event_archives.json, artifacts/migrate_event_archives.txt
+- **no_lookahead_audit**
+  - files: tools/no_lookahead_audit.py
+  - commands: python -m tools.no_lookahead_audit --help
+  - gates: none
+  - artifacts: none
+- **normalize_edits**
+  - files: tools/normalize_edits.py
+  - commands: python -m tools.normalize_edits --help
+  - gates: none
+  - artifacts: none
+- **overtrading_budget**
+  - files: tools/overtrading_budget.py
+  - commands: python -m tools.overtrading_budget
+  - gates: none
+  - artifacts: none
+- **overtrading_calibrate**
+  - files: tools/overtrading_calibrate.py
+  - commands: python -m tools.overtrading_calibrate --help
+  - gates: none
+  - artifacts: none
+- **overtrading_calibration**
+  - files: tools/overtrading_calibration.py
+  - commands: python -m tools.overtrading_calibration
+  - gates: none
+  - artifacts: none
+- **patch_wrapper_v1**
+  - files: scripts/patch_wrapper_v1.ps1
+  - commands: scripts/patch_wrapper_v1.ps1 --help
+  - gates: none
+  - artifacts: none
+- **paths**
+  - files: tools/paths.py
+  - commands: python -m tools.paths
+  - gates: none
+  - artifacts: none
+- **policy_candidate**
+  - files: tools/policy_candidate.py
+  - commands: python -m tools.policy_candidate --help
+  - gates: none
+  - artifacts: none
+- **policy_registry**
+  - files: tools/policy_registry.py
+  - commands: python -m tools.policy_registry
+  - gates: none
+  - artifacts: none
+- **pr28_training_loop**
+  - files: tools/pr28_training_loop.py
+  - commands: python -m tools.pr28_training_loop --help
+  - gates: none
+  - artifacts: none
+- **progress_diagnose**
+  - files: tools/progress_diagnose.py
+  - commands: python -m tools.progress_diagnose
+  - gates: none
+  - artifacts: none
+- **progress_index**
+  - files: tools/progress_index.py
+  - commands: python -m tools.progress_index --help
+  - gates: none
+  - artifacts: none
+- **progress_judge**
+  - files: tools/progress_judge.py
+  - commands: python -m tools.progress_judge --help
+  - gates: none
+  - artifacts: none
+- **progress_plot**
+  - files: tools/progress_plot.py
+  - commands: python -m tools.progress_plot
+  - gates: none
+  - artifacts: none
+- **progress_throughput_diagnose**
+  - files: tools/progress_throughput_diagnose.py
+  - commands: python -m tools.progress_throughput_diagnose --help
+  - gates: none
+  - artifacts: none
+- **promotion_gate_v2**
+  - files: tools/promotion_gate_v2.py
+  - commands: python -m tools.promotion_gate_v2 --help
+  - gates: none
+  - artifacts: none
+- **ps_parse_guard**
+  - files: tools/ps_parse_guard.py
+  - commands: python -m tools.ps_parse_guard --help
+  - gates: tools.ps_parse_guard
+  - artifacts: artifacts/ps_parse_result.json
+- **qa_flow**
+  - files: tools/qa_flow.py
+  - commands: python -m tools.qa_flow --help
+  - gates: none
+  - artifacts: none
+- **recent_runs_index**
+  - files: tools/recent_runs_index.py
+  - commands: python -m tools.recent_runs_index --help
+  - gates: none
+  - artifacts: none
+- **regime_classifier**
+  - files: tools/regime_classifier.py
+  - commands: python -m tools.regime_classifier --help
+  - gates: none
+  - artifacts: none
+- **replay_artifacts**
+  - files: tools/replay_artifacts.py
+  - commands: python -m tools.replay_artifacts
+  - gates: none
+  - artifacts: none
+- **replay_events**
+  - files: tools/replay_events.py
+  - commands: python -m tools.replay_events --help
+  - gates: none
+  - artifacts: none
+- **repo_hygiene**
+  - files: tools/repo_hygiene.py
+  - commands: python -m tools.repo_hygiene --help
+  - gates: none
+  - artifacts: none
+- **retention_engine**
+  - files: tools/retention_engine.py
+  - commands: python -m tools.retention_engine --help
+  - gates: none
+  - artifacts: none
+- **run_local_model_edits_v1**
+  - files: scripts/run_local_model_edits_v1.ps1
+  - commands: scripts/run_local_model_edits_v1.ps1
+  - gates: none
+  - artifacts: none
+- **run_ollama**
+  - files: tools/run_ollama.py
+  - commands: python -m tools.run_ollama --help
+  - gates: none
+  - artifacts: none
+- **run_py**
+  - files: tools/run_py.py
+  - commands: python -m tools.run_py
+  - gates: none
+  - artifacts: none
+- **run_ui_windows**
+  - files: scripts/run_ui_windows.ps1
+  - commands: scripts/run_ui_windows.ps1
+  - gates: none
+  - artifacts: none
+- **runtime_hygiene**
+  - files: tools/runtime_hygiene.py
+  - commands: python -m tools.runtime_hygiene --help
+  - gates: none
+  - artifacts: none
+- **safe_push_contract**
+  - files: tools/safe_push_contract.py
+  - commands: python -m tools.safe_push_contract --help
+  - gates: tools.safe_push_contract
+  - artifacts: artifacts/safe_push_contract.txt, artifacts/safe_push_contract_result.json
+- **safe_push_utils**
+  - files: tools/safe_push_utils.py
+  - commands: python -m tools.safe_push_utils
+  - gates: none
+  - artifacts: none
+- **safe_push_v1**
+  - files: scripts/safe_push_v1.ps1
+  - commands: scripts/safe_push_v1.ps1
+  - gates: none
+  - artifacts: none
+- **select_evidence**
+  - files: tools/select_evidence.py
+  - commands: python -m tools.select_evidence --help
+  - gates: none
+  - artifacts: none
+- **sim_autopilot**
+  - files: tools/sim_autopilot.py
+  - commands: python -m tools.sim_autopilot
+  - gates: none
+  - artifacts: none
+- **sim_replay**
+  - files: tools/sim_replay.py
+  - commands: python -m tools.sim_replay --help
+  - gates: none
+  - artifacts: none
+- **sim_tournament**
+  - files: tools/sim_tournament.py
+  - commands: python -m tools.sim_tournament --help
+  - gates: none
+  - artifacts: none
+- **stdio_utf8**
+  - files: tools/stdio_utf8.py
+  - commands: python -m tools.stdio_utf8
+  - gates: none
+  - artifacts: none
+- **strategy_pool**
+  - files: tools/strategy_pool.py
+  - commands: python -m tools.strategy_pool --help
+  - gates: none
+  - artifacts: none
+- **stress_harness**
+  - files: tools/stress_harness.py
+  - commands: python -m tools.stress_harness --help
+  - gates: none
+  - artifacts: none
+- **supervisor**
+  - files: tools/supervisor.py
+  - commands: python -m tools.supervisor --help
+  - gates: none
+  - artifacts: none
+- **syntax_guard**
+  - files: tools/syntax_guard.py
+  - commands: python -m tools.syntax_guard --help
+  - gates: tools.syntax_guard
+  - artifacts: artifacts/syntax_guard_excerpt.txt, artifacts/syntax_guard_result.json
+- **tail_events**
+  - files: tools/tail_events.py
+  - commands: python -m tools.tail_events --help
+  - gates: none
+  - artifacts: none
+- **trade_activity_audit**
+  - files: tools/trade_activity_audit.py
+  - commands: python -m tools.trade_activity_audit --help
+  - gates: none
+  - artifacts: none
+- **train_daemon**
+  - files: tools/train_daemon.py
+  - commands: python -m tools.train_daemon --help
+  - gates: none
+  - artifacts: none
+- **train_service**
+  - files: tools/train_service.py
+  - commands: python -m tools.train_service --help
+  - gates: none
+  - artifacts: none
+- **train_service_hud**
+  - files: tools/train_service_hud.py
+  - commands: python -m tools.train_service_hud
+  - gates: none
+  - artifacts: none
+- **ui_app**
+  - files: tools/ui_app.py
+  - commands: python -m tools.ui_app --help
+  - gates: none
+  - artifacts: artifacts/abs_path_sanitize_hint.json, artifacts/apply_edits_result.json, artifacts/doctor_report.json, artifacts/doctor_runtime_write.json, artifacts/verify_edits_payload.json, artifacts/verify_edits_payload.txt
+- **ui_parsers**
+  - files: tools/ui_parsers.py
+  - commands: python -m tools.ui_parsers
+  - gates: none
+  - artifacts: none
+- **ui_preflight**
+  - files: tools/ui_preflight.py
+  - commands: python -m tools.ui_preflight --help
+  - gates: tools.ui_preflight
+  - artifacts: artifacts/ui_preflight_result.json
+- **ui_scroll**
+  - files: tools/ui_scroll.py
+  - commands: python -m tools.ui_scroll
+  - gates: none
+  - artifacts: none
+- **ui_streamlit**
+  - files: tools/ui_streamlit.py
+  - commands: python -m tools.ui_streamlit
+  - gates: none
+  - artifacts: none
+- **verify_ai_packet**
+  - files: tools/verify_ai_packet.py
+  - commands: python -m tools.verify_ai_packet
+  - gates: none
+  - artifacts: none
+- **verify_brief**
+  - files: tools/verify_brief.py
+  - commands: python -m tools.verify_brief
+  - gates: none
+  - artifacts: none
+- **verify_capture_ai_answer**
+  - files: tools/verify_capture_ai_answer.py
+  - commands: python -m tools.verify_capture_ai_answer
+  - gates: none
+  - artifacts: none
+- **verify_consistency**
+  - files: tools/verify_consistency.py
+  - commands: python -m tools.verify_consistency --help
+  - gates: none
+  - artifacts: artifacts/verify_docs_contract.txt, artifacts/verify_inventory_contract.txt
+- **verify_cooldown**
+  - files: tools/verify_cooldown.py
+  - commands: python -m tools.verify_cooldown
+  - gates: none
+  - artifacts: none
+- **verify_dashboard**
+  - files: tools/verify_dashboard.py
+  - commands: python -m tools.verify_dashboard
+  - gates: none
+  - artifacts: none
+- **verify_defensive_redteam**
+  - files: tools/verify_defensive_redteam.py
+  - commands: python -m tools.verify_defensive_redteam --help
+  - gates: none
+  - artifacts: none
+- **verify_docs_contract**
+  - files: tools/verify_docs_contract.py
+  - commands: python -m tools.verify_docs_contract --help
+  - gates: tools.verify_docs_contract
+  - artifacts: none
+- **verify_e2e_qa_loop**
+  - files: tools/verify_e2e_qa_loop.py
+  - commands: python -m tools.verify_e2e_qa_loop
+  - gates: none
+  - artifacts: none
+- **verify_edits_contract**
+  - files: tools/verify_edits_contract.py
+  - commands: python -m tools.verify_edits_contract --help
+  - gates: tools.verify_edits_contract
+  - artifacts: artifacts/verify_edits_contract.json, artifacts/verify_edits_contract.txt
+- **verify_edits_payload**
+  - files: tools/verify_edits_payload.py
+  - commands: python -m tools.verify_edits_payload --help
+  - gates: none
+  - artifacts: artifacts/verify_edits_payload.json, artifacts/verify_edits_payload.txt
+- **verify_explain_now**
+  - files: tools/verify_explain_now.py
+  - commands: python -m tools.verify_explain_now
+  - gates: none
+  - artifacts: none
+- **verify_foundation**
+  - files: tools/verify_foundation.py
+  - commands: python -m tools.verify_foundation --help
+  - gates: tools.verify_foundation
+  - artifacts: none
+- **verify_import_contract**
+  - files: tools/verify_import_contract.py
+  - commands: python -m tools.verify_import_contract --help
+  - gates: tools.verify_import_contract
+  - artifacts: artifacts/import_contract_result.json, artifacts/import_contract_traceback.txt
+- **verify_inventory_contract**
+  - files: tools/verify_inventory_contract.py
+  - commands: python -m tools.verify_inventory_contract --help
+  - gates: tools.verify_inventory_contract
+  - artifacts: artifacts/inventory_diff.txt, artifacts/verify_inventory_contract.json, artifacts/verify_inventory_contract.txt
+- **verify_kill_switch_recovery**
+  - files: tools/verify_kill_switch_recovery.py
+  - commands: python -m tools.verify_kill_switch_recovery
+  - gates: none
+  - artifacts: none
+- **verify_kill_switch_ui_flow**
+  - files: tools/verify_kill_switch_ui_flow.py
+  - commands: python -m tools.verify_kill_switch_ui_flow
+  - gates: none
+  - artifacts: none
+- **verify_latest_artifacts**
+  - files: tools/verify_latest_artifacts.py
+  - commands: python -m tools.verify_latest_artifacts
+  - gates: none
+  - artifacts: none
+- **verify_no_lookahead_sim**
+  - files: tools/verify_no_lookahead_sim.py
+  - commands: python -m tools.verify_no_lookahead_sim
+  - gates: none
+  - artifacts: none
+- **verify_policy_lifecycle**
+  - files: tools/verify_policy_lifecycle.py
+  - commands: python -m tools.verify_policy_lifecycle
+  - gates: none
+  - artifacts: none
+- **verify_policy_promotion**
+  - files: tools/verify_policy_promotion.py
+  - commands: python -m tools.verify_policy_promotion --help
+  - gates: none
+  - artifacts: none
+- **verify_pr11_gate**
+  - files: tools/verify_pr11_gate.py
+  - commands: python -m tools.verify_pr11_gate
+  - gates: none
+  - artifacts: none
+- **verify_pr12_gate**
+  - files: tools/verify_pr12_gate.py
+  - commands: python -m tools.verify_pr12_gate
+  - gates: none
+  - artifacts: none
+- **verify_pr13_gate**
+  - files: tools/verify_pr13_gate.py
+  - commands: python -m tools.verify_pr13_gate
+  - gates: none
+  - artifacts: none
+- **verify_pr14_gate**
+  - files: tools/verify_pr14_gate.py
+  - commands: python -m tools.verify_pr14_gate
+  - gates: none
+  - artifacts: none
+- **verify_pr15_gate**
+  - files: tools/verify_pr15_gate.py
+  - commands: python -m tools.verify_pr15_gate
+  - gates: none
+  - artifacts: none
+- **verify_pr16_gate**
+  - files: tools/verify_pr16_gate.py
+  - commands: python -m tools.verify_pr16_gate
+  - gates: none
+  - artifacts: none
+- **verify_pr17_gate**
+  - files: tools/verify_pr17_gate.py
+  - commands: python -m tools.verify_pr17_gate
+  - gates: none
+  - artifacts: none
+- **verify_pr18_gate**
+  - files: tools/verify_pr18_gate.py
+  - commands: python -m tools.verify_pr18_gate
+  - gates: none
+  - artifacts: none
+- **verify_pr19_gate**
+  - files: tools/verify_pr19_gate.py
+  - commands: python -m tools.verify_pr19_gate
+  - gates: none
+  - artifacts: none
+- **verify_pr20_gate**
+  - files: tools/verify_pr20_gate.py
+  - commands: python -m tools.verify_pr20_gate
+  - gates: none
+  - artifacts: none
+- **verify_pr21_gate**
+  - files: tools/verify_pr21_gate.py
+  - commands: python -m tools.verify_pr21_gate
+  - gates: none
+  - artifacts: none
+- **verify_pr23_gate**
+  - files: tools/verify_pr23_gate.py
+  - commands: python -m tools.verify_pr23_gate --help
+  - gates: none
+  - artifacts: none
+- **verify_pr26_gate**
+  - files: tools/verify_pr26_gate.py
+  - commands: python -m tools.verify_pr26_gate --help
+  - gates: none
+  - artifacts: none
+- **verify_pr27_gate**
+  - files: tools/verify_pr27_gate.py
+  - commands: python -m tools.verify_pr27_gate --help
+  - gates: none
+  - artifacts: artifacts/action_center_report.json
+- **verify_pr28_gate**
+  - files: tools/verify_pr28_gate.py
+  - commands: python -m tools.verify_pr28_gate
+  - gates: none
+  - artifacts: none
+- **verify_pr29_gate**
+  - files: tools/verify_pr29_gate.py
+  - commands: python -m tools.verify_pr29_gate
+  - gates: none
+  - artifacts: none
+- **verify_pr30_gate**
+  - files: tools/verify_pr30_gate.py
+  - commands: python -m tools.verify_pr30_gate --help
+  - gates: none
+  - artifacts: artifacts/action_center_report.json, artifacts/doctor_report.json
+- **verify_pr31_gate**
+  - files: tools/verify_pr31_gate.py
+  - commands: python -m tools.verify_pr31_gate
+  - gates: none
+  - artifacts: none
+- **verify_pr32_gate**
+  - files: tools/verify_pr32_gate.py
+  - commands: python -m tools.verify_pr32_gate
+  - gates: none
+  - artifacts: none
+- **verify_pr33_gate**
+  - files: tools/verify_pr33_gate.py
+  - commands: python -m tools.verify_pr33_gate
+  - gates: none
+  - artifacts: none
+- **verify_pr34_gate**
+  - files: tools/verify_pr34_gate.py
+  - commands: python -m tools.verify_pr34_gate
+  - gates: none
+  - artifacts: none
+- **verify_pr35_gate**
+  - files: tools/verify_pr35_gate.py
+  - commands: python -m tools.verify_pr35_gate
+  - gates: none
+  - artifacts: none
+- **verify_pr36_gate**
+  - files: tools/verify_pr36_gate.py
+  - commands: python -m tools.verify_pr36_gate
+  - gates: tools.verify_pr36_gate
+  - artifacts: none
+- **verify_pr37_gate**
+  - files: tools/verify_pr37_gate.py
+  - commands: python -m tools.verify_pr37_gate
+  - gates: none
+  - artifacts: none
+- **verify_pr38_gate**
+  - files: tools/verify_pr38_gate.py
+  - commands: python -m tools.verify_pr38_gate
+  - gates: none
+  - artifacts: none
+- **verify_pr39_gate**
+  - files: tools/verify_pr39_gate.py
+  - commands: python -m tools.verify_pr39_gate
+  - gates: none
+  - artifacts: none
+- **verify_pr40_gate**
+  - files: tools/verify_pr40_gate.py
+  - commands: python -m tools.verify_pr40_gate
+  - gates: none
+  - artifacts: none
+- **verify_pr_template_contract**
+  - files: tools/verify_pr_template_contract.py
+  - commands: python -m tools.verify_pr_template_contract --help
+  - gates: none
+  - artifacts: none
+- **verify_progress_index**
+  - files: tools/verify_progress_index.py
+  - commands: python -m tools.verify_progress_index
+  - gates: none
+  - artifacts: none
+- **verify_progress_truth**
+  - files: tools/verify_progress_truth.py
+  - commands: python -m tools.verify_progress_truth
+  - gates: none
+  - artifacts: none
+- **verify_replay**
+  - files: tools/verify_replay.py
+  - commands: python -m tools.verify_replay
+  - gates: none
+  - artifacts: none
+- **verify_repo_hygiene**
+  - files: tools/verify_repo_hygiene.py
+  - commands: python -m tools.verify_repo_hygiene
+  - gates: none
+  - artifacts: none
+- **verify_run_completeness_contract**
+  - files: tools/verify_run_completeness_contract.py
+  - commands: python -m tools.verify_run_completeness_contract
+  - gates: none
+  - artifacts: none
+- **verify_select_evidence**
+  - files: tools/verify_select_evidence.py
+  - commands: python -m tools.verify_select_evidence
+  - gates: none
+  - artifacts: none
+- **verify_sim_replay**
+  - files: tools/verify_sim_replay.py
+  - commands: python -m tools.verify_sim_replay
+  - gates: none
+  - artifacts: none
+- **verify_sim_safety_pack**
+  - files: tools/verify_sim_safety_pack.py
+  - commands: python -m tools.verify_sim_safety_pack
+  - gates: none
+  - artifacts: none
+- **verify_sim_tournament**
+  - files: tools/verify_sim_tournament.py
+  - commands: python -m tools.verify_sim_tournament
+  - gates: none
+  - artifacts: none
+- **verify_smoke**
+  - files: tools/verify_smoke.py
+  - commands: python -m tools.verify_smoke --help
+  - gates: none
+  - artifacts: none
+- **verify_streamlit_smoke**
+  - files: tools/verify_streamlit_smoke.py
+  - commands: python -m tools.verify_streamlit_smoke
+  - gates: none
+  - artifacts: none
+- **verify_supervisor**
+  - files: tools/verify_supervisor.py
+  - commands: python -m tools.verify_supervisor
+  - gates: none
+  - artifacts: none
+- **verify_train_daemon_safety**
+  - files: tools/verify_train_daemon_safety.py
+  - commands: python -m tools.verify_train_daemon_safety
+  - gates: none
+  - artifacts: none
+- **verify_train_retention**
+  - files: tools/verify_train_retention.py
+  - commands: python -m tools.verify_train_retention
+  - gates: none
+  - artifacts: none
+- **verify_train_semantic_loop**
+  - files: tools/verify_train_semantic_loop.py
+  - commands: python -m tools.verify_train_semantic_loop --help
+  - gates: none
+  - artifacts: none
+- **verify_train_service_safety**
+  - files: tools/verify_train_service_safety.py
+  - commands: python -m tools.verify_train_service_safety --help
+  - gates: none
+  - artifacts: none
+- **verify_ui_actions**
+  - files: tools/verify_ui_actions.py
+  - commands: python -m tools.verify_ui_actions
+  - gates: none
+  - artifacts: none
+- **verify_ui_hud_parsing**
+  - files: tools/verify_ui_hud_parsing.py
+  - commands: python -m tools.verify_ui_hud_parsing
+  - gates: none
+  - artifacts: none
+- **verify_ui_progress_panel**
+  - files: tools/verify_ui_progress_panel.py
+  - commands: python -m tools.verify_ui_progress_panel
+  - gates: none
+  - artifacts: none
+- **verify_ui_qapacket_path**
+  - files: tools/verify_ui_qapacket_path.py
+  - commands: python -m tools.verify_ui_qapacket_path
+  - gates: none
+  - artifacts: none
+- **verify_ui_scroll**
+  - files: tools/verify_ui_scroll.py
+  - commands: python -m tools.verify_ui_scroll
+  - gates: none
+  - artifacts: none
+- **verify_ui_smoke**
+  - files: tools/verify_ui_smoke.py
+  - commands: python -m tools.verify_ui_smoke
+  - gates: none
+  - artifacts: none
+- **verify_ui_time_math**
+  - files: tools/verify_ui_time_math.py
+  - commands: python -m tools.verify_ui_time_math
+  - gates: none
+  - artifacts: none
+- **verify_ui_training_panel**
+  - files: tools/verify_ui_training_panel.py
+  - commands: python -m tools.verify_ui_training_panel
+  - gates: none
+  - artifacts: none
+- **verify_ui_verify_buttons**
+  - files: tools/verify_ui_verify_buttons.py
+  - commands: python -m tools.verify_ui_verify_buttons
+  - gates: none
+  - artifacts: none
+- **verify_ui_wakeup_dashboard**
+  - files: tools/verify_ui_wakeup_dashboard.py
+  - commands: python -m tools.verify_ui_wakeup_dashboard
+  - gates: none
+  - artifacts: none
+- **verify_utf8_stdio**
+  - files: tools/verify_utf8_stdio.py
+  - commands: python -m tools.verify_utf8_stdio
+  - gates: none
+  - artifacts: none
+- **verify_windows_smoke**
+  - files: tools/verify_windows_smoke.py
+  - commands: python -m tools.verify_windows_smoke --help
+  - gates: none
+  - artifacts: none
+- **wakeup_dashboard**
+  - files: tools/wakeup_dashboard.py
+  - commands: python -m tools.wakeup_dashboard
+  - gates: none
+  - artifacts: none
+- **walk_forward_eval**
+  - files: tools/walk_forward_eval.py
+  - commands: python -m tools.walk_forward_eval --help
+  - gates: none
+  - artifacts: none
+- **windows_launch_ui**
+  - files: scripts/windows_launch_ui.ps1
+  - commands: scripts/windows_launch_ui.ps1
+  - gates: none
+  - artifacts: none
+- **workflow:ci_gates**
+  - files: .github/workflows/ci_gates.yml
+  - commands: ./scripts/ci_gates.sh, chmod +x ./scripts/ci_gates.sh
+  - gates: none
+  - artifacts: none
+- **workflow:windows_foundation**
+  - files: .github/workflows/windows_foundation.yml
+  - commands: python -m tools.verify_foundation --artifacts-dir artifacts
+  - gates: none
+  - artifacts: none
+- **write_xp_snapshot**
+  - files: tools/write_xp_snapshot.py
+  - commands: python -m tools.write_xp_snapshot --help
+  - gates: none
+  - artifacts: none
+- **xp_model**
+  - files: tools/xp_model.py
+  - commands: python -m tools.xp_model
+  - gates: none
+  - artifacts: none
