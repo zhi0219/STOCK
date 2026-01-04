@@ -9,6 +9,14 @@ function Get-UtcTimestamp {
   return (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
 }
 
+function Write-ReadyToMerge {
+  param(
+    [string]$Value
+  )
+  if ([string]::IsNullOrWhiteSpace($Value)) { $Value = "NO" }
+  Write-Host ("READY_TO_MERGE=" + $Value)
+}
+
 function Write-Summary {
   param(
     [string]$Status,
@@ -25,6 +33,7 @@ function Fail {
     [string]$Reason,
     [string]$Next
   )
+  Write-ReadyToMerge -Value "NO"
   Write-Summary -Status "FAIL" -Reason $Reason -Next $Next
   Write-Host "SAFE_PUSH_END"
   exit 1
@@ -154,6 +163,7 @@ if ($pushExit -ne 0) {
   Fail "git_push_failed" ("inspect " + $pushLog)
 }
 
+Write-ReadyToMerge -Value "YES"
 Write-Summary -Status "PASS" -Reason "push_succeeded" -Next "monitor_ci"
 Write-Host "SAFE_PUSH_END"
 exit 0
