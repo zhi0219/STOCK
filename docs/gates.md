@@ -3,6 +3,56 @@ MEMORY_COMMIT:
 
 # Gates
 
+## PASS/FAIL semantics
+PASS means the gate completed successfully with no missing artifacts and no unmet requirements.
+DEGRADED means the gate completed but emitted non-fatal warnings (for example, optional dependencies missing).
+FAIL means the gate did not meet requirements or could not complete. Failures are fail-closed.
+
+PASS vs DEGRADED is defined exclusively by the gate's summary marker and must be auditable in artifacts.
+
+## CI Gates (ordered)
+Each gate must emit PASS/FAIL semantics and fail-closed by default.
+
+1) **compile_check** (`python -m tools.compile_check --targets tools scripts --artifacts-dir artifacts`)
+   - PASS: compile check OK.
+   - FAIL: syntax or compile errors.
+2) **syntax_guard** (`python -m tools.syntax_guard --artifacts-dir artifacts`)
+   - PASS: no forbidden syntax.
+   - FAIL: forbidden syntax detected.
+3) **ps_parse_guard** (`python -m tools.ps_parse_guard --script scripts/run_ui_windows.ps1 --artifacts-dir artifacts`)
+   - PASS: PowerShell parses cleanly.
+   - FAIL: parse errors.
+4) **safe_push_contract** (`python -m tools.safe_push_contract --artifacts-dir artifacts`)
+   - PASS: safe push contract intact.
+   - FAIL: required markers missing.
+5) **ui_preflight** (`python -m tools.ui_preflight --ci --artifacts-dir artifacts`)
+   - PASS: UI preflight OK.
+   - FAIL: preflight error.
+6) **docs_contract** (`python -m tools.verify_docs_contract --artifacts-dir artifacts`)
+   - PASS: required docs and sections present.
+   - FAIL: missing docs/sections/IMP list.
+7) **verify_edits_contract** (`python -m tools.verify_edits_contract --artifacts-dir artifacts`)
+   - PASS: edits contract valid.
+   - FAIL: edits contract violation.
+8) **apply_edits_dry_run** (`python -m tools.apply_edits --repo . --edits fixtures/edits_contract/good.json --artifacts-dir artifacts --dry-run`)
+   - PASS: edits dry-run succeeded.
+   - FAIL: edits dry-run failed.
+9) **extract_json_strict_negative** (`python -m tools.extract_json_strict --raw-text fixtures/extract_json_strict/bad_fenced.txt --out-json artifacts/extract_json_strict_bad.json`)
+   - PASS: gate fails as expected on bad input.
+   - FAIL: unexpected success on bad input.
+10) **verify_pr36_gate** (preflight, if present)
+   - PASS: preflight gate OK.
+   - FAIL: preflight gate failed.
+11) **import_contract** (`python -m tools.verify_import_contract --module <canonical_gate> --artifacts-dir artifacts`)
+   - PASS: canonical gate module imports.
+   - FAIL: import contract failed.
+12) **canonical gate runner** (one of the following):
+   - `python tools/verify_prNN_gate.py` (highest available PR gate, e.g., verify_pr40_gate)
+   - `python tools/verify_foundation.py` (fallback)
+   - `python tools/verify_consistency.py` (fallback)
+   - PASS: gate summary PASS/DEGRADED.
+   - FAIL: gate summary FAIL or non-zero exit.
+
 ## Foundation Gate (P0)
 One-shot, fail-closed aggregator gate used by CI and UI.
 - Runs: docs_contract, pr_template_contract, defensive_redteam, windows_smoke, import-smoke (tools.ui_app)
