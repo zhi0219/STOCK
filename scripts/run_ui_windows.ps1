@@ -1,4 +1,5 @@
 Write-Host "UI_LAUNCH_START"
+. (Join-Path $PSScriptRoot "powershell_runner.ps1")
 
 function Get-RepoRoot([string[]]$startPaths) {
     foreach ($startPath in $startPaths) {
@@ -47,42 +48,43 @@ if (-not $pythonCmd) {
     exit 2
 }
 
-& $pythonCmd -m tools.git_health fix --mode safe
-if ($LASTEXITCODE -ne 0) {
+$gitHealthRun = Invoke-PsRunner -Command $pythonCmd -Arguments @("-m", "tools.git_health", "fix", "--mode", "safe") -RepoRoot $repoRoot -ArtifactsDir "artifacts"
+if ($gitHealthRun.ExitCode -ne 0) {
     Write-Host "UI_PREFLIGHT_FAIL|reason=git_hygiene_blocked|next=python -m tools.git_health report"
     exit 1
 }
 
-$gitStatus = & git -C $repoRoot status --porcelain 2>$null
-if ($LASTEXITCODE -ne 0) {
+$gitStatusRun = Invoke-PsRunner -Command "git" -Arguments @("-C", $repoRoot, "status", "--porcelain") -RepoRoot $repoRoot -ArtifactsDir "artifacts"
+if ($gitStatusRun.ExitCode -ne 0) {
     Write-Host "UI_PREFLIGHT_FAIL|reason=git_unavailable|next=Ensure git is installed and on PATH."
     exit 2
 }
 
+$gitStatus = if (Test-Path -LiteralPath $gitStatusRun.StdoutPath) { Get-Content -Raw -LiteralPath $gitStatusRun.StdoutPath } else { "" }
 if ($gitStatus) {
     Write-Host "UI_PREFLIGHT_FAIL|reason=git_dirty_blocked|next=git status --porcelain"
     Write-Host $gitStatus
     exit 1
 }
 
-& git -C $repoRoot pull --ff-only origin main 2>$null
-if ($LASTEXITCODE -ne 0) {
+$gitPullRun = Invoke-PsRunner -Command "git" -Arguments @("-C", $repoRoot, "pull", "--ff-only", "origin", "main") -RepoRoot $repoRoot -ArtifactsDir "artifacts"
+if ($gitPullRun.ExitCode -ne 0) {
     Write-Host "UI_PREFLIGHT_FAIL|reason=git_pull_failed|next=git pull --ff-only origin main"
     exit 1
 }
 
-& $pythonCmd -m tools.ui_preflight --repo-root $repoRoot
-if ($LASTEXITCODE -ne 0) {
+$uiPreflightRun = Invoke-PsRunner -Command $pythonCmd -Arguments @("-m", "tools.ui_preflight", "--repo-root", $repoRoot) -RepoRoot $repoRoot -ArtifactsDir "artifacts"
+if ($uiPreflightRun.ExitCode -ne 0) {
     Write-Host "UI_PREFLIGHT_FAIL|reason=ui_preflight_failed|next=python -m tools.ui_preflight --repo-root $repoRoot"
     exit 1
 }
 
 Write-Host "UI_PREFLIGHT_OK"
 Write-Host "UI_LAUNCH_CMD|$pythonCmd -m tools.ui_app"
-& $pythonCmd -m tools.ui_app
-if ($LASTEXITCODE -ne 0) {
+$uiLaunchRun = Invoke-PsRunner -Command $pythonCmd -Arguments @("-m", "tools.ui_app") -RepoRoot $repoRoot -ArtifactsDir "artifacts"
+if ($uiLaunchRun.ExitCode -ne 0) {
     Write-Host "UI_PREFLIGHT_FAIL|reason=ui_launch_failed|next=python -m tools.ui_app"
-    exit $LASTEXITCODE
+    exit $uiLaunchRun.ExitCode
 }
 
 Write-Host "UI_LAUNCH_END"

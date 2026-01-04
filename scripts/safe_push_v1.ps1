@@ -5,6 +5,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "powershell_runner.ps1")
 
 function Get-UtcTimestamp {
   return (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
@@ -121,8 +122,12 @@ New-Item -ItemType Directory -Force -Path "artifacts" | Out-Null
 
 $prReadyLog = Join-Path "artifacts" "safe_push_verify_pr_ready.txt"
 
-$output = & $pythonExe -m tools.verify_pr_ready --artifacts-dir artifacts 2>&1 | Tee-Object -FilePath $prReadyLog
-$prReadyExit = $LASTEXITCODE
+$runResult = Invoke-PsRunner -Command $pythonExe -Arguments @("-m", "tools.verify_pr_ready", "--artifacts-dir", "artifacts") -RepoRoot $repoRoot -ArtifactsDir "artifacts"
+$prReadyExit = $runResult.ExitCode
+$stdoutText = if (Test-Path -LiteralPath $runResult.StdoutPath) { Get-Content -Raw -LiteralPath $runResult.StdoutPath } else { "" }
+$stderrText = if (Test-Path -LiteralPath $runResult.StderrPath) { Get-Content -Raw -LiteralPath $runResult.StderrPath } else { "" }
+$combinedText = ($stdoutText + $stderrText).Trim()
+Set-Content -LiteralPath $prReadyLog -Value $combinedText -Encoding utf8
 $prReadyStatus = Get-PrReadyStatus -LogPath $prReadyLog
 if (-not (Is-PrReadyStatusOk -Status $prReadyStatus)) {
   Write-Host ("SAFE_PUSH_GATE|name=verify_pr_ready|status=FAIL|log=" + $prReadyLog)

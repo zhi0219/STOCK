@@ -15,9 +15,9 @@ REQUIRED_MARKERS = [
     "SAFE_PUSH_END",
 ]
 
-REQUIRED_COMMAND_SNIPPETS = [
-    "-m tools.verify_pr_ready",
-    "git push -u",
+REQUIRED_COMMAND_PATTERNS = [
+    r"tools\.verify_pr_ready",
+    r"git push -u",
 ]
 
 FORBIDDEN_COMMAND_PATTERNS = [
@@ -64,9 +64,9 @@ def _check_contract(script_path: Path) -> tuple[str, list[str]]:
         if marker not in content:
             errors.append(f"missing_marker:{marker}")
 
-    for snippet in REQUIRED_COMMAND_SNIPPETS:
-        if snippet not in content:
-            errors.append(f"missing_command:{snippet}")
+    for pattern in REQUIRED_COMMAND_PATTERNS:
+        if not re.search(pattern, content):
+            errors.append(f"missing_command_pattern:{pattern}")
 
     for pattern in FORBIDDEN_COMMAND_PATTERNS:
         if re.search(pattern, content, flags=re.IGNORECASE):

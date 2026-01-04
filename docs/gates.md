@@ -138,6 +138,26 @@ The wrapper runs the PR_READY gate before printing the next command and emits st
 The safe push wrapper is **print-only**. It never executes `git push`; instead it prints:
 `next=git push -u origin <branch>`
 
+## PowerShell Runner Contract (Windows)
+All Windows command runners must use the canonical helper: `scripts/powershell_runner.ps1`.
+It enforces deterministic exit codes, repo-root guardrails, and always writes artifacts.
+
+Markers emitted (stdout + `artifacts/ps_run_markers.txt`):
+- `PS_RUN_START|...`
+- `PS_RUN_SUMMARY|status=PASS/FAIL|reason=...|exit_code=...|stdout=...|stderr=...`
+- `PS_RUN_END`
+
+Required artifacts (always written, even on failure):
+- `artifacts/ps_run_summary.json`
+- `artifacts/ps_run_stdout.txt`
+- `artifacts/ps_run_stderr.txt`
+- `artifacts/ps_run_markers.txt`
+
+Debug workflow:
+1) Inspect `artifacts/ps_run_summary.json` for status, exit code, and paths.
+2) Review stdout/stderr files for command output.
+3) Verify the calling script dot-sources the helper and uses `Invoke-PsRunner`.
+
 ### Strict JSON-only contract (v1)
 Local model outputs that drive edits may be either:
 - A full v1 payload object (current behavior), or
