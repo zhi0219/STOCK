@@ -170,3 +170,36 @@ Artifacts expected in the artifacts dir:
 - `missing_version` / `missing_edits`: required keys absent.
 - `edits_not_array`: edits key is not an array.
 First artifact to open: `artifacts/verify_edits_contract.txt` (gate) or `artifacts/apply_edits_error.txt` (apply).
+
+## Git Health (Read-only report + explicit fix)
+The git health report is **read-only** and must never delete or modify files.
+
+### Report (read-only)
+Command:
+`python -m tools.git_health report --artifacts-dir artifacts`
+
+Markers:
+- `GIT_HEALTH_START`
+- `GIT_HEALTH_SUMMARY|status=PASS|reason=...|next=...`
+- `GIT_HEALTH_END`
+
+Artifacts:
+- `artifacts/git_health_report.json`
+- `artifacts/git_health_report.txt`
+
+Exit codes:
+- `0` on PASS
+- non-zero on FAIL
+
+### Fix (explicit + lock-safe)
+Command:
+`python -m tools.git_health fix --artifacts-dir artifacts`
+
+Behavior:
+- Only runs when explicitly invoked.
+- Skips locked files (e.g., WinError 32) and records them in artifacts.
+- Emits `status=DEGRADED` when locked files are skipped, with next steps to close locks and rerun.
+
+Exit codes:
+- `0` on PASS or DEGRADED
+- non-zero on FAIL

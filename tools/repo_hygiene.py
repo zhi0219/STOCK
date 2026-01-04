@@ -50,18 +50,18 @@ SEED_PATHS = {
     "Data/overtrading_budget.json",
 }
 
-SAFE_DELETE_ROOTS = [
-    repo_root() / "Logs",
-    repo_root() / "Reports",
-    repo_root() / "evidence_packs",
-    repo_root() / "qa_packets",
-    repo_root() / "qa_answers",
-    repo_root() / "artifacts",
+SAFE_DELETE_ROOT_NAMES = [
+    "Logs",
+    "Reports",
+    "evidence_packs",
+    "qa_packets",
+    "qa_answers",
+    "artifacts",
 ]
 
-AGGRESSIVE_DELETE_ROOTS = [
-    runtime_dir(),
-    repo_root() / "artifacts",
+AGGRESSIVE_DELETE_ROOT_NAMES = [
+    "Logs/runtime",
+    "artifacts",
 ]
 
 CLEANUP_SCHEMA_VERSION = 1
@@ -229,11 +229,20 @@ def _iso_utc() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _is_locked_error(exc: Exception) -> bool:
+    if isinstance(exc, PermissionError):
+        return True
+    if isinstance(exc, OSError):
+        return getattr(exc, "winerror", None) == 32
+    return False
+
+
 def _record_skip(skipped: list[dict[str, str]], path: Path, exc: Exception) -> None:
     skipped.append(
         {
             "path": _normalize_path(to_repo_relative(path)),
             "error": repr(exc),
+            "locked": str(_is_locked_error(exc)).lower(),
         }
     )
 
@@ -336,6 +345,9 @@ def _remove_runtime_paths(
             if _safe_unlink(candidate, skipped):
                 removed.append(_normalize_path(to_repo_relative(candidate)))
 
+    locked = [
+        entry["path"] for entry in skipped if str(entry.get("locked", "false")).lower() == "true"
+    ]
     limited_skips = skipped[:MAX_SKIPPED_DETAILS]
     report = {
         "schema_version": CLEANUP_SCHEMA_VERSION,
@@ -346,6 +358,7 @@ def _remove_runtime_paths(
         "skipped_count": len(skipped),
         "skipped": limited_skips,
         "skipped_truncated": len(skipped) > len(limited_skips),
+        "skipped_locked": locked,
         "artifacts": {
             "report_json": to_repo_relative(artifacts_dir / CLEANUP_REPORT_NAME),
             "report_text": to_repo_relative(artifacts_dir / CLEANUP_TEXT_NAME),
@@ -368,7 +381,8 @@ def remove_runtime_paths(
 
 
 def safe_delete_roots() -> list[Path]:
-    return list(SAFE_DELETE_ROOTS)
+    root = repo_root()
+    return [root / name for name in SAFE_DELETE_ROOT_NAMES]
 
 
 def fix_repo(mode: str, aggressive: bool, confirm_token: str | None) -> Dict[str, object]:
@@ -377,8 +391,9 @@ def fix_repo(mode: str, aggressive: bool, confirm_token: str | None) -> Dict[str
             raise ValueError(
                 f"Aggressive mode requires --i-know-what-im-doing and --confirm {CONFIRM_TOKEN}"
             )
-        for root in AGGRESSIVE_DELETE_ROOTS:
-            shutil.rmtree(root, ignore_errors=True)
+        root = repo_root()
+        for name in AGGRESSIVE_DELETE_ROOT_NAMES:
+            shutil.rmtree(root / Path(name), ignore_errors=True)
         return scan_repo()
 
     summary = scan_repo()
@@ -399,7 +414,7 @@ def fix_repo(mode: str, aggressive: bool, confirm_token: str | None) -> Dict[str
         for entry in summary.get("ignored", [])
         if entry.get("classification") == "RUNTIME_ARTIFACT"
     ]
-    _remove_runtime_paths(runtime_untracked + runtime_ignored, SAFE_DELETE_ROOTS)
+    _remove_runtime_paths(runtime_untracked + runtime_ignored, safe_delete_roots())
     return scan_repo()
 
 

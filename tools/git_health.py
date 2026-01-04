@@ -13,7 +13,8 @@ from tools import repo_hygiene
 from tools.paths import repo_root, to_repo_relative
 
 
-ARTIFACT_NAME = "git_health_result.json"
+ARTIFACT_JSON_NAME = "git_health_report.json"
+ARTIFACT_TEXT_NAME = "git_health_report.txt"
 
 
 @dataclass(frozen=True)
@@ -21,8 +22,10 @@ class HealthReport:
     status: str
     reason: str
     repo_root: str
-    blocking_paths: list[str]
-    runtime_paths: list[str]
+    dirty_source_files: list[str]
+    runtime_untracked: list[str]
+    unsafe_untracked: list[str]
+    locked_files: list[str]
     git_clean: bool
     suggested_actions: list[str]
 
@@ -36,36 +39,26 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
 
 
-def _collect_paths(summary: dict[str, Any], classification: str) -> list[str]:
+def _collect_paths(
+    summary: dict[str, Any],
+    buckets: tuple[str, ...],
+    classification: str | None,
+) -> list[str]:
     paths: list[str] = []
-    for bucket in ("tracked_modified", "untracked", "ignored"):
+    for bucket in buckets:
         entries = summary.get(bucket, [])
         if not isinstance(entries, list):
             continue
         for entry in entries:
             if not isinstance(entry, dict):
                 continue
-            if entry.get("classification") == classification:
-                path = entry.get("path")
-                if path:
-                    paths.append(str(path))
-    return paths
-
-
-def _collect_blocking(summary: dict[str, Any]) -> list[str]:
-    paths: list[str] = []
-    for bucket in ("tracked_modified", "untracked"):
-        entries = summary.get(bucket, [])
-        if not isinstance(entries, list):
-            continue
-        for entry in entries:
-            if not isinstance(entry, dict):
+            if classification is not None and entry.get("classification") != classification:
                 continue
-            classification = entry.get("classification")
-            if classification != "RUNTIME_ARTIFACT":
-                path = entry.get("path")
-                if path:
-                    paths.append(str(path))
+            if classification is None and entry.get("classification") == "RUNTIME_ARTIFACT":
+                continue
+            path = entry.get("path")
+            if path:
+                paths.append(str(path))
     return paths
 
 
@@ -91,24 +84,54 @@ def build_report(root: Path) -> HealthReport:
             status="FAIL",
             reason=git_error,
             repo_root=root_rel,
-            blocking_paths=[],
-            runtime_paths=[],
+            dirty_source_files=[],
+            runtime_untracked=[],
+            unsafe_untracked=[],
+            locked_files=[],
             git_clean=False,
             suggested_actions=["git status --porcelain"],
         )
 
     summary = repo_hygiene.scan_repo()
-    blocking = _collect_blocking(summary)
-    runtime_paths = _collect_paths(summary, "RUNTIME_ARTIFACT")
+    dirty_source_files = _collect_paths(
+        summary,
+        ("tracked_modified",),
+        None,
+    )
+    unsafe_untracked = _collect_paths(
+        summary,
+        ("untracked",),
+        None,
+    )
+    runtime_untracked = _collect_paths(
+        summary,
+        ("untracked", "ignored"),
+        "RUNTIME_ARTIFACT",
+    )
     git_clean = _git_status_clean(root)
 
-    if blocking:
+    if dirty_source_files:
         return HealthReport(
             status="FAIL",
             reason="dirty_source_files",
             repo_root=root_rel,
-            blocking_paths=blocking,
-            runtime_paths=runtime_paths,
+            dirty_source_files=dirty_source_files,
+            runtime_untracked=runtime_untracked,
+            unsafe_untracked=unsafe_untracked,
+            locked_files=[],
+            git_clean=git_clean,
+            suggested_actions=["git status --porcelain"],
+        )
+
+    if unsafe_untracked:
+        return HealthReport(
+            status="FAIL",
+            reason="unsafe_untracked",
+            repo_root=root_rel,
+            dirty_source_files=dirty_source_files,
+            runtime_untracked=runtime_untracked,
+            unsafe_untracked=unsafe_untracked,
+            locked_files=[],
             git_clean=git_clean,
             suggested_actions=["git status --porcelain"],
         )
@@ -117,18 +140,16 @@ def build_report(root: Path) -> HealthReport:
         status="PASS",
         reason="ok",
         repo_root=root_rel,
-        blocking_paths=[],
-        runtime_paths=runtime_paths,
+        dirty_source_files=[],
+        runtime_untracked=runtime_untracked,
+        unsafe_untracked=[],
+        locked_files=[],
         git_clean=git_clean,
         suggested_actions=[],
     )
 
 
-def apply_safe_fix(root: Path) -> HealthReport:
-    report = build_report(root)
-    if report.status != "PASS":
-        return report
-
+def apply_safe_fix(root: Path, artifacts_dir: Path) -> HealthReport:
     summary = repo_hygiene.scan_repo()
     tracked_runtime = [
         entry["path"]
@@ -147,47 +168,87 @@ def apply_safe_fix(root: Path) -> HealthReport:
     ]
 
     repo_hygiene.restore_tracked([str(path) for path in tracked_runtime if path])
-    repo_hygiene.remove_runtime_paths(
+    cleanup_report = repo_hygiene.remove_runtime_paths(
         [str(path) for path in untracked_runtime + ignored_runtime if path],
         repo_hygiene.safe_delete_roots(),
+        artifacts_dir=artifacts_dir,
     )
+    locked_files = [
+        str(path) for path in cleanup_report.get("skipped_locked", []) if path
+    ]
 
     final_report = build_report(root)
+    status = final_report.status
+    reason = final_report.reason
+    suggested_actions = list(final_report.suggested_actions)
+    if locked_files:
+        status = "DEGRADED"
+        reason = "locked_files"
+        suggested_actions = [
+            "close locked files and rerun python -m tools.git_health fix"
+        ]
+    elif cleanup_report.get("status") == "FAIL":
+        status = "FAIL"
+        reason = "cleanup_failed"
+        suggested_actions = ["review artifacts for cleanup failures"]
+
     return HealthReport(
-        status=final_report.status,
-        reason=final_report.reason,
+        status=status,
+        reason=reason,
         repo_root=final_report.repo_root,
-        blocking_paths=final_report.blocking_paths,
-        runtime_paths=final_report.runtime_paths,
+        dirty_source_files=final_report.dirty_source_files,
+        runtime_untracked=final_report.runtime_untracked,
+        unsafe_untracked=final_report.unsafe_untracked,
+        locked_files=locked_files,
         git_clean=_git_status_clean(root),
-        suggested_actions=final_report.suggested_actions,
+        suggested_actions=suggested_actions,
     )
 
 
 def _emit_markers(report: HealthReport) -> None:
-    blocking = ",".join(report.blocking_paths) if report.blocking_paths else "none"
-    runtime = ",".join(report.runtime_paths) if report.runtime_paths else "none"
+    blocking = ",".join(report.dirty_source_files) if report.dirty_source_files else "none"
+    runtime = ",".join(report.runtime_untracked) if report.runtime_untracked else "none"
+    unsafe = ",".join(report.unsafe_untracked) if report.unsafe_untracked else "none"
+    locked = ",".join(report.locked_files) if report.locked_files else "none"
+    next_steps = ",".join(report.suggested_actions) if report.suggested_actions else "none"
     print("GIT_HEALTH_START")
     print(
         "GIT_HEALTH_SUMMARY|"
         f"status={report.status}|reason={report.reason}|"
-        f"blocking={blocking}|runtime={runtime}|clean={str(report.git_clean).lower()}"
+        f"blocking={blocking}|runtime={runtime}|unsafe_untracked={unsafe}|"
+        f"locked={locked}|clean={str(report.git_clean).lower()}|next={next_steps}"
     )
     print("GIT_HEALTH_END")
 
 
 def _write_artifacts(report: HealthReport, artifacts_dir: Path) -> None:
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
     payload = {
         "status": report.status,
         "reason": report.reason,
         "repo_root": report.repo_root,
-        "blocking_paths": report.blocking_paths,
-        "runtime_paths": report.runtime_paths,
+        "dirty_source_files": report.dirty_source_files,
+        "runtime_untracked": report.runtime_untracked,
+        "unsafe_untracked": report.unsafe_untracked,
+        "locked_files": report.locked_files,
         "git_clean": report.git_clean,
-        "suggested_actions": report.suggested_actions,
+        "next_steps": report.suggested_actions,
         "ts_utc": _ts_utc(),
     }
-    _write_json(artifacts_dir / ARTIFACT_NAME, payload)
+    _write_json(artifacts_dir / ARTIFACT_JSON_NAME, payload)
+    text_path = artifacts_dir / ARTIFACT_TEXT_NAME
+    summary_lines = [
+        "GIT_HEALTH_REPORT_START",
+        f"status={report.status}",
+        f"reason={report.reason}",
+        f"dirty_source_files={','.join(report.dirty_source_files) if report.dirty_source_files else 'none'}",
+        f"runtime_untracked={','.join(report.runtime_untracked) if report.runtime_untracked else 'none'}",
+        f"unsafe_untracked={','.join(report.unsafe_untracked) if report.unsafe_untracked else 'none'}",
+        f"locked_files={','.join(report.locked_files) if report.locked_files else 'none'}",
+        f"next_steps={','.join(report.suggested_actions) if report.suggested_actions else 'none'}",
+        "GIT_HEALTH_REPORT_END",
+    ]
+    text_path.write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
 
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
@@ -214,10 +275,10 @@ def main(argv: list[str] | None = None) -> int:
         _write_artifacts(report, args.artifacts_dir)
         return 0 if report.status == "PASS" else 1
 
-    report = apply_safe_fix(root)
+    report = apply_safe_fix(root, args.artifacts_dir)
     _emit_markers(report)
     _write_artifacts(report, args.artifacts_dir)
-    return 0 if report.status == "PASS" else 1
+    return 0 if report.status in {"PASS", "DEGRADED"} else 1
 
 
 if __name__ == "__main__":
