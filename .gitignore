@@ -41,6 +41,8 @@ Logs/*latest*.json
 logs/*latest*.json
 Logs/runtime/
 logs/runtime/
+Logs/event_archives/
+Logs/_event_archives/
 Logs/train_service/
 logs/train_service/
 evidence_packs/

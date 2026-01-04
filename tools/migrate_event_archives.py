@@ -7,29 +7,39 @@ import shutil
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from tools.paths import repo_root, to_repo_relative
 
 
 ROOT = repo_root()
 ARCHIVE_PATTERN = re.compile(r"events_\d{4}-\d{2}-\d{2}\.jsonl$")
+MAX_SKIPPED = 50
 
 
 def _ts_utc() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _find_archives(logs_dir: Path) -> list[Path]:
+def _is_within(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return False
+    return True
+
+
+def _find_archives(logs_dir: Path, archive_dir: Path) -> list[Path]:
     if not logs_dir.exists():
         return []
-    return sorted(
-        [
-            path
-            for path in logs_dir.rglob("events_*.jsonl")
-            if ARCHIVE_PATTERN.fullmatch(path.name)
-        ]
-    )
+    archives = []
+    for path in logs_dir.rglob("events_*.jsonl"):
+        if not ARCHIVE_PATTERN.fullmatch(path.name):
+            continue
+        if _is_within(path, archive_dir):
+            continue
+        archives.append(path)
+    return sorted(archives)
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
@@ -37,52 +47,45 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
 
 
-def _relativize(paths: Iterable[Path]) -> list[str]:
-    return [to_repo_relative(path) for path in paths]
-
-
 def migrate_event_archives(
     logs_dir: Path,
     archive_dir: Path,
     *,
-    mode: str = "copy",
+    mode: str = "move",
 ) -> dict[str, Any]:
-    archives = _find_archives(logs_dir)
+    archives = _find_archives(logs_dir, archive_dir)
     moved: list[Path] = []
     copied: list[Path] = []
-    skipped_existing: list[Path] = []
-
-    if not archives:
-        return {
-            "status": "NOOP",
-            "mode": mode,
-            "archives_found": 0,
-            "moved": [],
-            "copied": [],
-            "skipped_existing": [],
-        }
+    skipped: list[dict[str, str]] = []
 
     archive_dir.mkdir(parents=True, exist_ok=True)
     for path in archives:
         destination = archive_dir / path.name
         if destination.exists():
-            skipped_existing.append(destination)
             continue
-        if mode == "move":
-            shutil.move(str(path), str(destination))
-            moved.append(destination)
-        else:
-            shutil.copy2(path, destination)
-            copied.append(destination)
+        try:
+            if mode == "move":
+                shutil.move(str(path), str(destination))
+                moved.append(destination)
+            else:
+                shutil.copy2(path, destination)
+                copied.append(destination)
+        except (PermissionError, OSError) as exc:
+            skipped.append({"path": to_repo_relative(path), "error": repr(exc)})
+            continue
 
-    status = "PASS"
+    status = "PASS" if not skipped else "FAIL"
+    limited_skipped = skipped[:MAX_SKIPPED]
     return {
         "status": status,
         "mode": mode,
         "archives_found": len(archives),
-        "moved": _relativize(moved),
-        "copied": _relativize(copied),
-        "skipped_existing": _relativize(skipped_existing),
+        "moved_count": len(moved),
+        "copied_count": len(copied),
+        "skipped_count": len(skipped),
+        "skipped_paths": [entry["path"] for entry in limited_skipped],
+        "skipped": limited_skipped,
+        "skipped_truncated": len(skipped) > len(limited_skipped),
     }
 
 
@@ -97,7 +100,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--archive-dir",
         type=Path,
-        default=ROOT / "Data",
+        default=ROOT / "Logs" / "event_archives",
         help="Destination directory for archived events.",
     )
     parser.add_argument(
@@ -109,7 +112,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--mode",
         choices=["copy", "move"],
-        default="copy",
+        default="move",
         help="Copy or move archives into the archive directory.",
     )
     return parser.parse_args(argv)
@@ -123,26 +126,34 @@ def main(argv: list[str] | None = None) -> int:
     result["archive_dir"] = to_repo_relative(args.archive_dir)
 
     report_path = args.artifacts_dir / "migrate_event_archives.json"
+    text_path = args.artifacts_dir / "migrate_event_archives.txt"
     _write_json(report_path, result)
 
-    print("MIGRATE_EVENT_ARCHIVES_START")
-    print(
-        "|".join(
-            [
-                "MIGRATE_EVENT_ARCHIVES_SUMMARY",
-                f"status={result['status']}",
-                f"mode={result['mode']}",
-                f"archives_found={result['archives_found']}",
-                f"moved={len(result['moved'])}",
-                f"copied={len(result['copied'])}",
-                f"skipped_existing={len(result['skipped_existing'])}",
-                f"report={to_repo_relative(report_path)}",
-            ]
-        )
+    summary_line = "|".join(
+        [
+            "MIGRATE_EVENT_ARCHIVES_SUMMARY",
+            f"status={result['status']}",
+            f"mode={result['mode']}",
+            f"archives_found={result['archives_found']}",
+            f"moved={result['moved_count']}",
+            f"copied={result['copied_count']}",
+            f"skipped={result['skipped_count']}",
+            f"report={to_repo_relative(report_path)}",
+        ]
     )
-    print("MIGRATE_EVENT_ARCHIVES_END")
 
-    return 0 if result["status"] in {"PASS", "NOOP"} else 1
+    markers = ["MIGRATE_EVENT_ARCHIVES_START", summary_line]
+    if result["status"] == "FAIL":
+        markers.append(
+            "MIGRATE_EVENT_ARCHIVES_NEXT="
+            "close locked files and rerun python -m tools.migrate_event_archives"
+        )
+    markers.append("MIGRATE_EVENT_ARCHIVES_END")
+    text_path.parent.mkdir(parents=True, exist_ok=True)
+    text_path.write_text("\n".join(markers) + "\n", encoding="utf-8")
+
+    print("\n".join(markers))
+    return 0 if result["status"] == "PASS" else 1
 
 
 if __name__ == "__main__":

@@ -8,6 +8,8 @@ class RepoHygieneRuntimeTests(unittest.TestCase):
         runtime_paths = [
             "Logs/events_2024-01-01.jsonl",
             "Logs/runtime/policy_registry.json",
+            "Logs/event_archives/events_2024-01-01.jsonl",
+            "Logs/_event_archives/events_2024-01-01.jsonl",
             "artifacts/compile_check.log",
             "__pycache__/module.pyc",
         ]

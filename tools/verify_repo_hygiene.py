@@ -30,6 +30,8 @@ REQUIRED_RULES = [
     "logs/train_service/",
     "Logs/tournament_runs/",
     "logs/tournament_runs/",
+    "Logs/event_archives/",
+    "Logs/_event_archives/",
     "evidence_packs/",
     "qa_packets/",
     "qa_answers/",
@@ -40,6 +42,8 @@ REQUIRED_RULES = [
 RUNTIME_ROOTS = [
     "Logs/",
     "Logs/runtime/",
+    "Logs/event_archives/",
+    "Logs/_event_archives/",
     "logs/",
     "logs/runtime/",
     "Reports/",
@@ -55,6 +59,9 @@ HIGHLIGHT_PATHS = {
     "Logs/progress_index.json",
     "logs/progress_index.json",
 }
+
+LEGACY_ARCHIVE_DIR = ROOT / "Logs" / "_event_archives"
+ARCHIVE_PATTERN = "events_*.jsonl"
 
 
 def _read_gitignore() -> str:
@@ -113,6 +120,7 @@ def main() -> int:
     runtime_untracked = _runtime_untracked(untracked)
     unsafe_untracked = _unsafe_untracked(untracked)
     highlighted = _highlighted(runtime_untracked)
+    legacy_archives = sorted(LEGACY_ARCHIVE_DIR.glob(ARCHIVE_PATTERN)) if LEGACY_ARCHIVE_DIR.exists() else []
 
     status = "PASS" if not missing and not runtime_untracked and not unsafe_untracked else "FAIL"
 
@@ -149,6 +157,15 @@ def main() -> int:
         print(
             "Unsafe to delete automatically (manual review required): "
             + ", ".join(sorted(set(unsafe_untracked)))
+        )
+
+    if legacy_archives:
+        print(
+            "REPO_HYGIENE_LEGACY_EVENT_ARCHIVES|"
+            f"count={len(legacy_archives)}|"
+            "path=Logs/_event_archives|"
+            "next=python -m tools.migrate_event_archives --logs-dir Logs --archive-dir Logs/event_archives "
+            "--artifacts-dir artifacts --mode move"
         )
 
     print("REPO_HYGIENE_END")

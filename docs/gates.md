@@ -70,7 +70,11 @@ Validates strict JSON-only edits outputs.
 ## Consistency Gate (P0)
 Aggregates lightweight health checks for CI consistency.
 - Gate: `python -m tools.verify_consistency --artifacts-dir artifacts`
-- Archived events: opt-in validation via `--include-event-archives` (default skips legacy `events_YYYY-MM-DD.jsonl`).
+- Archived events:
+  - Canonical location: `Logs/event_archives/`.
+  - Legacy location: `Logs/_event_archives/` (migrate to canonical when present).
+  - Opt-in validation: `python -m tools.verify_consistency --include-event-archives --artifacts-dir artifacts`.
+  - Migration command: `python -m tools.migrate_event_archives --logs-dir Logs --archive-dir Logs/event_archives --artifacts-dir artifacts --mode move`.
 - Legacy gates: opt-in via `--include-legacy-gates` (default skips `verify_pr20_gate.py`).
 - Rationale: legacy artifacts should not block main by default while remaining auditable on demand.
 - Output contract (single-line ASCII markers):

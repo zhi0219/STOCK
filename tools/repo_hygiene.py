@@ -5,10 +5,11 @@ import json
 import shutil
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List
 
-from tools.paths import repo_root, runtime_dir
+from tools.paths import repo_root, runtime_dir, to_repo_relative
 
 SCHEMA_VERSION = 1
 CONFIRM_TOKEN = "DELETE-RUNTIME"
@@ -19,6 +20,8 @@ RUNTIME_PREFIXES = [
     "Logs/train_runs/",
     "Logs/train_service/",
     "Logs/tournament_runs/",
+    "Logs/event_archives/",
+    "Logs/_event_archives/",
     "logs/",
     "logs/runtime/",
     "logs/train_runs/",
@@ -60,6 +63,11 @@ AGGRESSIVE_DELETE_ROOTS = [
     runtime_dir(),
     repo_root() / "artifacts",
 ]
+
+CLEANUP_SCHEMA_VERSION = 1
+CLEANUP_REPORT_NAME = "repo_hygiene_cleanup.json"
+CLEANUP_TEXT_NAME = "repo_hygiene_cleanup.txt"
+MAX_SKIPPED_DETAILS = 50
 
 
 def _normalize_path(path: str) -> str:
@@ -217,6 +225,76 @@ def _emit_summary(summary: Dict[str, object]) -> None:
     print(line)
 
 
+def _iso_utc() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _record_skip(skipped: list[dict[str, str]], path: Path, exc: Exception) -> None:
+    skipped.append(
+        {
+            "path": _normalize_path(to_repo_relative(path)),
+            "error": repr(exc),
+        }
+    )
+
+
+def _safe_unlink(path: Path, skipped: list[dict[str, str]]) -> bool:
+    try:
+        path.unlink()
+        return True
+    except Exception as exc:
+        _record_skip(skipped, path, exc)
+        return False
+
+
+def _safe_rmdir(path: Path, skipped: list[dict[str, str]]) -> bool:
+    try:
+        path.rmdir()
+        return True
+    except Exception as exc:
+        _record_skip(skipped, path, exc)
+        return False
+
+
+def _remove_dir(path: Path, skipped: list[dict[str, str]], removed: list[str]) -> None:
+    for child in sorted(path.rglob("*"), reverse=True):
+        if child.is_dir():
+            if _safe_rmdir(child, skipped):
+                removed.append(_normalize_path(to_repo_relative(child)))
+        else:
+            if _safe_unlink(child, skipped):
+                removed.append(_normalize_path(to_repo_relative(child)))
+    if _safe_rmdir(path, skipped):
+        removed.append(_normalize_path(to_repo_relative(path)))
+
+
+def _write_cleanup_artifacts(report: dict[str, object], artifacts_dir: Path) -> None:
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    json_path = artifacts_dir / CLEANUP_REPORT_NAME
+    text_path = artifacts_dir / CLEANUP_TEXT_NAME
+    json_path.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
+
+    summary = [
+        "REPO_HYGIENE_CLEANUP_START",
+        "|".join(
+            [
+                "REPO_HYGIENE_CLEANUP_SUMMARY",
+                f"status={report.get('status', 'UNKNOWN')}",
+                f"removed={report.get('removed_count', 0)}",
+                f"skipped={report.get('skipped_count', 0)}",
+                f"report={to_repo_relative(json_path)}",
+            ]
+        ),
+    ]
+    if report.get("status") == "FAIL":
+        summary.append(
+            "REPO_HYGIENE_CLEANUP_NEXT="
+            "close locked files and rerun python -m tools.git_hygiene_fix"
+        )
+    summary.append("REPO_HYGIENE_CLEANUP_END")
+    text_path.write_text("\n".join(summary) + "\n", encoding="utf-8")
+
+
 def _is_under_root(path: Path, roots: list[Path]) -> bool:
     try:
         resolved = path.resolve()
@@ -238,24 +316,55 @@ def _restore_tracked(paths: list[str]) -> None:
     subprocess.run(["git", "restore", "--"] + paths, cwd=repo_root(), check=False)
 
 
-def _remove_runtime_paths(paths: list[str], roots: list[Path]) -> None:
+def _remove_runtime_paths(
+    paths: list[str],
+    roots: list[Path],
+    artifacts_dir: Path,
+) -> dict[str, object]:
     root = repo_root()
+    removed: list[str] = []
+    skipped: list[dict[str, str]] = []
+    requested: list[str] = []
     for rel_path in paths:
         candidate = root / rel_path
         if not _is_under_root(candidate, roots):
             continue
+        requested.append(_normalize_path(to_repo_relative(candidate)))
         if candidate.is_dir():
-            shutil.rmtree(candidate, ignore_errors=True)
+            _remove_dir(candidate, skipped, removed)
         elif candidate.exists():
-            candidate.unlink()
+            if _safe_unlink(candidate, skipped):
+                removed.append(_normalize_path(to_repo_relative(candidate)))
+
+    limited_skips = skipped[:MAX_SKIPPED_DETAILS]
+    report = {
+        "schema_version": CLEANUP_SCHEMA_VERSION,
+        "status": "PASS" if not skipped else "FAIL",
+        "ts_utc": _iso_utc(),
+        "requested_paths": requested,
+        "removed_count": len(removed),
+        "skipped_count": len(skipped),
+        "skipped": limited_skips,
+        "skipped_truncated": len(skipped) > len(limited_skips),
+        "artifacts": {
+            "report_json": to_repo_relative(artifacts_dir / CLEANUP_REPORT_NAME),
+            "report_text": to_repo_relative(artifacts_dir / CLEANUP_TEXT_NAME),
+        },
+    }
+    _write_cleanup_artifacts(report, artifacts_dir)
+    return report
 
 
 def restore_tracked(paths: list[str]) -> None:
     _restore_tracked(paths)
 
 
-def remove_runtime_paths(paths: list[str], roots: list[Path]) -> None:
-    _remove_runtime_paths(paths, roots)
+def remove_runtime_paths(
+    paths: list[str],
+    roots: list[Path],
+    artifacts_dir: Path | None = None,
+) -> dict[str, object]:
+    return _remove_runtime_paths(paths, roots, artifacts_dir or repo_root() / "artifacts")
 
 
 def safe_delete_roots() -> list[Path]:
