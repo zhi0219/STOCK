@@ -73,6 +73,17 @@ Aggregates lightweight health checks for CI consistency.
 - Archived events: opt-in validation via `--include-event-archives` (default skips legacy `events_YYYY-MM-DD.jsonl`).
 - Legacy gates: opt-in via `--include-legacy-gates` (default skips `verify_pr20_gate.py`).
 - Rationale: legacy artifacts should not block main by default while remaining auditable on demand.
+- Output contract (single-line ASCII markers):
+  - PASS:
+    - `CONSISTENCY_SUMMARY|status=PASS|...`
+    - `CONSISTENCY_OK|status=PASS`
+  - DEGRADED:
+    - `CONSISTENCY_SUMMARY|status=DEGRADED|...`
+    - `CONSISTENCY_OK_BUT_DEGRADED|skipped=<comma list>|next=review [SKIP] lines above (expected unless opt-in)|how_to_opt_in=--include-event-archives,--include-legacy-gates`
+  - FAIL:
+    - `CONSISTENCY_SUMMARY|status=FAIL|...`
+    - `CONSISTENCY_FAIL|next=python tools/verify_consistency.py`
+  - Only FAIL emits a next-action marker; PASS/DEGRADED must not print any "Next step:" line.
 
 ## Safe Push (Windows Local)
 Use the safe push wrapper to prevent broken local pushes (fail-closed).
