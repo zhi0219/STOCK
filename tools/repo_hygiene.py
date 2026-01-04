@@ -30,6 +30,7 @@ RUNTIME_PREFIXES = [
     "qa_packets/",
     "qa_answers/",
     "artifacts/",
+    "__pycache__/",
 ]
 
 RUNTIME_REGISTRY_PATHS = {
