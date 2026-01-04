@@ -9,6 +9,7 @@ Version: v1
 - **enable_githooks** (ps1): `scripts/enable_githooks.ps1` -> `scripts/enable_githooks.ps1`
 - **local_patch_bot** (ps1): `scripts/local_patch_bot.ps1` -> `scripts/local_patch_bot.ps1`
 - **patch_wrapper_v1** (ps1): `scripts/patch_wrapper_v1.ps1` -> `scripts/patch_wrapper_v1.ps1 --help`
+- **powershell_runner** (ps1): `scripts/powershell_runner.ps1` -> `scripts/powershell_runner.ps1`
 - **run_local_model_edits_v1** (ps1): `scripts/run_local_model_edits_v1.ps1` -> `scripts/run_local_model_edits_v1.ps1`
 - **run_ui_windows** (ps1): `scripts/run_ui_windows.ps1` -> `scripts/run_ui_windows.ps1`
 - **safe_push_v1** (ps1): `scripts/safe_push_v1.ps1` -> `scripts/safe_push_v1.ps1`
@@ -104,6 +105,7 @@ Version: v1
 - **verify_no_lookahead_sim** (py_module): `tools/verify_no_lookahead_sim.py` -> `python -m tools.verify_no_lookahead_sim`
 - **verify_policy_lifecycle** (py_module): `tools/verify_policy_lifecycle.py` -> `python -m tools.verify_policy_lifecycle`
 - **verify_policy_promotion** (py_module): `tools/verify_policy_promotion.py` -> `python -m tools.verify_policy_promotion --help`
+- **verify_powershell_runner_contract** (py_module): `tools/verify_powershell_runner_contract.py` -> `python -m tools.verify_powershell_runner_contract --help`
 - **verify_pr11_gate** (py_module): `tools/verify_pr11_gate.py` -> `python -m tools.verify_pr11_gate`
 - **verify_pr12_gate** (py_module): `tools/verify_pr12_gate.py` -> `python -m tools.verify_pr12_gate`
 - **verify_pr13_gate** (py_module): `tools/verify_pr13_gate.py` -> `python -m tools.verify_pr13_gate`
@@ -233,6 +235,8 @@ Version: v1
 - `artifacts/latest` (produced_by: scripts/clip_ci_artifacts.ps1)
 - `artifacts/migrate_event_archives.json` (produced_by: tools/migrate_event_archives.py)
 - `artifacts/migrate_event_archives.txt` (produced_by: tools/migrate_event_archives.py)
+- `artifacts/powershell_runner_contract.txt` (produced_by: tools/verify_powershell_runner_contract.py)
+- `artifacts/powershell_runner_contract_result.json` (produced_by: tools/verify_powershell_runner_contract.py)
 - `artifacts/pr_ready.txt` (produced_by: tools/verify_pr_ready.py)
 - `artifacts/pr_ready_gates.log` (produced_by: tools/verify_pr_ready.py)
 - `artifacts/pr_ready_summary.json` (produced_by: tools/verify_pr_ready.py)
@@ -460,6 +464,11 @@ Version: v1
 - **policy_registry**
   - files: tools/policy_registry.py
   - commands: python -m tools.policy_registry
+  - gates: none
+  - artifacts: none
+- **powershell_runner**
+  - files: scripts/powershell_runner.ps1
+  - commands: scripts/powershell_runner.ps1
   - gates: none
   - artifacts: none
 - **pr28_training_loop**
@@ -782,6 +791,11 @@ Version: v1
   - commands: python -m tools.verify_policy_promotion --help
   - gates: none
   - artifacts: none
+- **verify_powershell_runner_contract**
+  - files: tools/verify_powershell_runner_contract.py
+  - commands: python -m tools.verify_powershell_runner_contract --help
+  - gates: none
+  - artifacts: artifacts/powershell_runner_contract.txt, artifacts/powershell_runner_contract_result.json
 - **verify_pr11_gate**
   - files: tools/verify_pr11_gate.py
   - commands: python -m tools.verify_pr11_gate
