@@ -139,11 +139,15 @@ The safe push wrapper is **print-only**. It never executes `git push`; instead i
 `next=git push -u origin <branch>`
 
 ### Strict JSON-only contract (v1)
-All local model outputs that drive edits must be a single JSON object:
+Local model outputs that drive edits may be either:
+- A full v1 payload object (current behavior), or
+- Edits-only JSON (`{"edits":[...]}` or `[{...}, ...]`), which is scaffolded into a full payload.
+
+Full v1 payload format:
 ```json
 {
   "version": "v1",
-  "created_at": "YYYY-MM-DDTHH:MM:SSZ",
+  "created_at": "YYYY-MM-DDTHH:MM:SSZ or YYYY-MM-DDTHH:MM:SS±HH:MM",
   "edits": [],
   "assumptions": [],
   "risks": [],
@@ -155,7 +159,10 @@ Rules:
 - JSON only (no prose, no markdown fences).
 - One object only (no concatenated JSON).
 - `edits` is an array.
-- `created_at` is ISO8601 UTC with `Z`.
+- `created_at` is ISO8601 with timezone (UTC `Z` or offset).
+Scaffolding:
+- Edits-only JSON is wrapped via `python -m tools.scaffold_edits_payload`.
+- Metadata fields are deterministically populated (timestamp in America/New_York).
 
 ### Minimal runbook
 1) Generate raw output (untrusted).
@@ -182,6 +189,7 @@ Use the UI panel to run the local model pipeline without modifying the repo:
 Artifacts expected in the artifacts dir:
 - `ollama_raw_<timestamp>.txt` (raw model output)
 - `edits_<timestamp>.json` (extracted JSON edits)
+- `scaffold_edits_payload.json` / `scaffold_edits_payload.txt` (scaffolded payload + summary)
 - `verify_edits_payload.txt` / `verify_edits_payload.json`
 - `apply_edits_result.json`
 - `run_local_model_summary_<timestamp>.txt`
@@ -192,4 +200,5 @@ Artifacts expected in the artifacts dir:
 - `multiple_json_objects`: more than one JSON object found.
 - `missing_version` / `missing_edits`: required keys absent.
 - `edits_not_array`: edits key is not an array.
+- `scaffold_edits_payload_failed`: edits-only scaffolding failed (see scaffold artifacts).
 First artifact to open: `artifacts/verify_edits_contract.txt` (gate) or `artifacts/apply_edits_error.txt` (apply).

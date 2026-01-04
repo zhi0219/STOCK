@@ -157,13 +157,20 @@ if ($extractExit -ne 0) {
   Fail "extract_json_strict_failed" ("exit_code=" + $extractExit) $RepoRoot $OutDirAbs "inspect_extractor_errors" $summaryPath $DryRun.IsPresent
 }
 
-& $pythonCmd -m tools.verify_edits_payload --edits-path $editsJson --artifacts-dir $OutDirAbs
+$scaffoldOut = Join-Path $OutDirAbs "scaffold_edits_payload.json"
+& $pythonCmd -m tools.scaffold_edits_payload --edits-json $editsJson --artifacts-dir $OutDirAbs
+$scaffoldExit = $LASTEXITCODE
+if ($scaffoldExit -ne 0) {
+  Fail "scaffold_edits_payload_failed" ("exit_code=" + $scaffoldExit) $RepoRoot $OutDirAbs "inspect_scaffold_edits_payload" $summaryPath $DryRun.IsPresent
+}
+
+& $pythonCmd -m tools.verify_edits_payload --edits-path $scaffoldOut --artifacts-dir $OutDirAbs
 $verifyExit = $LASTEXITCODE
 if ($verifyExit -ne 0) {
   Fail "verify_edits_payload_failed" ("exit_code=" + $verifyExit) $RepoRoot $OutDirAbs "inspect_verify_edits_payload" $summaryPath $DryRun.IsPresent
 }
 
-$applyArgs = @("-m", "tools.apply_edits", "--repo", $RepoRoot, "--edits", $editsJson, "--artifacts-dir", $OutDirAbs)
+$applyArgs = @("-m", "tools.apply_edits", "--repo", $RepoRoot, "--edits", $scaffoldOut, "--artifacts-dir", $OutDirAbs)
 if ($DryRun.IsPresent) { $applyArgs += "--dry-run" }
 & $pythonCmd @applyArgs
 $applyExit = $LASTEXITCODE

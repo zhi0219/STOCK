@@ -63,6 +63,7 @@ Version: v1
 - **runtime_hygiene** (py_module): `tools/runtime_hygiene.py` -> `python -m tools.runtime_hygiene --help`
 - **safe_push_contract** (py_module): `tools/safe_push_contract.py` -> `python -m tools.safe_push_contract --help`
 - **safe_push_utils** (py_module): `tools/safe_push_utils.py` -> `python -m tools.safe_push_utils`
+- **scaffold_edits_payload** (py_module): `tools/scaffold_edits_payload.py` -> `python -m tools.scaffold_edits_payload --help`
 - **select_evidence** (py_module): `tools/select_evidence.py` -> `python -m tools.select_evidence --help`
 - **sim_autopilot** (py_module): `tools/sim_autopilot.py` -> `python -m tools.sim_autopilot`
 - **sim_replay** (py_module): `tools/sim_replay.py` -> `python -m tools.sim_replay --help`
@@ -243,6 +244,8 @@ Version: v1
 - `artifacts/repo_inventory.md` (produced_by: tools/inventory_repo.py)
 - `artifacts/safe_push_contract.txt` (produced_by: tools/safe_push_contract.py)
 - `artifacts/safe_push_contract_result.json` (produced_by: scripts/ci_gates.sh, tools/safe_push_contract.py)
+- `artifacts/scaffold_edits_payload.json` (produced_by: tools/scaffold_edits_payload.py)
+- `artifacts/scaffold_edits_payload.txt` (produced_by: tools/scaffold_edits_payload.py)
 - `artifacts/syntax_guard_excerpt.txt` (produced_by: scripts/ci_gates.sh, tools/syntax_guard.py)
 - `artifacts/syntax_guard_result.json` (produced_by: scripts/ci_gates.sh, tools/syntax_guard.py)
 - `artifacts/ui_preflight_result.json` (produced_by: scripts/ci_gates.sh, tools/ui_preflight.py)
@@ -574,6 +577,11 @@ Version: v1
   - commands: scripts/safe_push_v1.ps1
   - gates: none
   - artifacts: none
+- **scaffold_edits_payload**
+  - files: tools/scaffold_edits_payload.py
+  - commands: python -m tools.scaffold_edits_payload --help
+  - gates: none
+  - artifacts: artifacts/scaffold_edits_payload.json, artifacts/scaffold_edits_payload.txt
 - **select_evidence**
   - files: tools/select_evidence.py
   - commands: python -m tools.select_evidence --help
