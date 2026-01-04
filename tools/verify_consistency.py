@@ -25,6 +25,8 @@ OPTIONAL_DEPS = ("pandas", "yaml", "yfinance")
 ARCHIVE_EVENTS_PATTERN = re.compile(r"events_\d{4}-\d{2}-\d{2}\.jsonl")
 CONSISTENCY_OPT_IN_FLAGS = "--include-event-archives,--include-legacy-gates"
 CONSISTENCY_NEXT_STEP_CMD = "python tools/verify_consistency.py"
+ARCHIVE_DIR = LOGS_DIR / "event_archives"
+LEGACY_ARCHIVE_DIR = LOGS_DIR / "_event_archives"
 HELP_CHECKS: dict[str, tuple[str, ...]] = {
     "tail_events.py": OPTIONAL_DEPS,
     "replay_events.py": OPTIONAL_DEPS,
@@ -655,11 +657,13 @@ def check_events_schema(
     required_keys = {"schema_version", "ts_utc", "event_type", "symbol", "severity", "message"}
     active_files = [logs_dir / "events.jsonl", logs_dir / "events_sim.jsonl"]
     active_files = [path for path in active_files if path.exists()]
-    archives = _find_archived_event_files(root)
+    archives = _find_archived_event_files(ARCHIVE_DIR) if ARCHIVE_DIR.exists() else []
+    legacy_archives = _find_archived_event_files(LEGACY_ARCHIVE_DIR) if LEGACY_ARCHIVE_DIR.exists() else []
+    archive_count = len(archives) + len(legacy_archives)
     if not active_files and not include_archives:
         return [
             CheckResult("events schema", True, "no active events files (skipped)"),
-            CheckResult("events archives", "SKIP", str(len(archives))),
+            CheckResult("events archives", "SKIP", str(archive_count)),
         ]
 
     failures: List[str] = []
@@ -685,7 +689,7 @@ def check_events_schema(
     for path in active_files:
         _validate(path)
     if include_archives:
-        for path in archives:
+        for path in archives + legacy_archives:
             _validate(path)
 
     results: List[CheckResult] = []
@@ -697,7 +701,19 @@ def check_events_schema(
         results.append(CheckResult("events schema", True))
 
     if not include_archives:
-        results.append(CheckResult("events archives", "SKIP", str(len(archives))))
+        results.append(CheckResult("events archives", "SKIP", str(archive_count)))
+    elif legacy_archives:
+        results.append(
+            CheckResult(
+                "events archives legacy",
+                "WARN",
+                "EVENT_ARCHIVE_LEGACY|"
+                f"count={len(legacy_archives)}|"
+                "path=Logs/_event_archives|"
+                "next=python -m tools.migrate_event_archives --logs-dir Logs --archive-dir Logs/event_archives "
+                "--artifacts-dir artifacts --mode move",
+            )
+        )
     return results
 
 
