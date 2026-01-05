@@ -154,6 +154,28 @@ The wrapper runs the PR_READY gate before printing the next command and emits st
 The safe push wrapper is **print-only**. It never executes `git push`; instead it prints:
 `next=git push -u origin <branch>`
 
+## Safe Pull (Windows Local)
+Use the safe pull wrapper to prevent broken local pulls (fail-closed).
+
+### Always use the safe pull wrapper
+Run the safe pull script from repo root:
+`.\scripts\safe_pull_v1.ps1`
+
+Optional overrides:
+`.\scripts\safe_pull_v1.ps1 -Remote origin -Branch main`
+
+The wrapper enforces:
+- Repo root only (fails if not at repo root).
+- Clean worktree (`git status --porcelain` is empty).
+- No unmerged paths (`git ls-files -u` is empty).
+- No in-progress git states (MERGE_HEAD, CHERRY_PICK_HEAD, REVERT_HEAD, rebase-apply, rebase-merge, AM).
+- Fast-forward only (`git pull --ff-only`).
+
+Markers emitted:
+- `SAFE_PULL_START|...`
+- `SAFE_PULL_SUMMARY|status=PASS/FAIL|reason=...|next=...`
+- `SAFE_PULL_END`
+
 ## PowerShell Runner Contract (Windows)
 All Windows command runners must use the canonical helper: `scripts/powershell_runner.ps1`.
 It enforces deterministic exit codes, repo-root guardrails, and always writes artifacts.
