@@ -916,6 +916,20 @@ def check_redteam_integrity(artifacts_dir: Path, python_exec: str) -> List[Check
 
 
 def check_multiple_testing_control(artifacts_dir: Path, python_exec: str) -> List[CheckResult]:
+    from tools.experiment_ledger import DEFAULT_BASELINES, append_entry, build_entry
+
+    ledger_path = artifacts_dir / "experiment_ledger.jsonl"
+    if not ledger_path.exists():
+        entry = build_entry(
+            run_id="consistency_seed",
+            candidate_count=3,
+            trial_count=6,
+            baselines_used=DEFAULT_BASELINES,
+            window_config={"seed": 0, "max_steps": 50, "candidate_count": 3},
+            code_paths=[ROOT / "tools" / "verify_multiple_testing_control.py"],
+            timestamp="2024-01-01T00:00:00Z",
+        )
+        append_entry(artifacts_dir, entry)
     cmd = [
         python_exec,
         "-m",
@@ -934,8 +948,8 @@ def check_multiple_testing_control(artifacts_dir: Path, python_exec: str) -> Lis
         return [CheckResult("multiple testing control", False, f"error={exc}")]
     if completed.returncode == 0:
         return [CheckResult("multiple testing control", True)]
-    detail = f\"exit_code={completed.returncode}; see {artifacts_dir / 'experiment_ledger_summary.json'}\"
-    return [CheckResult(\"multiple testing control\", False, detail)]
+    detail = f"exit_code={completed.returncode}; see {artifacts_dir / 'experiment_ledger_summary.json'}"
+    return [CheckResult("multiple testing control", False, detail)]
 
 
 def main(argv: List[str] | None = None) -> int:

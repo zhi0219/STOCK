@@ -256,7 +256,7 @@ Version: v1
 - `artifacts/execution_model_report.json` (produced_by: tools/verify_execution_model.py)
 - `artifacts/execution_model_report.txt` (produced_by: tools/verify_consistency.py, tools/verify_execution_model.py)
 - `artifacts/execution_model_runs` (produced_by: tools/verify_execution_model.py)
-- `artifacts/experiment_ledger.jsonl` (produced_by: tools/experiment_ledger.py, tools/verify_multiple_testing_control.py)
+- `artifacts/experiment_ledger.jsonl` (produced_by: tools/experiment_ledger.py, tools/verify_consistency.py, tools/verify_multiple_testing_control.py)
 - `artifacts/experiment_ledger_summary.json` (produced_by: tools/verify_consistency.py, tools/verify_multiple_testing_control.py)
 - `artifacts/gates.log` (produced_by: scripts/ci_gates.sh, tools/action_center_report.py)
 - `artifacts/import_contract_result.json` (produced_by: scripts/ci_gates.sh, tools/doctor_report.py, tools/verify_import_contract.py)
@@ -757,7 +757,7 @@ Version: v1
   - files: tools/verify_consistency.py
   - commands: python -m tools.verify_consistency --help
   - gates: none
-  - artifacts: artifacts/data_health_report.txt, artifacts/execution_model_report.txt, artifacts/experiment_ledger_summary.json, artifacts/redteam_report.txt, artifacts/verify_docs_contract.txt, artifacts/verify_inventory_contract.txt, artifacts/walk_forward_report.txt
+  - artifacts: artifacts/data_health_report.txt, artifacts/execution_model_report.txt, artifacts/experiment_ledger.jsonl, artifacts/experiment_ledger_summary.json, artifacts/redteam_report.txt, artifacts/verify_docs_contract.txt, artifacts/verify_inventory_contract.txt, artifacts/walk_forward_report.txt
 - **verify_cooldown**
   - files: tools/verify_cooldown.py
   - commands: python -m tools.verify_cooldown
