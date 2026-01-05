@@ -77,11 +77,18 @@ def main() -> int:
     latest_dir = runs_root / "_latest"
 
     required_common = ["schema_version", "ts_utc", "run_id", "git_commit"]
+    required_promotion = required_common + [
+        "decision",
+        "baseline_results",
+        "trial_count",
+        "candidate_count",
+        "search_scale_penalty",
+    ]
     errors: List[str] = []
 
     errors.extend(_validate_artifact(artifacts["tournament_result"], required_common).reasons)
     errors.extend(_validate_artifact(artifacts["judge_result"], required_common + ["status"]).reasons)
-    errors.extend(_validate_artifact(artifacts["promotion_decision"], required_common + ["decision"]).reasons)
+    errors.extend(_validate_artifact(artifacts["promotion_decision"], required_promotion).reasons)
     errors.extend(_validate_jsonl(artifacts["promotion_history"], required_common + ["decision"]).reasons)
 
     errors.extend(
@@ -89,7 +96,7 @@ def main() -> int:
     )
     errors.extend(_validate_artifact(latest_dir / "judge_result_latest.json", required_common).reasons)
     errors.extend(
-        _validate_artifact(latest_dir / "promotion_decision_latest.json", required_common).reasons
+        _validate_artifact(latest_dir / "promotion_decision_latest.json", required_promotion).reasons
     )
     errors.extend(
         _validate_artifact(latest_dir / "promotion_history_latest.json", required_common).reasons

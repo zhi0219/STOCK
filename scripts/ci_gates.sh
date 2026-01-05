@@ -532,6 +532,47 @@ fi
 
 if [[ ${rc} -eq 0 ]]; then
   set +e
+  python3 - <<'PY'
+from pathlib import Path
+
+from tools.experiment_ledger import DEFAULT_BASELINES, append_entry, build_entry
+from tools.paths import repo_root
+
+ROOT = repo_root()
+artifacts_dir = Path("artifacts").resolve()
+entry = build_entry(
+    run_id="ci_multitest_seed",
+    candidate_count=3,
+    trial_count=6,
+    baselines_used=DEFAULT_BASELINES,
+    window_config={"seed": 0, "max_steps": 50, "candidate_count": 3},
+    code_paths=[ROOT / "tools" / "verify_multiple_testing_control.py"],
+)
+append_entry(artifacts_dir, entry)
+PY
+  ledger_seed_exit=$?
+  set -e
+  if [[ ${ledger_seed_exit} -ne 0 ]]; then
+    status="FAIL"
+    failing_gate="experiment_ledger_seed"
+    rc=${ledger_seed_exit}
+  fi
+fi
+
+if [[ ${rc} -eq 0 ]]; then
+  set +e
+  python3 -m tools.verify_multiple_testing_control --artifacts-dir "${artifacts_dir}"
+  multitest_exit=$?
+  set -e
+  if [[ ${multitest_exit} -ne 0 ]]; then
+    status="FAIL"
+    failing_gate="verify_multiple_testing_control"
+    rc=${multitest_exit}
+  fi
+fi
+
+if [[ ${rc} -eq 0 ]]; then
+  set +e
   python3 -m tools.apply_edits --repo . --edits fixtures/edits_contract/good.json --artifacts-dir "${artifacts_dir}" --dry-run
   edits_apply_exit=$?
   set -e

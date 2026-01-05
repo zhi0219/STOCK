@@ -523,6 +523,8 @@ def _py_compile_targets() -> List[Path]:
         "verify_kill_switch_recovery.py",
         "verify_run_completeness_contract.py",
         "verify_latest_artifacts.py",
+        "verify_multiple_testing_control.py",
+        "experiment_ledger.py",
     ]:
         target = TOOLS_DIR / name
         if target.exists():
@@ -913,6 +915,43 @@ def check_redteam_integrity(artifacts_dir: Path, python_exec: str) -> List[Check
     return [CheckResult("redteam integrity", False, detail)]
 
 
+def check_multiple_testing_control(artifacts_dir: Path, python_exec: str) -> List[CheckResult]:
+    from tools.experiment_ledger import DEFAULT_BASELINES, append_entry, build_entry
+
+    ledger_path = artifacts_dir / "experiment_ledger.jsonl"
+    if not ledger_path.exists():
+        entry = build_entry(
+            run_id="consistency_seed",
+            candidate_count=3,
+            trial_count=6,
+            baselines_used=DEFAULT_BASELINES,
+            window_config={"seed": 0, "max_steps": 50, "candidate_count": 3},
+            code_paths=[ROOT / "tools" / "verify_multiple_testing_control.py"],
+            timestamp="2024-01-01T00:00:00Z",
+        )
+        append_entry(artifacts_dir, entry)
+    cmd = [
+        python_exec,
+        "-m",
+        "tools.verify_multiple_testing_control",
+        "--artifacts-dir",
+        str(artifacts_dir),
+    ]
+    try:
+        completed = subprocess.run(
+            cmd,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except Exception as exc:  # pragma: no cover - subprocess guard
+        return [CheckResult("multiple testing control", False, f"error={exc}")]
+    if completed.returncode == 0:
+        return [CheckResult("multiple testing control", True)]
+    detail = f"exit_code={completed.returncode}; see {artifacts_dir / 'experiment_ledger_summary.json'}"
+    return [CheckResult("multiple testing control", False, detail)]
+
+
 def main(argv: List[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run consistency checks.")
     parser.add_argument(
@@ -955,6 +994,7 @@ def main(argv: List[str] | None = None) -> int:
         lambda: check_data_health(Path(args.artifacts_dir), python_exec),
         lambda: check_walk_forward(Path(args.artifacts_dir), python_exec),
         lambda: check_redteam_integrity(Path(args.artifacts_dir), python_exec),
+        lambda: check_multiple_testing_control(Path(args.artifacts_dir), python_exec),
     ]
     optional_checks: List[Callable[[], List[CheckResult]]] = [
         lambda: check_readme_cli_consistency(missing_deps),

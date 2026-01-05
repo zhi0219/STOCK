@@ -65,7 +65,13 @@ def _validate_required(payload: dict, required: List[str]) -> List[str]:
 
 
 def _synthetic_artifacts() -> tuple[bool, str]:
-    required_fields = ["schema_version", "created_utc", "run_id", "policy_version"]
+    required_common = ["schema_version", "created_utc", "run_id", "policy_version"]
+    required_promotion = required_common + [
+        "baseline_results",
+        "trial_count",
+        "candidate_count",
+        "search_scale_penalty",
+    ]
     created_utc = _now()
     run_id = "run_pr19_synthetic"
     policy_version = "baseline"
@@ -101,6 +107,10 @@ def _synthetic_artifacts() -> tuple[bool, str]:
                 "decision": "REJECT",
                 "reasons": ["no_candidate_available"],
                 "required_next_steps": ["collect_more_runs"],
+                "baseline_results": [],
+                "trial_count": 0,
+                "candidate_count": 0,
+                "search_scale_penalty": 0.0,
             },
         )
         _write_json(
@@ -137,13 +147,13 @@ def _synthetic_artifacts() -> tuple[bool, str]:
         )
 
         artifacts = {
-            "tournament": tournament_path,
-            "promotion_decision": decision_path,
-            "progress_judge_latest": judge_path,
-            "policy_history": history_path,
+            "tournament": (tournament_path, required_common),
+            "promotion_decision": (decision_path, required_promotion),
+            "progress_judge_latest": (judge_path, required_common),
+            "policy_history": (history_path, required_common),
         }
 
-        for name, path in artifacts.items():
+        for name, (path, required_fields) in artifacts.items():
             if not path.exists():
                 return False, f"missing_artifact:{name}"
             payload = json.loads(path.read_text(encoding="utf-8"))
