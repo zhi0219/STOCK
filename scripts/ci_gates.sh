@@ -520,6 +520,18 @@ fi
 
 if [[ ${rc} -eq 0 ]]; then
   set +e
+  python3 -m tools.verify_redteam_integrity --artifacts-dir "${artifacts_dir}"
+  redteam_exit=$?
+  set -e
+  if [[ ${redteam_exit} -ne 0 ]]; then
+    status="FAIL"
+    failing_gate="verify_redteam_integrity"
+    rc=${redteam_exit}
+  fi
+fi
+
+if [[ ${rc} -eq 0 ]]; then
+  set +e
   python3 -m tools.apply_edits --repo . --edits fixtures/edits_contract/good.json --artifacts-dir "${artifacts_dir}" --dry-run
   edits_apply_exit=$?
   set -e

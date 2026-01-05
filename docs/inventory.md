@@ -141,6 +141,7 @@ Version: v1
 - **verify_pr_template_contract** (py_module): `tools/verify_pr_template_contract.py` -> `python -m tools.verify_pr_template_contract --help`
 - **verify_progress_index** (py_module): `tools/verify_progress_index.py` -> `python -m tools.verify_progress_index`
 - **verify_progress_truth** (py_module): `tools/verify_progress_truth.py` -> `python -m tools.verify_progress_truth`
+- **verify_redteam_integrity** (py_module): `tools/verify_redteam_integrity.py` -> `python -m tools.verify_redteam_integrity --help`
 - **verify_replay** (py_module): `tools/verify_replay.py` -> `python -m tools.verify_replay`
 - **verify_repo_hygiene** (py_module): `tools/verify_repo_hygiene.py` -> `python -m tools.verify_repo_hygiene`
 - **verify_run_completeness_contract** (py_module): `tools/verify_run_completeness_contract.py` -> `python -m tools.verify_run_completeness_contract`
@@ -212,6 +213,9 @@ Version: v1
 - **tools.verify_walk_forward**: `python3 -m tools.verify_walk_forward --artifacts-dir "${artifacts_dir}"`
   - markers_expected: none
   - artifacts_expected: artifacts/walk_forward_report.json, artifacts/walk_forward_report.txt, artifacts/walk_forward_windows.csv
+- **tools.verify_redteam_integrity**: `python3 -m tools.verify_redteam_integrity --artifacts-dir "${artifacts_dir}"`
+  - markers_expected: REDTEAM_END, REDTEAM_START, REDTEAM_SUMMARY
+  - artifacts_expected: artifacts/redteam_report.json, artifacts/redteam_report.txt
 - **tools.apply_edits**: `python3 -m tools.apply_edits --repo . --edits fixtures/edits_contract/good.json --artifacts-dir "${artifacts_dir}" --dry-run`
   - markers_expected: none
   - artifacts_expected: none
@@ -263,6 +267,8 @@ Version: v1
 - `artifacts/proof_summary.json` (produced_by: scripts/ci_gates.sh)
 - `artifacts/ps_parse_result.json` (produced_by: scripts/ci_gates.sh, tools/ps_parse_guard.py)
 - `artifacts/redteam.txt` (produced_by: scripts/build_verify_edits_v1.ps1)
+- `artifacts/redteam_report.json` (produced_by: tools/verify_redteam_integrity.py)
+- `artifacts/redteam_report.txt` (produced_by: tools/verify_consistency.py, tools/verify_redteam_integrity.py)
 - `artifacts/repo_inventory.json` (produced_by: tools/inventory_repo.py)
 - `artifacts/repo_inventory.md` (produced_by: tools/inventory_repo.py)
 - `artifacts/safe_pull_contract.txt` (produced_by: tools/safe_pull_contract.py)
@@ -739,7 +745,7 @@ Version: v1
   - files: tools/verify_consistency.py
   - commands: python -m tools.verify_consistency --help
   - gates: none
-  - artifacts: artifacts/data_health_report.txt, artifacts/execution_model_report.txt, artifacts/verify_docs_contract.txt, artifacts/verify_inventory_contract.txt, artifacts/walk_forward_report.txt
+  - artifacts: artifacts/data_health_report.txt, artifacts/execution_model_report.txt, artifacts/redteam_report.txt, artifacts/verify_docs_contract.txt, artifacts/verify_inventory_contract.txt, artifacts/walk_forward_report.txt
 - **verify_cooldown**
   - files: tools/verify_cooldown.py
   - commands: python -m tools.verify_cooldown
@@ -995,6 +1001,11 @@ Version: v1
   - commands: python -m tools.verify_progress_truth
   - gates: none
   - artifacts: none
+- **verify_redteam_integrity**
+  - files: tools/verify_redteam_integrity.py
+  - commands: python -m tools.verify_redteam_integrity --help
+  - gates: tools.verify_redteam_integrity
+  - artifacts: artifacts/redteam_report.json, artifacts/redteam_report.txt
 - **verify_replay**
   - files: tools/verify_replay.py
   - commands: python -m tools.verify_replay
