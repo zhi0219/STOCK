@@ -12,6 +12,7 @@ Version: v1
 - **powershell_runner** (ps1): `scripts/powershell_runner.ps1` -> `scripts/powershell_runner.ps1`
 - **run_local_model_edits_v1** (ps1): `scripts/run_local_model_edits_v1.ps1` -> `scripts/run_local_model_edits_v1.ps1`
 - **run_ui_windows** (ps1): `scripts/run_ui_windows.ps1` -> `scripts/run_ui_windows.ps1`
+- **safe_pull_v1** (ps1): `scripts/safe_pull_v1.ps1` -> `scripts/safe_pull_v1.ps1`
 - **safe_push_v1** (ps1): `scripts/safe_push_v1.ps1` -> `scripts/safe_push_v1.ps1`
 - **windows_launch_ui** (ps1): `scripts/windows_launch_ui.ps1` -> `scripts/windows_launch_ui.ps1`
 - **action_center_apply** (py_module): `tools/action_center_apply.py` -> `python -m tools.action_center_apply --help`
@@ -62,6 +63,7 @@ Version: v1
 - **run_ollama** (py_module): `tools/run_ollama.py` -> `python -m tools.run_ollama --help`
 - **run_py** (py_module): `tools/run_py.py` -> `python -m tools.run_py`
 - **runtime_hygiene** (py_module): `tools/runtime_hygiene.py` -> `python -m tools.runtime_hygiene --help`
+- **safe_pull_contract** (py_module): `tools/safe_pull_contract.py` -> `python -m tools.safe_pull_contract --help`
 - **safe_push_contract** (py_module): `tools/safe_push_contract.py` -> `python -m tools.safe_push_contract --help`
 - **safe_push_utils** (py_module): `tools/safe_push_utils.py` -> `python -m tools.safe_push_utils`
 - **scaffold_edits_payload** (py_module): `tools/scaffold_edits_payload.py` -> `python -m tools.scaffold_edits_payload --help`
@@ -253,6 +255,8 @@ Version: v1
 - `artifacts/redteam.txt` (produced_by: scripts/build_verify_edits_v1.ps1)
 - `artifacts/repo_inventory.json` (produced_by: tools/inventory_repo.py)
 - `artifacts/repo_inventory.md` (produced_by: tools/inventory_repo.py)
+- `artifacts/safe_pull_contract.txt` (produced_by: tools/safe_pull_contract.py)
+- `artifacts/safe_pull_contract_result.json` (produced_by: tools/safe_pull_contract.py)
 - `artifacts/safe_push_contract.txt` (produced_by: tools/safe_push_contract.py)
 - `artifacts/safe_push_contract_result.json` (produced_by: scripts/ci_gates.sh, tools/safe_push_contract.py)
 - `artifacts/scaffold_edits_payload.json` (produced_by: tools/scaffold_edits_payload.py)
@@ -576,6 +580,16 @@ Version: v1
 - **runtime_hygiene**
   - files: tools/runtime_hygiene.py
   - commands: python -m tools.runtime_hygiene --help
+  - gates: none
+  - artifacts: none
+- **safe_pull_contract**
+  - files: tools/safe_pull_contract.py
+  - commands: python -m tools.safe_pull_contract --help
+  - gates: none
+  - artifacts: artifacts/safe_pull_contract.txt, artifacts/safe_pull_contract_result.json
+- **safe_pull_v1**
+  - files: scripts/safe_pull_v1.ps1
+  - commands: scripts/safe_pull_v1.ps1
   - gates: none
   - artifacts: none
 - **safe_push_contract**
