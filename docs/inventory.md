@@ -166,6 +166,7 @@ Version: v1
 - **verify_ui_verify_buttons** (py_module): `tools/verify_ui_verify_buttons.py` -> `python -m tools.verify_ui_verify_buttons`
 - **verify_ui_wakeup_dashboard** (py_module): `tools/verify_ui_wakeup_dashboard.py` -> `python -m tools.verify_ui_wakeup_dashboard`
 - **verify_utf8_stdio** (py_module): `tools/verify_utf8_stdio.py` -> `python -m tools.verify_utf8_stdio`
+- **verify_walk_forward** (py_module): `tools/verify_walk_forward.py` -> `python -m tools.verify_walk_forward --help`
 - **verify_windows_smoke** (py_module): `tools/verify_windows_smoke.py` -> `python -m tools.verify_windows_smoke --help`
 - **wakeup_dashboard** (py_module): `tools/wakeup_dashboard.py` -> `python -m tools.wakeup_dashboard`
 - **walk_forward_eval** (py_module): `tools/walk_forward_eval.py` -> `python -m tools.walk_forward_eval --help`
@@ -208,6 +209,9 @@ Version: v1
 - **tools.verify_data_health**: `python3 -m tools.verify_data_health --artifacts-dir "${artifacts_dir}"`
   - markers_expected: none
   - artifacts_expected: artifacts/data_health_report.json, artifacts/data_health_report.txt
+- **tools.verify_walk_forward**: `python3 -m tools.verify_walk_forward --artifacts-dir "${artifacts_dir}"`
+  - markers_expected: none
+  - artifacts_expected: artifacts/walk_forward_report.json, artifacts/walk_forward_report.txt, artifacts/walk_forward_windows.csv
 - **tools.apply_edits**: `python3 -m tools.apply_edits --repo . --edits fixtures/edits_contract/good.json --artifacts-dir "${artifacts_dir}" --dry-run`
   - markers_expected: none
   - artifacts_expected: none
@@ -277,6 +281,9 @@ Version: v1
 - `artifacts/verify_edits_payload.txt` (produced_by: tools/ui_app.py, tools/verify_edits_payload.py)
 - `artifacts/verify_inventory_contract.json` (produced_by: tools/verify_inventory_contract.py)
 - `artifacts/verify_inventory_contract.txt` (produced_by: tools/verify_consistency.py, tools/verify_inventory_contract.py)
+- `artifacts/walk_forward_report.json` (produced_by: tools/verify_walk_forward.py)
+- `artifacts/walk_forward_report.txt` (produced_by: tools/verify_consistency.py, tools/verify_walk_forward.py)
+- `artifacts/walk_forward_windows.csv` (produced_by: tools/verify_walk_forward.py)
 - `artifacts/windows_smoke.txt` (produced_by: scripts/build_verify_edits_v1.ps1)
 
 ## Contracts
@@ -732,7 +739,7 @@ Version: v1
   - files: tools/verify_consistency.py
   - commands: python -m tools.verify_consistency --help
   - gates: none
-  - artifacts: artifacts/data_health_report.txt, artifacts/execution_model_report.txt, artifacts/verify_docs_contract.txt, artifacts/verify_inventory_contract.txt
+  - artifacts: artifacts/data_health_report.txt, artifacts/execution_model_report.txt, artifacts/verify_docs_contract.txt, artifacts/verify_inventory_contract.txt, artifacts/walk_forward_report.txt
 - **verify_cooldown**
   - files: tools/verify_cooldown.py
   - commands: python -m tools.verify_cooldown
@@ -1113,6 +1120,11 @@ Version: v1
   - commands: python -m tools.verify_utf8_stdio
   - gates: none
   - artifacts: none
+- **verify_walk_forward**
+  - files: tools/verify_walk_forward.py
+  - commands: python -m tools.verify_walk_forward --help
+  - gates: tools.verify_walk_forward
+  - artifacts: artifacts/walk_forward_report.json, artifacts/walk_forward_report.txt, artifacts/walk_forward_windows.csv
 - **verify_windows_smoke**
   - files: tools/verify_windows_smoke.py
   - commands: python -m tools.verify_windows_smoke --help

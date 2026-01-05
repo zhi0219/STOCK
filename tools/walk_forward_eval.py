@@ -4,218 +4,289 @@ import argparse
 import csv
 import json
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Callable, Iterable, Sequence
+from zoneinfo import ZoneInfo
 
-from tools.fs_atomic import atomic_write_json, atomic_write_text
-from tools.paths import logs_dir, repo_root, to_repo_relative
+from tools.paths import repo_root, to_repo_relative
 
 ROOT = repo_root()
-DEFAULT_QUOTES = ROOT / "Data" / "quotes.csv"
-DEFAULT_WINDOWS = 3
-DEFAULT_MIN_WINDOW_SIZE = 40
-DEFAULT_MAX_DRAWDOWN_PCT = 5.0
-DEFAULT_MIN_RETURN_PCT = 0.0
-DEFAULT_WINDOW_PASSES_REQUIRED = 2
+DEFAULT_DATA_PATH = ROOT / "Data" / "quotes.csv"
+FIXTURE_DATA_PATH = ROOT / "fixtures" / "walk_forward" / "ohlcv.csv"
+DEFAULT_TIMEZONE = "America/New_York"
 
 
 @dataclass(frozen=True)
-class Quote:
-    price: float
-    ts_utc: str | None = None
+class Bar:
+    timestamp: datetime
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float
 
 
-def _now_ts() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+@dataclass(frozen=True)
+class WindowSpec:
+    index: int
+    train_start: int
+    train_end: int
+    gap_start: int
+    gap_end: int
+    test_start: int
+    test_end: int
 
 
-def _load_quotes(path: Path, limit: int | None = None) -> tuple[list[Quote], str]:
-    quotes: list[Quote] = []
-    if path.exists():
-        with path.open("r", newline="", encoding="utf-8") as handle:
-            reader = csv.DictReader(handle)
-            for row in reader:
-                raw_price = row.get("price")
-                if raw_price in (None, ""):
-                    continue
-                try:
-                    price_val = float(raw_price)
-                except ValueError:
-                    continue
-                ts_utc = row.get("ts_utc") or None
-                quotes.append(Quote(price=price_val, ts_utc=ts_utc))
-                if limit is not None and len(quotes) >= limit:
-                    break
-    if quotes:
-        return quotes, "quotes.csv"
-
-    length = max(DEFAULT_MIN_WINDOW_SIZE * DEFAULT_WINDOWS, 120)
-    synthetic: list[Quote] = []
-    base = 100.0
-    for idx in range(length):
-        seasonal = (idx % 10) - 5
-        price = base + idx * 0.08 + seasonal * 0.15
-        synthetic.append(Quote(price=round(price, 4), ts_utc=None))
-    return synthetic, "synthetic_fallback"
+StrategyFn = Callable[[Sequence[Bar]], float]
 
 
-def _max_drawdown(prices: Iterable[float]) -> float:
-    peak = None
-    max_drawdown = 0.0
-    for price in prices:
-        if peak is None or price > peak:
-            peak = price
-        if peak and peak > 0:
-            drawdown = (peak - price) / peak * 100.0
-            if drawdown > max_drawdown:
-                max_drawdown = drawdown
-    return max_drawdown
+def _resolve_data_path(raw_path: str | None) -> Path:
+    if raw_path:
+        path = Path(raw_path)
+    else:
+        path = DEFAULT_DATA_PATH if DEFAULT_DATA_PATH.exists() else FIXTURE_DATA_PATH
+    if not path.is_absolute():
+        path = ROOT / path
+    path = path.expanduser().resolve()
+    if path.is_dir():
+        candidates = sorted(path.glob("*.csv"))
+        if not candidates:
+            raise FileNotFoundError(f"No CSV files found in {path}")
+        path = candidates[0]
+    if not path.exists():
+        raise FileNotFoundError(f"Dataset not found: {path}")
+    return path
 
 
-def _window_bounds(total: int, window_count: int, min_size: int) -> list[tuple[int, int]]:
+def _parse_float(value: str | None, default: float = 0.0) -> float:
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except ValueError:
+        return default
+
+
+def _parse_timestamp(raw: str, tz: ZoneInfo) -> datetime:
+    value = raw.strip()
+    if value.endswith("Z"):
+        value = value[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        parsed = datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=tz)
+    return parsed.astimezone(tz)
+
+
+def _load_bars(path: Path, tz: ZoneInfo) -> list[Bar]:
+    with path.open("r", encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle)
+        rows = list(reader)
+    if not rows:
+        return []
+    columns = {name.lower(): name for name in rows[0].keys() if name}
+    ts_key = columns.get("timestamp") or columns.get("ts") or columns.get("datetime")
+    open_key = columns.get("open")
+    high_key = columns.get("high")
+    low_key = columns.get("low")
+    close_key = columns.get("close") or columns.get("price")
+    volume_key = columns.get("volume") or columns.get("vol")
+    if not ts_key or not close_key:
+        raise ValueError("Input CSV must include timestamp and close columns")
+
+    bars: list[Bar] = []
+    for row in rows:
+        raw_ts = row.get(ts_key) or ""
+        if not raw_ts:
+            continue
+        ts = _parse_timestamp(raw_ts, tz)
+        bars.append(
+            Bar(
+                timestamp=ts,
+                open=_parse_float(row.get(open_key)),
+                high=_parse_float(row.get(high_key)),
+                low=_parse_float(row.get(low_key)),
+                close=_parse_float(row.get(close_key)),
+                volume=_parse_float(row.get(volume_key)),
+            )
+        )
+    bars.sort(key=lambda bar: bar.timestamp)
+    return bars
+
+
+def _return_pct(prices: Sequence[Bar], position: float) -> float:
+    if len(prices) < 2:
+        return 0.0
+    start_price = prices[0].close
+    end_price = prices[-1].close
+    if start_price == 0:
+        return 0.0
+    return round((end_price - start_price) / start_price * 100.0 * position, 4)
+
+
+def _simple_momentum(train: Sequence[Bar]) -> float:
+    if len(train) < 2:
+        return 0.0
+    return 1.0 if train[-1].close > train[0].close else 0.0
+
+
+def _placeholder_policy(train: Sequence[Bar]) -> float:
+    return _simple_momentum(train)
+
+
+BASELINE_POLICIES: dict[str, StrategyFn] = {
+    "DoNothing": lambda train: 0.0,
+    "BuyHold": lambda train: 1.0,
+    "SimpleMomentum": _simple_momentum,
+}
+
+STRATEGY_POLICIES: dict[str, StrategyFn] = {
+    "placeholder": _placeholder_policy,
+}
+
+
+def build_windows(total: int, train_size: int, gap_size: int, test_size: int, step_size: int) -> list[WindowSpec]:
     if total <= 0:
         return []
-    window_count = max(1, int(window_count))
-    min_size = max(1, int(min_size))
-    size = max(min_size, total // window_count)
-    bounds: list[tuple[int, int]] = []
+    train_size = max(1, int(train_size))
+    gap_size = max(0, int(gap_size))
+    test_size = max(1, int(test_size))
+    step_size = max(1, int(step_size))
+
+    windows: list[WindowSpec] = []
     start = 0
-    while start < total:
-        end = min(total, start + size)
-        bounds.append((start, end))
-        start = end
-    return bounds
-
-
-def _build_windows(
-    quotes: list[Quote],
-    bounds: list[tuple[int, int]],
-    max_drawdown_pct: float,
-    min_return_pct: float,
-    run_id: str,
-    data_source: str,
-) -> list[dict[str, Any]]:
-    windows: list[dict[str, Any]] = []
-    for idx, (start, end) in enumerate(bounds, start=1):
-        subset = quotes[start:end]
-        if not subset:
-            continue
-        start_price = subset[0].price
-        end_price = subset[-1].price
-        return_pct = 0.0
-        if start_price:
-            return_pct = (end_price - start_price) / start_price * 100.0
-        drawdown_pct = _max_drawdown([q.price for q in subset])
-        score = round(return_pct - drawdown_pct, 4)
-        reasons: list[str] = []
-        status = "PASS"
-        if return_pct < min_return_pct:
-            status = "FAIL"
-            reasons.append(f"return_below:{min_return_pct:.2f}pct")
-        if drawdown_pct > max_drawdown_pct:
-            status = "FAIL"
-            reasons.append(f"drawdown_above:{max_drawdown_pct:.2f}pct")
+    idx = 1
+    while start + train_size + gap_size + test_size <= total:
+        train_start = start
+        train_end = start + train_size
+        gap_start = train_end
+        gap_end = gap_start + gap_size
+        test_start = gap_end
+        test_end = test_start + test_size
         windows.append(
-            {
-                "schema_version": 1,
-                "ts_utc": _now_ts(),
-                "run_id": run_id,
-                "window_id": idx,
-                "start_index": start,
-                "end_index": end - 1,
-                "status": status,
-                "reasons": reasons,
-                "metrics": {
-                    "return_pct": round(return_pct, 4),
-                    "max_drawdown_pct": round(drawdown_pct, 4),
-                    "score": score,
-                    "start_price": start_price,
-                    "end_price": end_price,
-                },
-                "ts_start": subset[0].ts_utc,
-                "ts_end": subset[-1].ts_utc,
-                "data_source": data_source,
-            }
+            WindowSpec(
+                index=idx,
+                train_start=train_start,
+                train_end=train_end,
+                gap_start=gap_start,
+                gap_end=gap_end,
+                test_start=test_start,
+                test_end=test_end,
+            )
         )
+        idx += 1
+        start += step_size
     return windows
 
 
-def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
-    payload = "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows)
-    atomic_write_text(path, payload)
+def evaluate_walk_forward(
+    bars: Sequence[Bar],
+    window_specs: Sequence[WindowSpec],
+    strategy_name: str,
+) -> dict[str, object]:
+    if strategy_name not in STRATEGY_POLICIES:
+        raise ValueError(f"Unknown strategy policy: {strategy_name}")
+    strategy_fn = STRATEGY_POLICIES[strategy_name]
+
+    windows: list[dict[str, object]] = []
+    for spec in window_specs:
+        train = bars[spec.train_start : spec.train_end]
+        gap = bars[spec.gap_start : spec.gap_end]
+        test = bars[spec.test_start : spec.test_end]
+        strategy_signal = strategy_fn(train)
+        strategy_return = _return_pct(test, strategy_signal)
+        baseline_returns = {
+            name: _return_pct(test, policy(train)) for name, policy in BASELINE_POLICIES.items()
+        }
+        comparison = {
+            name: round(strategy_return - baseline_return, 4)
+            for name, baseline_return in baseline_returns.items()
+        }
+        windows.append(
+            {
+                "window_index": spec.index,
+                "train_range": (spec.train_start, spec.train_end - 1),
+                "gap_range": (spec.gap_start, spec.gap_end - 1) if spec.gap_end > spec.gap_start else None,
+                "test_range": (spec.test_start, spec.test_end - 1),
+                "train_start": bars[spec.train_start].timestamp.isoformat(),
+                "train_end": bars[spec.train_end - 1].timestamp.isoformat(),
+                "test_start": bars[spec.test_start].timestamp.isoformat(),
+                "test_end": bars[spec.test_end - 1].timestamp.isoformat(),
+                "strategy": {
+                    "name": strategy_name,
+                    "signal": strategy_signal,
+                    "return_pct": strategy_return,
+                },
+                "baselines": baseline_returns,
+                "comparison": comparison,
+                "gap_size": len(gap),
+            }
+        )
+    strategy_returns = [window["strategy"]["return_pct"] for window in windows]
+    baseline_averages = {
+        name: round(sum(window["baselines"][name] for window in windows) / len(windows), 4)
+        if windows
+        else 0.0
+        for name in BASELINE_POLICIES
+    }
+    summary = {
+        "window_count": len(windows),
+        "strategy_average_return_pct": round(sum(strategy_returns) / len(strategy_returns), 4) if windows else 0.0,
+        "baseline_average_returns_pct": baseline_averages,
+    }
+    return {
+        "strategy": strategy_name,
+        "baselines": list(BASELINE_POLICIES.keys()),
+        "windows": windows,
+        "summary": summary,
+    }
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Walk-forward evaluation (SIM-only)",
+        description="Deterministic walk-forward evaluation",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument("--input", default=str(DEFAULT_QUOTES), help="Quotes CSV input")
-    parser.add_argument("--output-dir", default=str(logs_dir() / "runtime" / "walk_forward"))
-    parser.add_argument("--latest-dir", default=None, help="Directory for _latest pointers")
-    parser.add_argument("--window-count", type=int, default=DEFAULT_WINDOWS)
-    parser.add_argument("--window-passes-required", type=int, default=DEFAULT_WINDOW_PASSES_REQUIRED)
-    parser.add_argument("--min-window-size", type=int, default=DEFAULT_MIN_WINDOW_SIZE)
-    parser.add_argument("--max-drawdown-pct", type=float, default=DEFAULT_MAX_DRAWDOWN_PCT)
-    parser.add_argument("--min-return-pct", type=float, default=DEFAULT_MIN_RETURN_PCT)
-    parser.add_argument("--limit", type=int, default=None, help="Max rows to read")
+    parser.add_argument("--input", default=None, help="Input OHLCV CSV path")
+    parser.add_argument("--train-size", type=int, default=5, help="Training window size (bars)")
+    parser.add_argument("--gap-size", type=int, default=2, help="Embargo/gap size (bars)")
+    parser.add_argument("--test-size", type=int, default=4, help="Test window size (bars)")
+    parser.add_argument("--step-size", type=int, default=4, help="Rolling step size (bars)")
+    parser.add_argument("--timezone", default=DEFAULT_TIMEZONE, help="Timezone for timestamps")
+    parser.add_argument("--strategy", default="placeholder", help="Strategy policy name")
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
-    input_path = Path(args.input)
-    output_dir = Path(args.output_dir)
-    latest_dir = Path(args.latest_dir) if args.latest_dir else output_dir / "_latest"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    latest_dir.mkdir(parents=True, exist_ok=True)
-
-    quotes, data_source = _load_quotes(input_path, limit=args.limit)
-    run_id = f"walk_forward_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
-
-    bounds = _window_bounds(len(quotes), args.window_count, args.min_window_size)
-    windows = _build_windows(
-        quotes,
-        bounds,
-        max_drawdown_pct=args.max_drawdown_pct,
-        min_return_pct=args.min_return_pct,
-        run_id=run_id,
-        data_source=data_source,
+    tz = ZoneInfo(args.timezone)
+    data_path = _resolve_data_path(args.input)
+    bars = _load_bars(data_path, tz)
+    window_specs = build_windows(
+        len(bars),
+        train_size=args.train_size,
+        gap_size=args.gap_size,
+        test_size=args.test_size,
+        step_size=args.step_size,
     )
-    window_passes = sum(1 for window in windows if window.get("status") == "PASS")
-    window_required = max(1, int(args.window_passes_required))
-    status = "PASS" if window_passes >= window_required and len(windows) >= window_required else "FAIL"
-    reasons: list[str] = []
-    if len(windows) < window_required:
-        reasons.append("insufficient_window_count")
-    if status != "PASS":
-        reasons.append("insufficient_window_passes")
-
-    result_path = output_dir / "walk_forward_result.json"
-    windows_path = output_dir / "walk_forward_windows.jsonl"
-    latest_result_path = latest_dir / "walk_forward_result_latest.json"
-    latest_windows_path = latest_dir / "walk_forward_windows_latest.jsonl"
-
-    result_payload = {
+    report = evaluate_walk_forward(bars, window_specs, args.strategy)
+    payload = {
         "schema_version": 1,
-        "ts_utc": _now_ts(),
-        "run_id": run_id,
-        "status": status,
-        "window_count": len(windows),
-        "window_passes": window_passes,
-        "window_passes_required": window_required if windows else 0,
-        "reasons": reasons,
-        "data_source": data_source,
-        "input_path": to_repo_relative(input_path) if input_path.exists() else None,
-        "result_path": to_repo_relative(result_path),
-        "windows_path": to_repo_relative(windows_path),
+        "generated_at": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "input_path": to_repo_relative(data_path),
+        "timezone": args.timezone,
+        "window_config": {
+            "train_size": args.train_size,
+            "gap_size": args.gap_size,
+            "test_size": args.test_size,
+            "step_size": args.step_size,
+        },
+        **report,
     }
-
-    atomic_write_json(result_path, result_payload)
-    _write_jsonl(windows_path, windows)
-    atomic_write_json(latest_result_path, result_payload)
-    _write_jsonl(latest_windows_path, windows)
+    print(json.dumps(payload, indent=2, ensure_ascii=False))
     return 0
 
 
