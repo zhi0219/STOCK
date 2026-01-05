@@ -198,6 +198,22 @@ if safe_push_contract_path.exists():
         )
         safe_push_contract_errors = safe_push_contract_result.get("errors") or []
 
+powershell_join_path_path = artifacts_dir / "powershell_join_path_contract_result.json"
+powershell_join_path_status = "UNKNOWN"
+powershell_join_path_errors = []
+if powershell_join_path_path.exists():
+    try:
+        powershell_join_path_result = json.loads(
+            powershell_join_path_path.read_text(encoding="utf-8", errors="replace")
+        )
+    except Exception:
+        powershell_join_path_result = {"status": "UNKNOWN", "errors": []}
+    if isinstance(powershell_join_path_result, dict):
+        powershell_join_path_status = str(
+            powershell_join_path_result.get("status", "UNKNOWN")
+        )
+        powershell_join_path_errors = powershell_join_path_result.get("errors") or []
+
 ui_preflight_result_path = artifacts_dir / "ui_preflight_result.json"
 ui_preflight_status = "UNKNOWN"
 ui_preflight_reason = "unknown"
@@ -278,6 +294,8 @@ summary = {
     "ps_parse_errors": ps_parse_errors,
     "safe_push_contract_status": safe_push_contract_status,
     "safe_push_contract_errors": safe_push_contract_errors,
+    "powershell_join_path_status": powershell_join_path_status,
+    "powershell_join_path_errors": powershell_join_path_errors,
     "ui_preflight_status": ui_preflight_status,
     "ui_preflight_reason": ui_preflight_reason,
     "ui_preflight_repo_root": ui_preflight_repo_root,
@@ -328,6 +346,8 @@ summary_lines = [
     f"- **ps_parse_errors**: `{ps_parse_errors}`",
     f"- **safe_push_contract_status**: `{safe_push_contract_status}`",
     f"- **safe_push_contract_errors**: `{safe_push_contract_errors}`",
+    f"- **powershell_join_path_status**: `{powershell_join_path_status}`",
+    f"- **powershell_join_path_errors**: `{powershell_join_path_errors}`",
     f"- **ui_preflight_status**: `{ui_preflight_status}`",
     f"- **ui_preflight_reason**: `{ui_preflight_reason}`",
     f"- **ui_preflight_repo_root**: `{ui_preflight_repo_root or 'n/a'}`",
@@ -419,6 +439,18 @@ if [[ ${rc} -eq 0 ]]; then
     status="FAIL"
     failing_gate="safe_push_contract"
     rc=${safe_push_contract_exit}
+  fi
+fi
+
+if [[ ${rc} -eq 0 ]]; then
+  set +e
+  python3 -m tools.verify_powershell_join_path_contract --artifacts-dir "${artifacts_dir}"
+  powershell_join_path_exit=$?
+  set -e
+  if [[ ${powershell_join_path_exit} -ne 0 ]]; then
+    status="FAIL"
+    failing_gate="powershell_join_path_contract"
+    rc=${powershell_join_path_exit}
   fi
 fi
 
