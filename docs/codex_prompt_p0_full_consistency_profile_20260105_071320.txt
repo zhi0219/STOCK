@@ -1,0 +1,63 @@
+TITLE: P0 — Full Consistency Profile + DEGRADED Allowlist + Generated-Doc Drift Hardening (Reality-First)
+
+CONTEXT
+- We follow Route A: default gates stay stable; FULL checks run periodically and must produce auditable evidence.
+- verify_consistency currently allows PASS/DEGRADED; skip/legacy are opt-in.
+- We want to eliminate repeated failure sources: ambiguous DEGRADED, inventory/docs drift, and local merge-conflict churn.
+- Must remain SIM-only + READ_ONLY. Deterministic decision layer. AI cannot control decisions.
+
+REQUIREMENTS (fail-closed)
+1) Add a FULL consistency profile:
+   - Implement either:
+     a) `python -m tools.verify_consistency --profile full`, OR
+     b) a wrapper module `tools.verify_consistency_full` that calls verify_consistency with:
+        `--include-event-archives --include-legacy-gates`
+   - FULL run MUST emit stable markers:
+     FULL_CONSISTENCY_START / FULL_CONSISTENCY_SUMMARY / FULL_CONSISTENCY_END
+   - FULL run MUST write a JSON report artifact with:
+     status PASS/DEGRADED/FAIL, failing gates list, skipped list (ideally none in full),
+     code hash, data hash (if available), config snapshot, runtime env, and paths to logs.
+
+2) DEGRADED allowlist enforcement:
+   - Define explicit allowed DEGRADED reasons for DEFAULT consistency (Route A), e.g.:
+     - "skipped=events archives"
+     - "skipped=verify_pr20_gate.py (legacy)" (or other explicitly listed legacy gates)
+   - Any DEGRADED outside the allowlist MUST be treated as FAIL (exit!=0), with clear reason.
+   - Document this policy in docs/gates.md.
+
+3) Generated-doc drift hardening (inventory/docs):
+   - Ensure inventory output is deterministic across OS (LF-only, no timestamps, stable ordering).
+   - Ensure verify_inventory_contract produces:
+     - START/END markers,
+     - first-diff summary,
+     - diff artifact path (LF-normalized)
+   - Provide a single canonical fix command in the FAIL output:
+     `python -m tools.inventory_repo --artifacts-dir artifacts --write-docs`
+   - (Optional but valuable) Add a small "git conflict marker" check gate that fails if docs contain "<<<<<<<" etc.
+
+4) CI / Scheduling (Route A):
+   - Keep existing CI gates for DEFAULT checks.
+   - Add a non-blocking scheduled workflow (nightly) OR workflow_dispatch job that runs FULL consistency
+     and uploads artifacts. It should not auto-merge or auto-promote anything.
+   - Output must remain auditable and reproducible.
+
+GATES / PROOF (must run)
+- python -m tools.compile_check --targets tools scripts tests --artifacts-dir artifacts
+- python -m tools.verify_inventory_contract --artifacts-dir artifacts
+- python -m tools.verify_consistency --artifacts-dir artifacts
+- python -m tools.verify_consistency --include-event-archives --include-legacy-gates --artifacts-dir artifacts (or --profile full)
+- python -m unittest -v tools.tests.test_verify_inventory_contract (and any new tests you add)
+
+TESTS (required)
+- Unit tests for:
+  - DEGRADED allowlist behavior (allowed vs rejected)
+  - FULL profile markers + JSON report presence
+  - first-diff summary presence in inventory contract verifier
+  - (if added) conflict-marker gate
+
+READY_TO_MERGE: YES/NO (fail-closed)
+ROLLBACK: git revert <commit>
+
+NOTES
+- Do NOT add any push/pull automation. Keep safe_push print-only and safe_pull ff-only.
+- Preserve stable markers style and artifacts paths conventions.
