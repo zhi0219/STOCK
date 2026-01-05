@@ -890,6 +890,29 @@ def check_walk_forward(artifacts_dir: Path, python_exec: str) -> List[CheckResul
     return [CheckResult("walk forward", False, detail)]
 
 
+def check_redteam_integrity(artifacts_dir: Path, python_exec: str) -> List[CheckResult]:
+    cmd = [
+        python_exec,
+        "-m",
+        "tools.verify_redteam_integrity",
+        "--artifacts-dir",
+        str(artifacts_dir),
+    ]
+    try:
+        completed = subprocess.run(
+            cmd,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except Exception as exc:  # pragma: no cover - subprocess guard
+        return [CheckResult("redteam integrity", False, f"error={exc}")]
+    if completed.returncode == 0:
+        return [CheckResult("redteam integrity", True)]
+    detail = f"exit_code={completed.returncode}; see {artifacts_dir / 'redteam_report.txt'}"
+    return [CheckResult("redteam integrity", False, detail)]
+
+
 def main(argv: List[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run consistency checks.")
     parser.add_argument(
@@ -931,6 +954,7 @@ def main(argv: List[str] | None = None) -> int:
         lambda: check_execution_model(Path(args.artifacts_dir), python_exec),
         lambda: check_data_health(Path(args.artifacts_dir), python_exec),
         lambda: check_walk_forward(Path(args.artifacts_dir), python_exec),
+        lambda: check_redteam_integrity(Path(args.artifacts_dir), python_exec),
     ]
     optional_checks: List[Callable[[], List[CheckResult]]] = [
         lambda: check_readme_cli_consistency(missing_deps),
