@@ -46,19 +46,22 @@ Each gate must emit PASS/FAIL semantics and fail-closed by default.
 11) **verify_data_health** (`python -m tools.verify_data_health --artifacts-dir artifacts`)
    - PASS: data health report generated with no critical anomalies.
    - FAIL: integrity checks failed (monotonicity, parse errors, missingness, or jump detection).
-12) **apply_edits_dry_run** (`python -m tools.apply_edits --repo . --edits fixtures/edits_contract/good.json --artifacts-dir artifacts --dry-run`)
+12) **verify_walk_forward** (`python -m tools.verify_walk_forward --artifacts-dir artifacts`)
+   - PASS: walk-forward report generated with non-zero embargo and baseline comparisons.
+   - FAIL: missing windows, zero/invalid embargo, or missing artifacts.
+13) **apply_edits_dry_run** (`python -m tools.apply_edits --repo . --edits fixtures/edits_contract/good.json --artifacts-dir artifacts --dry-run`)
    - PASS: edits dry-run succeeded.
    - FAIL: edits dry-run failed.
-13) **extract_json_strict_negative** (`python -m tools.extract_json_strict --raw-text fixtures/extract_json_strict/bad_fenced.txt --out-json artifacts/extract_json_strict_bad.json`)
+14) **extract_json_strict_negative** (`python -m tools.extract_json_strict --raw-text fixtures/extract_json_strict/bad_fenced.txt --out-json artifacts/extract_json_strict_bad.json`)
    - PASS: gate fails as expected on bad input.
    - FAIL: unexpected success on bad input.
-14) **verify_pr36_gate** (preflight, if present)
+15) **verify_pr36_gate** (preflight, if present)
    - PASS: preflight gate OK.
    - FAIL: preflight gate failed.
-15) **import_contract** (`python -m tools.verify_import_contract --module <canonical_gate> --artifacts-dir artifacts`)
+16) **import_contract** (`python -m tools.verify_import_contract --module <canonical_gate> --artifacts-dir artifacts`)
    - PASS: canonical gate module imports.
    - FAIL: import contract failed.
-16) **canonical gate runner** (one of the following):
+17) **canonical gate runner** (one of the following):
    - `python tools/verify_prNN_gate.py` (highest available PR gate, e.g., verify_pr40_gate)
    - `python tools/verify_foundation.py` (fallback)
    - `python tools/verify_consistency.py` (fallback)
@@ -126,6 +129,21 @@ Timeseries integrity verification with deterministic anomaly checks.
   - `DATA_HEALTH_END`
 - FAIL triggers: timestamp parse errors, duplicates, monotonicity violations, missingness beyond threshold, extreme jumps.
 - Warnings (PASS): non-trading segments such as zero-volume runs.
+
+## Walk-Forward Gate (P0)
+Deterministic rolling walk-forward evaluation with embargo/gap protection.
+- Gate: `python -m tools.verify_walk_forward --artifacts-dir artifacts`
+- Inputs: optional `--input` OHLCV CSV, window sizes (`--train-size`, `--gap-size`, `--test-size`, `--step-size`), and `--timezone`.
+- Artifacts:
+  - `artifacts/walk_forward_report.json`
+  - `artifacts/walk_forward_report.txt`
+  - `artifacts/walk_forward_windows.csv`
+- Output markers:
+  - `WALK_FORWARD_START`
+  - `WALK_FORWARD_WINDOW|idx=...|train=...|gap=...|test=...|status=...`
+  - `WALK_FORWARD_SUMMARY|status=PASS/FAIL|windows=...|baselines=...|notes=...`
+  - `WALK_FORWARD_END`
+- FAIL triggers: zero/invalid embargo, no windows produced, missing baselines, or missing artifacts.
 
 ## PR Ready Gate (P0)
 Single deterministic signal for local PR readiness (fail-closed).
