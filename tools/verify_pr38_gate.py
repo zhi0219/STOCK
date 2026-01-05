@@ -121,6 +121,10 @@ def _write_minimal_latest(runs_root: Path, run_id: str) -> None:
         "decision": "REJECT",
         "reasons": ["gate_rejected"],
         "required_next_steps": ["collect_more_runs_for_gate"],
+        "baseline_results": [],
+        "trial_count": 0,
+        "candidate_count": 0,
+        "search_scale_penalty": 0.0,
     }
     history_latest = {
         "schema_version": 1,

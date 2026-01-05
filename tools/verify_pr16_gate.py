@@ -115,6 +115,13 @@ def _write_promotion_artifacts(
         stress_report=stress_report,
         trade_activity_report=TRADE_ACTIVITY_PASS,
     )
+    decision = {
+        **decision,
+        "baseline_results": baselines,
+        "trial_count": len(baselines) + (1 if best_candidate else 0),
+        "candidate_count": 1 if best_candidate else 0,
+        "search_scale_penalty": 0.0,
+    }
     (run_dir / "promotion_decision.json").write_text(
         json.dumps(decision, ensure_ascii=False, indent=2), encoding="utf-8"
     )
@@ -196,7 +203,19 @@ def main() -> int:
         candidates = _write_candidates(run_dir, pool, run.seed)
         _, baselines, candidate_entries = _write_tournament(run_dir, quotes, candidates, run.seed)
         decision = _write_promotion_artifacts(run_dir, baselines, candidate_entries)
-        if not _schema_ok(decision, ["candidate_id", "decision", "reasons", "required_next_steps"]):
+        if not _schema_ok(
+            decision,
+            [
+                "candidate_id",
+                "decision",
+                "reasons",
+                "required_next_steps",
+                "baseline_results",
+                "trial_count",
+                "candidate_count",
+                "search_scale_penalty",
+            ],
+        ):
             status = "FAIL"
             reasons.append(f"promotion_decision_schema_invalid:{run.run_id}")
 

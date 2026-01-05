@@ -52,19 +52,22 @@ Each gate must emit PASS/FAIL semantics and fail-closed by default.
 13) **verify_redteam_integrity** (`python -m tools.verify_redteam_integrity --artifacts-dir artifacts`)
    - PASS: red-team cases detected expected failures and control passed.
    - FAIL: unexpected pass/fail in any case or missing trial budget metadata.
-14) **apply_edits_dry_run** (`python -m tools.apply_edits --repo . --edits fixtures/edits_contract/good.json --artifacts-dir artifacts --dry-run`)
+14) **verify_multiple_testing_control** (`python -m tools.verify_multiple_testing_control --artifacts-dir artifacts`)
+   - PASS: experiment ledger present, baseline coverage intact, and trials within budget (or override recorded).
+   - FAIL: missing ledger fields, missing baselines, or trial budget exceeded without override.
+15) **apply_edits_dry_run** (`python -m tools.apply_edits --repo . --edits fixtures/edits_contract/good.json --artifacts-dir artifacts --dry-run`)
    - PASS: edits dry-run succeeded.
    - FAIL: edits dry-run failed.
-15) **extract_json_strict_negative** (`python -m tools.extract_json_strict --raw-text fixtures/extract_json_strict/bad_fenced.txt --out-json artifacts/extract_json_strict_bad.json`)
+16) **extract_json_strict_negative** (`python -m tools.extract_json_strict --raw-text fixtures/extract_json_strict/bad_fenced.txt --out-json artifacts/extract_json_strict_bad.json`)
    - PASS: gate fails as expected on bad input.
    - FAIL: unexpected success on bad input.
-16) **verify_pr36_gate** (preflight, if present)
+17) **verify_pr36_gate** (preflight, if present)
    - PASS: preflight gate OK.
    - FAIL: preflight gate failed.
-17) **import_contract** (`python -m tools.verify_import_contract --module <canonical_gate> --artifacts-dir artifacts`)
+18) **import_contract** (`python -m tools.verify_import_contract --module <canonical_gate> --artifacts-dir artifacts`)
    - PASS: canonical gate module imports.
    - FAIL: import contract failed.
-18) **canonical gate runner** (one of the following):
+19) **canonical gate runner** (one of the following):
    - `python tools/verify_prNN_gate.py` (highest available PR gate, e.g., verify_pr40_gate)
    - `python tools/verify_foundation.py` (fallback)
    - `python tools/verify_consistency.py` (fallback)
@@ -88,7 +91,7 @@ Validates strict JSON-only edits outputs.
 ## Consistency Gate (P0)
 Aggregates lightweight health checks for CI consistency.
 - Gate: `python -m tools.verify_consistency --artifacts-dir artifacts`
-- Runs: docs_contract, inventory_contract, execution_model, data_health, redteam_integrity plus basic sanity checks.
+- Runs: docs_contract, inventory_contract, execution_model, data_health, walk_forward, redteam_integrity, multiple_testing_control plus basic sanity checks.
 - Archived events:
   - Canonical location: `Logs/event_archives/`.
   - Legacy location: `Logs/_event_archives/` (migrate to canonical when present).
@@ -162,6 +165,19 @@ Fail-closed red-team suite for leakage, misalignment, and survivorship bias.
   - `REDTEAM_SUMMARY|status=PASS/FAIL|cases=...|unexpected_passes=...|unexpected_failures=...|detail=...|report=...`
   - `REDTEAM_END`
 - FAIL triggers: any unexpected pass/fail on a case, or missing trial budget metadata.
+
+## Multiple-Testing Control Gate (P0)
+Fail-closed governance guardrail for search-scale auditing.
+- Gate: `python -m tools.verify_multiple_testing_control --artifacts-dir artifacts`
+- Inputs: `artifacts/experiment_ledger.jsonl` plus `fixtures/multiple_testing_control/trial_budget.json`.
+- Artifacts:
+  - `artifacts/experiment_ledger_summary.json`
+- Output markers:
+  - `MULTITEST_START`
+  - `MULTITEST_CASE|name=...|status=...|detail=...`
+  - `MULTITEST_SUMMARY|status=PASS/FAIL|trial_count=...|candidate_count=...|penalty=...|detail=...|report=...`
+  - `MULTITEST_END`
+- FAIL triggers: missing ledger fields, missing baselines (DoNothing, Buy&Hold, SimpleMomentum), or trial budget exceeded without override.
 
 ## PR Ready Gate (P0)
 Single deterministic signal for local PR readiness (fail-closed).

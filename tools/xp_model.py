@@ -194,6 +194,27 @@ def compute_xp_snapshot(
     else:
         add_insufficient("missing_candidate_metrics", -10, [evidence_paths.get("tournament")])
 
+    search_scale_penalty = None
+    if isinstance(promotion, dict):
+        search_scale_penalty = promotion.get("search_scale_penalty")
+    if isinstance(search_scale_penalty, (int, float)):
+        penalty_points = -int(round(float(search_scale_penalty) * 10))
+        penalty_points = _clamp(penalty_points, -20, 0)
+        add_item(
+            key="search_scale_penalty",
+            label="Governance: search-scale penalty",
+            value=round(float(search_scale_penalty), 4),
+            points=penalty_points,
+            evidence=[evidence_paths.get("promotion")],
+            notes="Placeholder penalty derived from multiple-testing governance metadata.",
+        )
+    else:
+        add_insufficient(
+            "missing_search_scale_penalty",
+            -5,
+            [evidence_paths.get("promotion")],
+        )
+
     if promotion_history_events and len(promotion_history_events) >= 3:
         recent = promotion_history_events[-5:]
         decisions = [str(event.get("decision")) for event in recent if isinstance(event, dict)]

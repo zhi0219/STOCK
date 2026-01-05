@@ -65,7 +65,16 @@ def _validate_required(payload: dict, required: List[str]) -> List[str]:
 
 
 def _synthetic_artifacts() -> tuple[bool, str]:
-    required_fields = ["schema_version", "created_utc", "run_id", "policy_version"]
+    required_fields = [
+        "schema_version",
+        "created_utc",
+        "run_id",
+        "policy_version",
+        "baseline_results",
+        "trial_count",
+        "candidate_count",
+        "search_scale_penalty",
+    ]
     created_utc = _now()
     run_id = "run_pr19_synthetic"
     policy_version = "baseline"
@@ -101,6 +110,10 @@ def _synthetic_artifacts() -> tuple[bool, str]:
                 "decision": "REJECT",
                 "reasons": ["no_candidate_available"],
                 "required_next_steps": ["collect_more_runs"],
+                "baseline_results": [],
+                "trial_count": 0,
+                "candidate_count": 0,
+                "search_scale_penalty": 0.0,
             },
         )
         _write_json(

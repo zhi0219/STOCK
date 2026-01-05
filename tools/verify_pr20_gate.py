@@ -84,6 +84,10 @@ def _exercise_ui_parsers(base: Path) -> tuple[bool, str]:
             "created_utc": created,
             "run_id": "run_synth",
             "policy_version": "baseline",
+            "baseline_results": [],
+            "trial_count": 0,
+            "candidate_count": 0,
+            "search_scale_penalty": 0.0,
         },
     )
     _write_json(

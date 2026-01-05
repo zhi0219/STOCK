@@ -25,6 +25,7 @@ from tools.policy_registry import get_policy, load_registry, record_history
 from tools.policy_registry import promote_policy as _promote_policy
 from tools.execution_friction import load_friction_policy
 from tools.promotion_gate_v2 import GateConfig, evaluate_promotion_gate
+from tools.experiment_ledger import DEFAULT_BASELINES, append_entry, build_entry
 from tools.trade_activity_audit import build_report as build_trade_activity_report
 from tools.trade_activity_audit import write_trade_activity_report
 from tools.sim_autopilot import _kill_switch_enabled, _kill_switch_path, run_step
@@ -1196,6 +1197,25 @@ def main(argv: List[str] | None = None) -> int:
     if best_candidate and not best_candidate.get("safety_pass"):
         best_candidate = None
 
+    ledger_window_config = {
+        "max_steps": min(200, args.max_steps),
+        "seed": seed,
+        "candidate_count": len(selected_candidates),
+    }
+    ledger_entry = build_entry(
+        run_id=run_id,
+        candidate_count=len(candidate_entries),
+        trial_count=len(entries),
+        baselines_used=DEFAULT_BASELINES,
+        window_config=ledger_window_config,
+        code_paths=[
+            ROOT / "tools" / "train_daemon.py",
+            ROOT / "tools" / "sim_tournament.py",
+            ROOT / "tools" / "promotion_gate_v2.py",
+        ],
+    )
+    append_entry(ROOT / "artifacts", ledger_entry)
+
     recommendation = {
         "schema_version": 1,
         "created_utc": _now().isoformat(),
@@ -1242,6 +1262,10 @@ def main(argv: List[str] | None = None) -> int:
         "created_utc": _now().isoformat(),
         "run_id": run_id,
         "policy_version": policy_version,
+        "baseline_results": baseline_entries,
+        "trial_count": len(entries),
+        "candidate_count": len(candidate_entries),
+        "search_scale_penalty": 0.0,
         **decision_payload,
     }
     _atomic_write_json(run_dir / "promotion_decision.json", decision_payload)

@@ -14,6 +14,7 @@ from tools.sim_tournament import BASELINE_CANDIDATES, run_strategy_tournament
 from tools.replay_artifacts import build_decision_cards, write_replay_artifacts
 from tools.strategy_pool import load_strategy_pool, select_candidates, write_strategy_pool_manifest
 from tools.paths import to_repo_relative
+from tools.experiment_ledger import DEFAULT_BASELINES, append_entry, build_entry
 
 ROOT = Path(__file__).resolve().parent.parent
 LOGS_DIR = ROOT / "Logs"
@@ -321,6 +322,10 @@ def run_pr28_flow(config: PR28Config) -> Dict[str, Path]:
 
     promotion_payload = _promotion_decision(judge_payload, best_candidate, gate_config, base_fields)
     promotion_payload["evidence_pack"] = evidence_pack
+    promotion_payload["baseline_results"] = baseline_entries
+    promotion_payload["trial_count"] = len(entries)
+    promotion_payload["candidate_count"] = len(candidate_entries)
+    promotion_payload["search_scale_penalty"] = 0.0
     _atomic_write_json(promotion_path, promotion_payload)
     _atomic_copy_json(promotion_path, latest_dir / "promotion_decision_latest.json")
 
@@ -363,6 +368,26 @@ def run_pr28_flow(config: PR28Config) -> Dict[str, Path]:
         },
     )
     write_replay_artifacts(run_dir, run_id, safe_commit, decision_cards)
+
+    ledger_window_config = {
+        "max_steps": config.max_steps,
+        "seed": config.seed,
+        "candidate_count": len(candidate_entries),
+        "quotes_limit": config.quotes_limit,
+    }
+    ledger_entry = build_entry(
+        run_id=run_id,
+        candidate_count=len(candidate_entries),
+        trial_count=len(entries),
+        baselines_used=DEFAULT_BASELINES,
+        window_config=ledger_window_config,
+        code_paths=[
+            ROOT / "tools" / "pr28_training_loop.py",
+            ROOT / "tools" / "sim_tournament.py",
+            ROOT / "tools" / "promotion_gate_v2.py",
+        ],
+    )
+    append_entry(ROOT / "artifacts", ledger_entry)
 
     return {
         "run_dir": run_dir,

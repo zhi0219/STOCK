@@ -26,6 +26,7 @@ Version: v1
 - **doctor_report** (py_module): `tools/doctor_report.py` -> `python -m tools.doctor_report --help`
 - **dummy_source** (py_module): `tools/dummy_source.py` -> `python -m tools.dummy_source --help`
 - **execution_friction** (py_module): `tools/execution_friction.py` -> `python -m tools.execution_friction`
+- **experiment_ledger** (py_module): `tools/experiment_ledger.py` -> `python -m tools.experiment_ledger`
 - **explain_now** (py_module): `tools/explain_now.py` -> `python -m tools.explain_now`
 - **extract_json_strict** (py_module): `tools/extract_json_strict.py` -> `python -m tools.extract_json_strict --help`
 - **fs_atomic** (py_module): `tools/fs_atomic.py` -> `python -m tools.fs_atomic`
@@ -106,6 +107,7 @@ Version: v1
 - **verify_kill_switch_recovery** (py_module): `tools/verify_kill_switch_recovery.py` -> `python -m tools.verify_kill_switch_recovery`
 - **verify_kill_switch_ui_flow** (py_module): `tools/verify_kill_switch_ui_flow.py` -> `python -m tools.verify_kill_switch_ui_flow`
 - **verify_latest_artifacts** (py_module): `tools/verify_latest_artifacts.py` -> `python -m tools.verify_latest_artifacts`
+- **verify_multiple_testing_control** (py_module): `tools/verify_multiple_testing_control.py` -> `python -m tools.verify_multiple_testing_control --help`
 - **verify_no_lookahead_sim** (py_module): `tools/verify_no_lookahead_sim.py` -> `python -m tools.verify_no_lookahead_sim`
 - **verify_policy_lifecycle** (py_module): `tools/verify_policy_lifecycle.py` -> `python -m tools.verify_policy_lifecycle`
 - **verify_policy_promotion** (py_module): `tools/verify_policy_promotion.py` -> `python -m tools.verify_policy_promotion --help`
@@ -216,6 +218,9 @@ Version: v1
 - **tools.verify_redteam_integrity**: `python3 -m tools.verify_redteam_integrity --artifacts-dir "${artifacts_dir}"`
   - markers_expected: REDTEAM_END, REDTEAM_START, REDTEAM_SUMMARY
   - artifacts_expected: artifacts/redteam_report.json, artifacts/redteam_report.txt
+- **tools.verify_multiple_testing_control**: `python3 -m tools.verify_multiple_testing_control --artifacts-dir "${artifacts_dir}"`
+  - markers_expected: MULTITEST_END, MULTITEST_START, MULTITEST_SUMMARY
+  - artifacts_expected: artifacts/experiment_ledger.jsonl, artifacts/experiment_ledger_summary.json
 - **tools.apply_edits**: `python3 -m tools.apply_edits --repo . --edits fixtures/edits_contract/good.json --artifacts-dir "${artifacts_dir}" --dry-run`
   - markers_expected: none
   - artifacts_expected: none
@@ -251,6 +256,8 @@ Version: v1
 - `artifacts/execution_model_report.json` (produced_by: tools/verify_execution_model.py)
 - `artifacts/execution_model_report.txt` (produced_by: tools/verify_consistency.py, tools/verify_execution_model.py)
 - `artifacts/execution_model_runs` (produced_by: tools/verify_execution_model.py)
+- `artifacts/experiment_ledger.jsonl` (produced_by: tools/experiment_ledger.py, tools/verify_multiple_testing_control.py)
+- `artifacts/experiment_ledger_summary.json` (produced_by: tools/verify_consistency.py, tools/verify_multiple_testing_control.py)
 - `artifacts/gates.log` (produced_by: scripts/ci_gates.sh, tools/action_center_report.py)
 - `artifacts/import_contract_result.json` (produced_by: scripts/ci_gates.sh, tools/doctor_report.py, tools/verify_import_contract.py)
 - `artifacts/import_contract_traceback.txt` (produced_by: scripts/ci_gates.sh, tools/verify_import_contract.py)
@@ -391,6 +398,11 @@ Version: v1
   - commands: python -m tools.execution_friction
   - gates: none
   - artifacts: none
+- **experiment_ledger**
+  - files: tools/experiment_ledger.py
+  - commands: python -m tools.experiment_ledger
+  - gates: none
+  - artifacts: artifacts/experiment_ledger.jsonl
 - **explain_now**
   - files: tools/explain_now.py
   - commands: python -m tools.explain_now
@@ -745,7 +757,7 @@ Version: v1
   - files: tools/verify_consistency.py
   - commands: python -m tools.verify_consistency --help
   - gates: none
-  - artifacts: artifacts/data_health_report.txt, artifacts/execution_model_report.txt, artifacts/redteam_report.txt, artifacts/verify_docs_contract.txt, artifacts/verify_inventory_contract.txt, artifacts/walk_forward_report.txt
+  - artifacts: artifacts/data_health_report.txt, artifacts/execution_model_report.txt, artifacts/experiment_ledger_summary.json, artifacts/redteam_report.txt, artifacts/verify_docs_contract.txt, artifacts/verify_inventory_contract.txt, artifacts/walk_forward_report.txt
 - **verify_cooldown**
   - files: tools/verify_cooldown.py
   - commands: python -m tools.verify_cooldown
@@ -826,6 +838,11 @@ Version: v1
   - commands: python -m tools.verify_latest_artifacts
   - gates: none
   - artifacts: none
+- **verify_multiple_testing_control**
+  - files: tools/verify_multiple_testing_control.py
+  - commands: python -m tools.verify_multiple_testing_control --help
+  - gates: tools.verify_multiple_testing_control
+  - artifacts: artifacts/experiment_ledger.jsonl, artifacts/experiment_ledger_summary.json
 - **verify_no_lookahead_sim**
   - files: tools/verify_no_lookahead_sim.py
   - commands: python -m tools.verify_no_lookahead_sim
