@@ -92,6 +92,7 @@ Version: v1
 - **verify_consistency** (py_module): `tools/verify_consistency.py` -> `python -m tools.verify_consistency --help`
 - **verify_cooldown** (py_module): `tools/verify_cooldown.py` -> `python -m tools.verify_cooldown`
 - **verify_dashboard** (py_module): `tools/verify_dashboard.py` -> `python -m tools.verify_dashboard`
+- **verify_data_health** (py_module): `tools/verify_data_health.py` -> `python -m tools.verify_data_health --help`
 - **verify_defensive_redteam** (py_module): `tools/verify_defensive_redteam.py` -> `python -m tools.verify_defensive_redteam --help`
 - **verify_docs_contract** (py_module): `tools/verify_docs_contract.py` -> `python -m tools.verify_docs_contract --help`
 - **verify_e2e_qa_loop** (py_module): `tools/verify_e2e_qa_loop.py` -> `python -m tools.verify_e2e_qa_loop`
@@ -204,6 +205,9 @@ Version: v1
 - **tools.verify_execution_model**: `python3 -m tools.verify_execution_model --artifacts-dir "${artifacts_dir}"`
   - markers_expected: none
   - artifacts_expected: artifacts/execution_model_report.json, artifacts/execution_model_report.txt, artifacts/execution_model_runs
+- **tools.verify_data_health**: `python3 -m tools.verify_data_health --artifacts-dir "${artifacts_dir}"`
+  - markers_expected: none
+  - artifacts_expected: artifacts/data_health_report.json, artifacts/data_health_report.txt
 - **tools.apply_edits**: `python3 -m tools.apply_edits --repo . --edits fixtures/edits_contract/good.json --artifacts-dir "${artifacts_dir}" --dry-run`
   - markers_expected: none
   - artifacts_expected: none
@@ -230,6 +234,8 @@ Version: v1
 - `artifacts/ci_job_summary.md` (produced_by: scripts/ci_gates.sh)
 - `artifacts/compile_check.log` (produced_by: scripts/ci_gates.sh)
 - `artifacts/compile_check_result.json` (produced_by: scripts/ci_gates.sh)
+- `artifacts/data_health_report.json` (produced_by: tools/verify_data_health.py)
+- `artifacts/data_health_report.txt` (produced_by: tools/verify_consistency.py, tools/verify_data_health.py)
 - `artifacts/docs_contract.txt` (produced_by: scripts/build_verify_edits_v1.ps1)
 - `artifacts/doctor_report.json` (produced_by: tools/action_center_report.py, tools/doctor_report.py, tools/ui_app.py, tools/verify_pr30_gate.py)
 - `artifacts/doctor_runtime_write.json` (produced_by: tools/action_center_report.py, tools/ui_app.py)
@@ -726,7 +732,7 @@ Version: v1
   - files: tools/verify_consistency.py
   - commands: python -m tools.verify_consistency --help
   - gates: none
-  - artifacts: artifacts/execution_model_report.txt, artifacts/verify_docs_contract.txt, artifacts/verify_inventory_contract.txt
+  - artifacts: artifacts/data_health_report.txt, artifacts/execution_model_report.txt, artifacts/verify_docs_contract.txt, artifacts/verify_inventory_contract.txt
 - **verify_cooldown**
   - files: tools/verify_cooldown.py
   - commands: python -m tools.verify_cooldown
@@ -737,6 +743,11 @@ Version: v1
   - commands: python -m tools.verify_dashboard
   - gates: none
   - artifacts: none
+- **verify_data_health**
+  - files: tools/verify_data_health.py
+  - commands: python -m tools.verify_data_health --help
+  - gates: tools.verify_data_health
+  - artifacts: artifacts/data_health_report.json, artifacts/data_health_report.txt
 - **verify_defensive_redteam**
   - files: tools/verify_defensive_redteam.py
   - commands: python -m tools.verify_defensive_redteam --help

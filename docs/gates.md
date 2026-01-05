@@ -43,19 +43,22 @@ Each gate must emit PASS/FAIL semantics and fail-closed by default.
 10) **verify_execution_model** (`python -m tools.verify_execution_model --artifacts-dir artifacts`)
    - PASS: execution model report generated and sensitivity stable.
    - FAIL: missing artifacts or friction sensitivity instability.
-11) **apply_edits_dry_run** (`python -m tools.apply_edits --repo . --edits fixtures/edits_contract/good.json --artifacts-dir artifacts --dry-run`)
+11) **verify_data_health** (`python -m tools.verify_data_health --artifacts-dir artifacts`)
+   - PASS: data health report generated with no critical anomalies.
+   - FAIL: integrity checks failed (monotonicity, parse errors, missingness, or jump detection).
+12) **apply_edits_dry_run** (`python -m tools.apply_edits --repo . --edits fixtures/edits_contract/good.json --artifacts-dir artifacts --dry-run`)
    - PASS: edits dry-run succeeded.
    - FAIL: edits dry-run failed.
-12) **extract_json_strict_negative** (`python -m tools.extract_json_strict --raw-text fixtures/extract_json_strict/bad_fenced.txt --out-json artifacts/extract_json_strict_bad.json`)
+13) **extract_json_strict_negative** (`python -m tools.extract_json_strict --raw-text fixtures/extract_json_strict/bad_fenced.txt --out-json artifacts/extract_json_strict_bad.json`)
    - PASS: gate fails as expected on bad input.
    - FAIL: unexpected success on bad input.
-13) **verify_pr36_gate** (preflight, if present)
+14) **verify_pr36_gate** (preflight, if present)
    - PASS: preflight gate OK.
    - FAIL: preflight gate failed.
-14) **import_contract** (`python -m tools.verify_import_contract --module <canonical_gate> --artifacts-dir artifacts`)
+15) **import_contract** (`python -m tools.verify_import_contract --module <canonical_gate> --artifacts-dir artifacts`)
    - PASS: canonical gate module imports.
    - FAIL: import contract failed.
-15) **canonical gate runner** (one of the following):
+16) **canonical gate runner** (one of the following):
    - `python tools/verify_prNN_gate.py` (highest available PR gate, e.g., verify_pr40_gate)
    - `python tools/verify_foundation.py` (fallback)
    - `python tools/verify_consistency.py` (fallback)
@@ -79,7 +82,7 @@ Validates strict JSON-only edits outputs.
 ## Consistency Gate (P0)
 Aggregates lightweight health checks for CI consistency.
 - Gate: `python -m tools.verify_consistency --artifacts-dir artifacts`
-- Runs: docs_contract, inventory_contract, execution_model plus basic sanity checks.
+- Runs: docs_contract, inventory_contract, execution_model, data_health plus basic sanity checks.
 - Archived events:
   - Canonical location: `Logs/event_archives/`.
   - Legacy location: `Logs/_event_archives/` (migrate to canonical when present).
@@ -109,6 +112,20 @@ Deterministic execution-friction verification with sensitivity checks.
 - Output marker:
   - `EXECUTION_MODEL_SUMMARY|status=PASS/FAIL|reason=...|report=...`
 - Fail-closed if ranking instability is detected between baseline and doubled friction scenarios.
+
+## Data Health Gate (P0)
+Timeseries integrity verification with deterministic anomaly checks.
+- Gate: `python -m tools.verify_data_health --artifacts-dir artifacts`
+- Inputs: optional `--data-path`, defaulting to fixtures when no dataset is present.
+- Artifacts:
+  - `artifacts/data_health_report.json`
+  - `artifacts/data_health_report.txt`
+- Output markers:
+  - `DATA_HEALTH_START`
+  - `DATA_HEALTH_SUMMARY|status=PASS/FAIL|...`
+  - `DATA_HEALTH_END`
+- FAIL triggers: timestamp parse errors, duplicates, monotonicity violations, missingness beyond threshold, extreme jumps.
+- Warnings (PASS): non-trading segments such as zero-volume runs.
 
 ## PR Ready Gate (P0)
 Single deterministic signal for local PR readiness (fail-closed).

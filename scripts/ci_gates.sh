@@ -496,6 +496,18 @@ fi
 
 if [[ ${rc} -eq 0 ]]; then
   set +e
+  python3 -m tools.verify_data_health --artifacts-dir "${artifacts_dir}"
+  data_health_exit=$?
+  set -e
+  if [[ ${data_health_exit} -ne 0 ]]; then
+    status="FAIL"
+    failing_gate="verify_data_health"
+    rc=${data_health_exit}
+  fi
+fi
+
+if [[ ${rc} -eq 0 ]]; then
+  set +e
   python3 -m tools.apply_edits --repo . --edits fixtures/edits_contract/good.json --artifacts-dir "${artifacts_dir}" --dry-run
   edits_apply_exit=$?
   set -e
