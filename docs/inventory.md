@@ -111,6 +111,7 @@ Version: v1
 - **verify_no_lookahead_sim** (py_module): `tools/verify_no_lookahead_sim.py` -> `python -m tools.verify_no_lookahead_sim`
 - **verify_policy_lifecycle** (py_module): `tools/verify_policy_lifecycle.py` -> `python -m tools.verify_policy_lifecycle`
 - **verify_policy_promotion** (py_module): `tools/verify_policy_promotion.py` -> `python -m tools.verify_policy_promotion --help`
+- **verify_powershell_join_path_contract** (py_module): `tools/verify_powershell_join_path_contract.py` -> `python -m tools.verify_powershell_join_path_contract --help`
 - **verify_powershell_runner_contract** (py_module): `tools/verify_powershell_runner_contract.py` -> `python -m tools.verify_powershell_runner_contract --help`
 - **verify_pr11_gate** (py_module): `tools/verify_pr11_gate.py` -> `python -m tools.verify_pr11_gate`
 - **verify_pr12_gate** (py_module): `tools/verify_pr12_gate.py` -> `python -m tools.verify_pr12_gate`
@@ -191,6 +192,9 @@ Version: v1
 - **tools.safe_push_contract**: `python3 -m tools.safe_push_contract --artifacts-dir "${artifacts_dir}"`
   - markers_expected: none
   - artifacts_expected: artifacts/safe_push_contract.txt, artifacts/safe_push_contract_result.json
+- **tools.verify_powershell_join_path_contract**: `python3 -m tools.verify_powershell_join_path_contract --artifacts-dir "${artifacts_dir}"`
+  - markers_expected: none
+  - artifacts_expected: artifacts/powershell_join_path_contract.txt, artifacts/powershell_join_path_contract_result.json
 - **tools.ui_preflight**: `python3 -m tools.ui_preflight --ci --artifacts-dir "${artifacts_dir}"`
   - markers_expected: none
   - artifacts_expected: artifacts/ui_preflight_result.json
@@ -265,6 +269,8 @@ Version: v1
 - `artifacts/latest` (produced_by: scripts/clip_ci_artifacts.ps1)
 - `artifacts/migrate_event_archives.json` (produced_by: tools/migrate_event_archives.py)
 - `artifacts/migrate_event_archives.txt` (produced_by: tools/migrate_event_archives.py)
+- `artifacts/powershell_join_path_contract.txt` (produced_by: tools/verify_powershell_join_path_contract.py)
+- `artifacts/powershell_join_path_contract_result.json` (produced_by: scripts/ci_gates.sh, tools/verify_powershell_join_path_contract.py)
 - `artifacts/powershell_runner_contract.txt` (produced_by: tools/verify_powershell_runner_contract.py)
 - `artifacts/powershell_runner_contract_result.json` (produced_by: tools/verify_powershell_runner_contract.py)
 - `artifacts/pr_ready.txt` (produced_by: tools/verify_pr_ready.py)
@@ -357,7 +363,7 @@ Version: v1
   - files: scripts/ci_gates.sh
   - commands: scripts/ci_gates.sh --help
   - gates: none
-  - artifacts: artifacts/ci_job_summary.md, artifacts/compile_check.log, artifacts/compile_check_result.json, artifacts/gates.log, artifacts/import_contract_result.json, artifacts/import_contract_traceback.txt, artifacts/proof_summary.json, artifacts/ps_parse_result.json, artifacts/safe_push_contract_result.json, artifacts/syntax_guard_excerpt.txt, artifacts/syntax_guard_result.json, artifacts/ui_preflight_result.json
+  - artifacts: artifacts/ci_job_summary.md, artifacts/compile_check.log, artifacts/compile_check_result.json, artifacts/gates.log, artifacts/import_contract_result.json, artifacts/import_contract_traceback.txt, artifacts/powershell_join_path_contract_result.json, artifacts/proof_summary.json, artifacts/ps_parse_result.json, artifacts/safe_push_contract_result.json, artifacts/syntax_guard_excerpt.txt, artifacts/syntax_guard_result.json, artifacts/ui_preflight_result.json
 - **clip_ci_artifacts**
   - files: scripts/clip_ci_artifacts.ps1
   - commands: scripts/clip_ci_artifacts.ps1
@@ -858,6 +864,11 @@ Version: v1
   - commands: python -m tools.verify_policy_promotion --help
   - gates: none
   - artifacts: none
+- **verify_powershell_join_path_contract**
+  - files: tools/verify_powershell_join_path_contract.py
+  - commands: python -m tools.verify_powershell_join_path_contract --help
+  - gates: tools.verify_powershell_join_path_contract
+  - artifacts: artifacts/powershell_join_path_contract.txt, artifacts/powershell_join_path_contract_result.json
 - **verify_powershell_runner_contract**
   - files: tools/verify_powershell_runner_contract.py
   - commands: python -m tools.verify_powershell_runner_contract --help

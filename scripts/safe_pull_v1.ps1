@@ -52,13 +52,14 @@ function Resolve-GitStateBlocks {
   param(
     [string]$RepoRoot
   )
+  $gitDir = Join-Path $RepoRoot ".git"
   $statePaths = @(
-    (Join-Path $RepoRoot ".git" "MERGE_HEAD"),
-    (Join-Path $RepoRoot ".git" "CHERRY_PICK_HEAD"),
-    (Join-Path $RepoRoot ".git" "REVERT_HEAD"),
-    (Join-Path $RepoRoot ".git" "rebase-apply"),
-    (Join-Path $RepoRoot ".git" "rebase-merge"),
-    (Join-Path $RepoRoot ".git" "AM")
+    (Join-Path $gitDir "MERGE_HEAD"),
+    (Join-Path $gitDir "CHERRY_PICK_HEAD"),
+    (Join-Path $gitDir "REVERT_HEAD"),
+    (Join-Path $gitDir "rebase-apply"),
+    (Join-Path $gitDir "rebase-merge"),
+    (Join-Path $gitDir "AM")
   )
   $blocked = New-Object System.Collections.Generic.List[string]
   foreach ($path in $statePaths) {
@@ -91,6 +92,7 @@ $repoFull = [IO.Path]::GetFullPath($repoRoot)
 if ($cwdFull -ne $repoFull) {
   Fail "not_at_repo_root" ("cd " + $repoRoot)
 }
+$repoRoot = $repoFull
 
 $statusResult = Run-Git -GitExe $gitExe status --porcelain
 if ($statusResult[0] -ne 0) {
@@ -114,18 +116,19 @@ if ($blockedStates.Count -gt 0) {
   Fail ("git_state_present:" + $blockedText) "resolve_git_state_then_retry"
 }
 
-New-Item -ItemType Directory -Force -Path "artifacts" | Out-Null
+$artifactsDir = Join-Path $repoRoot "artifacts"
+New-Item -ItemType Directory -Force -Path $artifactsDir | Out-Null
 
 $pullArgs = @("pull", "--ff-only")
 # Contract trace: git pull --ff-only
 if (-not [string]::IsNullOrWhiteSpace($Remote)) { $pullArgs += $Remote }
 if (-not [string]::IsNullOrWhiteSpace($Branch)) { $pullArgs += $Branch }
 
-$runResult = Invoke-PsRunner -Command $gitExe -Arguments $pullArgs -RepoRoot $repoRoot -ArtifactsDir "artifacts" -MarkerPrefix "PS_RUN"
+$runResult = Invoke-PsRunner -Command $gitExe -Arguments $pullArgs -RepoRoot $repoRoot -ArtifactsDir $artifactsDir -MarkerPrefix "PS_RUN"
 $stdoutText = if (Test-Path -LiteralPath $runResult.StdoutPath) { Get-Content -Raw -LiteralPath $runResult.StdoutPath } else { "" }
 $stderrText = if (Test-Path -LiteralPath $runResult.StderrPath) { Get-Content -Raw -LiteralPath $runResult.StderrPath } else { "" }
 $combinedText = ($stdoutText + $stderrText).Trim()
-$pullLog = Join-Path "artifacts" "safe_pull_git_pull.txt"
+$pullLog = Join-Path $artifactsDir "safe_pull_git_pull.txt"
 Set-Content -LiteralPath $pullLog -Value $combinedText -Encoding utf8
 
 if ($runResult.ExitCode -ne 0) {
