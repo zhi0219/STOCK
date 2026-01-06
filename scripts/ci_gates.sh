@@ -456,6 +456,18 @@ fi
 
 if [[ ${rc} -eq 0 ]]; then
   set +e
+  python3 -m tools.verify_powershell_no_goto_labels_contract --artifacts-dir "${artifacts_dir}"
+  powershell_no_goto_exit=$?
+  set -e
+  if [[ ${powershell_no_goto_exit} -ne 0 ]]; then
+    status="FAIL"
+    failing_gate="verify_powershell_no_goto_labels_contract"
+    rc=${powershell_no_goto_exit}
+  fi
+fi
+
+if [[ ${rc} -eq 0 ]]; then
+  set +e
   python3 -m tools.ui_preflight --ci --artifacts-dir "${artifacts_dir}"
   ui_preflight_exit=$?
   set -e

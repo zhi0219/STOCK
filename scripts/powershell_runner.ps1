@@ -113,52 +113,63 @@ function Invoke-PsRunner {
   $markers.Add("$MarkerPrefix`_START|ts_utc=$ts|cwd=$cwdFull|repo_root=$RepoRoot|command=$Command|artifacts_dir=$ArtifactsDir")
   Write-Host $markers[-1]
 
-  if ($cwdFull -eq $systemFull) {
-    if ([string]::IsNullOrWhiteSpace($RepoRoot)) {
-      $reason = "cwd_system32_without_repo"
-      goto PsRunnerFinalize
+  try {
+    $shouldRun = $true
+
+    if ($cwdFull -eq $systemFull) {
+      if ([string]::IsNullOrWhiteSpace($RepoRoot)) {
+        $reason = "cwd_system32_without_repo"
+        $shouldRun = $false
+      } else {
+        Set-Location -LiteralPath $RepoRoot
+        $cwdFull = [IO.Path]::GetFullPath((Get-Location).Path)
+      }
     }
-    Set-Location -LiteralPath $RepoRoot
-    $cwdFull = [IO.Path]::GetFullPath((Get-Location).Path)
-  }
 
-  if ($RepoRoot -eq $systemFull) {
-    $reason = "repo_root_system32"
-    goto PsRunnerFinalize
-  }
+    if ($shouldRun -and $RepoRoot -eq $systemFull) {
+      $reason = "repo_root_system32"
+      $shouldRun = $false
+    }
 
-  if ([string]::IsNullOrWhiteSpace($Command)) {
-    $reason = "missing_command"
-    goto PsRunnerFinalize
-  }
+    if ($shouldRun -and [string]::IsNullOrWhiteSpace($Command)) {
+      $reason = "missing_command"
+      $shouldRun = $false
+    }
 
-  $argReason = ""
-  if (-not (Test-PsRunnerArguments -Arguments $Arguments -Reason ([ref]$argReason))) {
-    $reason = $argReason
-    goto PsRunnerFinalize
-  }
+    $argReason = ""
+    if ($shouldRun -and (-not (Test-PsRunnerArguments -Arguments $Arguments -Reason ([ref]$argReason)))) {
+      $reason = $argReason
+      $shouldRun = $false
+    }
 
-  $commandLine = $Command + " " + ($Arguments -join " ")
+    if ($shouldRun) {
+      $commandLine = $Command + " " + ($Arguments -join " ")
 
-  $commandInfo = Get-Command $Command -ErrorAction SilentlyContinue
-  if (-not $commandInfo) {
-    $reason = "command_not_found"
-    goto PsRunnerFinalize
-  }
+      $commandInfo = Get-Command $Command -ErrorAction SilentlyContinue
+      if (-not $commandInfo) {
+        $reason = "command_not_found"
+        $shouldRun = $false
+      }
+    }
 
-  $process = Start-Process -FilePath $Command -ArgumentList $Arguments -WorkingDirectory $RepoRoot -NoNewWindow -Wait -PassThru -RedirectStandardOutput $paths.StdoutPath -RedirectStandardError $paths.StderrPath
-  $exitCode = $process.ExitCode
-  if ($exitCode -eq 0) {
-    $status = "PASS"
-    $reason = "ok"
-  } else {
+    if ($shouldRun) {
+      $process = Start-Process -FilePath $Command -ArgumentList $Arguments -WorkingDirectory $RepoRoot -NoNewWindow -Wait -PassThru -RedirectStandardOutput $paths.StdoutPath -RedirectStandardError $paths.StderrPath
+      $exitCode = $process.ExitCode
+      if ($exitCode -eq 0) {
+        $status = "PASS"
+        $reason = "ok"
+      } else {
+        $status = "FAIL"
+        $reason = "exit_nonzero"
+      }
+    }
+  } catch {
     $status = "FAIL"
-    $reason = "exit_nonzero"
-  }
+    $reason = "exception"
+    $exitCode = 1
+  } finally {
 
-  :PsRunnerFinalize
-
-  $summary = [ordered]@{
+    $summary = [ordered]@{
     status = $status
     reason = $reason
     exit_code = $exitCode
@@ -172,15 +183,16 @@ function Invoke-PsRunner {
     stderr_path = $paths.StderrPath
     markers_path = $paths.MarkersPath
     ts_utc = $ts
-  }
-  $summaryJson = $summary | ConvertTo-Json -Depth 6
-  Set-Content -LiteralPath $paths.SummaryPath -Value $summaryJson -Encoding utf8
+    }
+    $summaryJson = $summary | ConvertTo-Json -Depth 6
+    Set-Content -LiteralPath $paths.SummaryPath -Value $summaryJson -Encoding utf8
 
-  $markers.Add("$MarkerPrefix`_SUMMARY|status=$status|reason=$reason|exit_code=$exitCode|stdout=$($paths.StdoutPath)|stderr=$($paths.StderrPath)")
-  $markers.Add("$MarkerPrefix`_END")
-  Write-Host $markers[-2]
-  Write-Host $markers[-1]
-  Set-Content -LiteralPath $paths.MarkersPath -Value ($markers -join "`n") -Encoding utf8
+    $markers.Add("$MarkerPrefix`_SUMMARY|status=$status|reason=$reason|exit_code=$exitCode|stdout=$($paths.StdoutPath)|stderr=$($paths.StderrPath)")
+    $markers.Add("$MarkerPrefix`_END")
+    Write-Host $markers[-2]
+    Write-Host $markers[-1]
+    Set-Content -LiteralPath $paths.MarkersPath -Value ($markers -join "`n") -Encoding utf8
+  }
 
   return [PSCustomObject]@{
     Status = $status

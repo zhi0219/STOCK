@@ -29,49 +29,52 @@ Each gate must emit PASS/FAIL semantics and fail-closed by default.
    - PASS: PowerShell Join-Path usage is PowerShell 5.1-safe.
    - FAIL: any Join-Path call uses 3+ positional arguments or `-AdditionalChildPath`.
    - Rule: use nested `Join-Path` or `[IO.Path]::Combine` for 3+ segments.
-6) **ui_preflight** (`python -m tools.ui_preflight --ci --artifacts-dir artifacts`)
+6) **verify_powershell_no_goto_labels_contract** (`python -m tools.verify_powershell_no_goto_labels_contract --artifacts-dir artifacts`)
+   - PASS: no PowerShell goto statements or bare label lines detected.
+   - FAIL: any line starts with `goto` or is a bare `:Label`.
+7) **ui_preflight** (`python -m tools.ui_preflight --ci --artifacts-dir artifacts`)
    - PASS: UI preflight OK.
    - FAIL: preflight error.
-7) **docs_contract** (`python -m tools.verify_docs_contract --artifacts-dir artifacts`)
+8) **docs_contract** (`python -m tools.verify_docs_contract --artifacts-dir artifacts`)
    - PASS: required docs and sections present.
    - FAIL: missing docs/sections/IMP list.
-8) **verify_edits_contract** (`python -m tools.verify_edits_contract --artifacts-dir artifacts`)
+9) **verify_edits_contract** (`python -m tools.verify_edits_contract --artifacts-dir artifacts`)
    - PASS: edits contract valid.
    - FAIL: edits contract violation.
-9) **inventory_repo** (`python -m tools.inventory_repo --artifacts-dir artifacts --write-docs`)
+10) **inventory_repo** (`python -m tools.inventory_repo --artifacts-dir artifacts --write-docs`)
    - PASS: inventory artifacts and docs generated.
    - FAIL: inventory generation failed.
-10) **verify_inventory_contract** (`python -m tools.verify_inventory_contract --artifacts-dir artifacts`)
+11) **verify_inventory_contract** (`python -m tools.verify_inventory_contract --artifacts-dir artifacts`)
    - PASS: docs/inventory.md matches generator output after LF normalization.
    - FAIL: inventory docs mismatch, missing, or UTF-8 BOM detected.
-11) **verify_execution_model** (`python -m tools.verify_execution_model --artifacts-dir artifacts`)
+12) **verify_execution_model** (`python -m tools.verify_execution_model --artifacts-dir artifacts`)
    - PASS: execution model report generated and sensitivity stable.
    - FAIL: missing artifacts or friction sensitivity instability.
-12) **verify_data_health** (`python -m tools.verify_data_health --artifacts-dir artifacts`)
+13) **verify_data_health** (`python -m tools.verify_data_health --artifacts-dir artifacts`)
    - PASS: data health report generated with no critical anomalies.
    - FAIL: integrity checks failed (monotonicity, parse errors, missingness, or jump detection).
-13) **verify_walk_forward** (`python -m tools.verify_walk_forward --artifacts-dir artifacts`)
+14) **verify_walk_forward** (`python -m tools.verify_walk_forward --artifacts-dir artifacts`)
    - PASS: walk-forward report generated with non-zero embargo and baseline comparisons.
    - FAIL: missing windows, zero/invalid embargo, or missing artifacts.
-14) **verify_redteam_integrity** (`python -m tools.verify_redteam_integrity --artifacts-dir artifacts`)
+15) **verify_redteam_integrity** (`python -m tools.verify_redteam_integrity --artifacts-dir artifacts`)
    - PASS: red-team cases detected expected failures and control passed.
    - FAIL: unexpected pass/fail in any case or missing trial budget metadata.
-15) **verify_multiple_testing_control** (`python -m tools.verify_multiple_testing_control --artifacts-dir artifacts`)
+16) **verify_multiple_testing_control** (`python -m tools.verify_multiple_testing_control --artifacts-dir artifacts`)
    - PASS: experiment ledger present, baseline coverage intact, and trials within budget (or override recorded).
    - FAIL: missing ledger fields, missing baselines, or trial budget exceeded without override.
-16) **apply_edits_dry_run** (`python -m tools.apply_edits --repo . --edits fixtures/edits_contract/good.json --artifacts-dir artifacts --dry-run`)
+17) **apply_edits_dry_run** (`python -m tools.apply_edits --repo . --edits fixtures/edits_contract/good.json --artifacts-dir artifacts --dry-run`)
    - PASS: edits dry-run succeeded.
    - FAIL: edits dry-run failed.
-17) **extract_json_strict_negative** (`python -m tools.extract_json_strict --raw-text fixtures/extract_json_strict/bad_fenced.txt --out-json artifacts/extract_json_strict_bad.json`)
+18) **extract_json_strict_negative** (`python -m tools.extract_json_strict --raw-text fixtures/extract_json_strict/bad_fenced.txt --out-json artifacts/extract_json_strict_bad.json`)
    - PASS: gate fails as expected on bad input.
    - FAIL: unexpected success on bad input.
-18) **verify_pr36_gate** (preflight, if present)
+19) **verify_pr36_gate** (preflight, if present)
    - PASS: preflight gate OK.
    - FAIL: preflight gate failed.
-19) **import_contract** (`python -m tools.verify_import_contract --module <canonical_gate> --artifacts-dir artifacts`)
+20) **import_contract** (`python -m tools.verify_import_contract --module <canonical_gate> --artifacts-dir artifacts`)
    - PASS: canonical gate module imports.
    - FAIL: import contract failed.
-20) **canonical gate runner** (one of the following):
+21) **canonical gate runner** (one of the following):
    - `python tools/verify_prNN_gate.py` (highest available PR gate, e.g., verify_pr40_gate)
    - `python tools/verify_foundation.py` (fallback)
    - `python tools/verify_consistency.py` (fallback)
