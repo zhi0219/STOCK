@@ -249,6 +249,9 @@ Run the safe pull script from repo root:
 Optional overrides:
 `.\scripts\safe_pull_v1.ps1 -Remote origin -Branch main`
 
+AutoStash override (explicit opt-in, fail-closed by default):
+`.\scripts\safe_pull_v1.ps1 -AutoStash YES`
+
 The wrapper enforces:
 - Repo root only (fails if not at repo root).
 - Clean worktree (`git status --porcelain` is empty).
@@ -256,8 +259,18 @@ The wrapper enforces:
 - No in-progress git states (MERGE_HEAD, CHERRY_PICK_HEAD, REVERT_HEAD, rebase-apply, rebase-merge, AM).
 - Fast-forward only (`git pull --ff-only`).
 
+AutoStash behavior when `-AutoStash YES` and a dirty worktree is detected:
+- Stashes tracked + untracked changes with `git stash push -u` and a UTC timestamp label.
+- Re-checks status; if still dirty, fails closed.
+- Runs the fast-forward pull.
+- On pull success, preserves the stash (prints a NEXT marker).
+- On pull failure, attempts `git stash pop` to roll back and records the rollback status.
+
 Markers emitted:
 - `SAFE_PULL_START|...`
+- `SAFE_PULL_AUTOSTASH_START|...`
+- `SAFE_PULL_AUTOSTASH_SUMMARY|status=...|stash_created=...|pull_status=...|rollback_status=...|next=...`
+- `SAFE_PULL_AUTOSTASH_END`
 - `SAFE_PULL_SUMMARY|status=PASS/FAIL|reason=...|next=...`
 - `SAFE_PULL_END`
 

@@ -9,6 +9,9 @@ from typing import Any
 
 REQUIRED_MARKERS = [
     "SAFE_PULL_START",
+    "SAFE_PULL_AUTOSTASH_START",
+    "SAFE_PULL_AUTOSTASH_SUMMARY",
+    "SAFE_PULL_AUTOSTASH_END",
     "SAFE_PULL_SUMMARY",
     "SAFE_PULL_END",
 ]
@@ -17,6 +20,8 @@ REQUIRED_COMMAND_PATTERNS = [
     r"Invoke-PsRunner",
     r"powershell_runner\.ps1",
     r"git pull --ff-only",
+    r"git stash push -u -m",
+    r"git stash pop",
     r"git status --porcelain",
     r"git ls-files -u",
 ]
