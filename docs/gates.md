@@ -120,6 +120,17 @@ Aggregates lightweight health checks for CI consistency.
     - `CONSISTENCY_FAIL|next=python tools/verify_consistency.py`
   - Only FAIL emits a next-action marker; PASS/DEGRADED must not print any "Next step:" line.
 
+## Smoke Gate (P0)
+Lightweight verification of core scripts and logs.
+- Gate: `python -m tools.verify_smoke --artifacts-dir artifacts`
+- Artifacts:
+  - `artifacts/verify_smoke.txt`
+  - `artifacts/verify_smoke.json`
+- Output markers:
+  - `VERIFY_SMOKE_START`
+  - `VERIFY_SMOKE_SUMMARY|status=PASS/FAIL|checks=...|artifacts=...`
+  - `VERIFY_SMOKE_END`
+
 ## Execution Model Gate (P0)
 Deterministic execution-friction verification with sensitivity checks.
 - Gate: `python -m tools.verify_execution_model --artifacts-dir artifacts`

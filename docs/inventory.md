@@ -307,6 +307,8 @@ Version: v1
 - `artifacts/verify_inventory_contract.txt` (produced_by: tools/verify_consistency.py, tools/verify_inventory_contract.py)
 - `artifacts/verify_powershell_no_goto_labels_contract.json` (produced_by: tools/verify_powershell_no_goto_labels_contract.py)
 - `artifacts/verify_powershell_no_goto_labels_contract.txt` (produced_by: tools/verify_consistency.py, tools/verify_powershell_no_goto_labels_contract.py)
+- `artifacts/verify_smoke.json` (produced_by: tools/verify_smoke.py)
+- `artifacts/verify_smoke.txt` (produced_by: tools/verify_smoke.py)
 - `artifacts/walk_forward_report.json` (produced_by: tools/verify_walk_forward.py)
 - `artifacts/walk_forward_report.txt` (produced_by: tools/verify_consistency.py, tools/verify_walk_forward.py)
 - `artifacts/walk_forward_windows.csv` (produced_by: tools/verify_walk_forward.py)
@@ -1090,7 +1092,7 @@ Version: v1
   - files: tools/verify_smoke.py
   - commands: python -m tools.verify_smoke --help
   - gates: none
-  - artifacts: none
+  - artifacts: artifacts/verify_smoke.json, artifacts/verify_smoke.txt
 - **verify_streamlit_smoke**
   - files: tools/verify_streamlit_smoke.py
   - commands: python -m tools.verify_streamlit_smoke

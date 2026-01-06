@@ -6,6 +6,8 @@ import os
 import py_compile
 import subprocess
 import sys
+import traceback
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
@@ -23,14 +25,26 @@ SUMMARY = {
 }
 
 
-def parse_args() -> argparse.Namespace:
+class SmokeFailure(Exception):
+    def __init__(self, message: str, extra_output: str | None = None) -> None:
+        super().__init__(message)
+        self.message = message
+        self.extra_output = extra_output
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Lightweight smoke checks")
     parser.add_argument(
         "--allow-kill-switch-move",
         action="store_true",
         help="Temporarily move Data/KILL_SWITCH when invoked by consistency harness",
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "--artifacts-dir",
+        default="artifacts",
+        help="Directory for verify_smoke artifacts.",
+    )
+    return parser.parse_args(argv)
 
 
 def fail(msg: str, extra_output: str | None = None) -> None:
@@ -43,7 +57,53 @@ def fail(msg: str, extra_output: str | None = None) -> None:
     print(
         "FAIL: smoke failed; copy the messages above (including stdout/stderr) when seeking help."
     )
-    sys.exit(1)
+    raise SmokeFailure(msg, extra_output)
+
+
+def _timestamp_utc() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _write_text(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    path.write_text(normalized, encoding="utf-8")
+
+
+def _write_artifacts(
+    artifacts_dir: Path,
+    *,
+    status: str,
+    failure_reason: str | None,
+    failure_output: str | None,
+) -> None:
+    payload = {
+        "status": status,
+        "timestamp_utc": _timestamp_utc(),
+        "python_exe": SUMMARY["interpreter"],
+        "dependency_versions": SUMMARY["versions"],
+        "passed_checks": SUMMARY["passed"],
+        "failure_reason": failure_reason,
+        "failure_output": failure_output,
+    }
+
+    json_path = artifacts_dir / "verify_smoke.json"
+    txt_path = artifacts_dir / "verify_smoke.txt"
+
+    _write_text(json_path, json.dumps(payload, indent=2, sort_keys=True))
+
+    lines = [
+        f"status={payload['status']}",
+        f"timestamp_utc={payload['timestamp_utc']}",
+        f"python_exe={payload['python_exe']}",
+        f"dependency_versions={payload['dependency_versions']}",
+        f"passed_checks={payload['passed_checks']}",
+    ]
+    if failure_reason:
+        lines.append(f"failure_reason={failure_reason}")
+    if failure_output:
+        lines.extend(["", "failure_output:", failure_output.rstrip()])
+    _write_text(txt_path, "\n".join(lines) + "\n")
 
 
 def record_pass(label: str) -> None:
@@ -238,30 +298,73 @@ def check_logs() -> None:
     record_pass("logs/status/events sanity")
 
 
-def main() -> None:
-    args = parse_args()
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
+    artifacts_dir = Path(args.artifacts_dir).resolve()
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
 
-    check_imports()
-    ensure_paths()
-    compile_targets()
-    run_with_kill_switch(
-        ROOT / "alerts.py", "ALERTS_START", allow_move=args.allow_kill_switch_move
-    )
-    run_with_kill_switch(
-        ROOT / "quotes.py",
-        "QUOTES_START",
-        banner_log=LOGS_DIR / "run.log",
-        allow_move=args.allow_kill_switch_move,
-    )
-    check_logs()
+    print("VERIFY_SMOKE_START")
 
-    print(f"Interpreter: {SUMMARY['interpreter']}")
-    print(f"Dependencies: {SUMMARY['versions']}")
-    print(
-        f"PASS: smoke verified ({SUMMARY['passed']} checks passed)."
-        " Next step: share this output if you need assistance."
+    status = "PASS"
+    failure_reason: str | None = None
+    failure_output: str | None = None
+    exit_code = 0
+
+    try:
+        if os.environ.get("VERIFY_SMOKE_FORCE_FAIL"):
+            fail("Forced failure requested via VERIFY_SMOKE_FORCE_FAIL.")
+
+        check_imports()
+        ensure_paths()
+        compile_targets()
+        run_with_kill_switch(
+            ROOT / "alerts.py", "ALERTS_START", allow_move=args.allow_kill_switch_move
+        )
+        run_with_kill_switch(
+            ROOT / "quotes.py",
+            "QUOTES_START",
+            banner_log=LOGS_DIR / "run.log",
+            allow_move=args.allow_kill_switch_move,
+        )
+        check_logs()
+
+        print(f"Interpreter: {SUMMARY['interpreter']}")
+        print(f"Dependencies: {SUMMARY['versions']}")
+        print(
+            f"PASS: smoke verified ({SUMMARY['passed']} checks passed)."
+            " Next step: share this output if you need assistance."
+        )
+    except SmokeFailure as exc:
+        status = "FAIL"
+        failure_reason = exc.message
+        failure_output = exc.extra_output
+        exit_code = 1
+    except Exception as exc:  # pragma: no cover - defensive
+        status = "FAIL"
+        failure_reason = f"unhandled_exception={exc}"
+        failure_output = traceback.format_exc()
+        exit_code = 1
+        print(f"FAIL: {failure_reason}")
+        print(failure_output.rstrip())
+
+    _write_artifacts(
+        artifacts_dir,
+        status=status,
+        failure_reason=failure_reason,
+        failure_output=failure_output,
     )
+    summary_parts = [
+        "VERIFY_SMOKE_SUMMARY",
+        f"status={status}",
+        f"checks={SUMMARY['passed']}",
+        f"artifacts={artifacts_dir}",
+    ]
+    if failure_reason:
+        summary_parts.append(f"reason={failure_reason}")
+    print("|".join(summary_parts))
+    print("VERIFY_SMOKE_END")
+    return exit_code
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
