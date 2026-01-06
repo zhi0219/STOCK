@@ -96,12 +96,14 @@ Validates strict JSON-only edits outputs.
 Aggregates lightweight health checks for CI consistency.
 - Gate: `python -m tools.verify_consistency --artifacts-dir artifacts`
 - Runs: docs_contract, inventory_contract, execution_model, data_health, walk_forward, redteam_integrity, multiple_testing_control plus basic sanity checks.
+- Default status: PASS/FAIL based on required gates only (optional checks are opt-in).
 - Archived events:
   - Canonical location: `Logs/event_archives/`.
   - Legacy location: `Logs/_event_archives/` (migrate to canonical when present).
   - Opt-in validation: `python -m tools.verify_consistency --include-event-archives --artifacts-dir artifacts`.
+  - When opted in with zero archive files, reports `archive_files=0` as OK.
   - Migration command: `python -m tools.migrate_event_archives --logs-dir Logs --archive-dir Logs/event_archives --artifacts-dir artifacts --mode move`.
-- Legacy gates: opt-in via `--include-legacy-gates` (default skips `verify_pr20_gate.py`).
+- Legacy gates: opt-in via `--include-legacy-gates` (default does not mention or count them).
 - Rationale: legacy artifacts should not block main by default while remaining auditable on demand.
 - Output contract (single-line ASCII markers):
   - PASS:
@@ -199,7 +201,7 @@ Single deterministic signal for local PR readiness (fail-closed).
   - `python -m tools.verify_inventory_contract --artifacts-dir artifacts`
   - `python -m tools.verify_execution_model --artifacts-dir artifacts`
   - `python -m tools.verify_foundation --artifacts-dir artifacts`
-  - `python -m tools.verify_consistency --artifacts-dir artifacts` (PASS/DEGRADED allowed)
+- `python -m tools.verify_consistency --artifacts-dir artifacts` (PASS/FAIL only; optional checks require explicit flags)
 - Artifacts:
   - `artifacts/pr_ready_summary.json`
   - `artifacts/pr_ready.txt`
