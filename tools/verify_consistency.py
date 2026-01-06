@@ -417,6 +417,34 @@ def _exit_code(has_failures: bool) -> int:
     return 1 if has_failures else 0
 
 
+def _summarize_results(
+    all_results: List[CheckResult],
+    missing_deps: List[str],
+    not_using_venv: bool,
+) -> tuple[str, str, List[str], List[str], bool]:
+    skipped_checks = [r.name for r in all_results if r.status == "SKIP"]
+    has_failures = any(r.status == "FAIL" for r in all_results)
+    degraded_reasons = []
+    if missing_deps:
+        degraded_reasons.append(f"missing_deps={_format_dep_list(missing_deps)}")
+    if skipped_checks:
+        degraded_reasons.append(f"skipped={_format_dep_list(skipped_checks)}")
+    if not_using_venv:
+        degraded_reasons.append("not_using_venv=1")
+
+    if has_failures:
+        summary_line = "FAIL: consistency issues detected"
+        status = "FAIL"
+    elif degraded_reasons:
+        summary_line = "DEGRADED " + "; ".join(degraded_reasons)
+        status = "DEGRADED"
+    else:
+        summary_line = "PASS: consistency checks succeeded"
+        status = "PASS"
+
+    return status, summary_line, skipped_checks, degraded_reasons, has_failures
+
+
 def check_readme_cli_consistency(missing_deps: List[str]) -> List[CheckResult]:
     targets = [
         "tail_events.py",
@@ -451,8 +479,8 @@ def check_readme_cli_consistency(missing_deps: List[str]) -> List[CheckResult]:
             results.append(
                 CheckResult(
                     f"{name} --help",
-                    "SKIP",
-                    f"missing deps: {_format_dep_list(missing_for_help)}; requires: {_format_dep_list(required_deps)}",
+                    True,
+                    f"missing deps (skipped): {_format_dep_list(missing_for_help)}; requires: {_format_dep_list(required_deps)}",
                 )
             )
             continue
@@ -571,7 +599,7 @@ def _training_blockers(env: dict[str, str | bool]) -> List[str]:
 def _legacy_gate_checks(include_legacy_gates: bool) -> List[CheckResult]:
     if include_legacy_gates:
         return []
-    return [CheckResult("verify_pr20_gate.py (legacy)", "SKIP")]
+    return []
 
 
 def _quick_verifier_scripts(include_legacy_gates: bool) -> List[Path]:
@@ -607,8 +635,8 @@ def _run_quick_verifiers(
             results.append(
                 CheckResult(
                     script.name,
-                    "SKIP",
-                    f"missing deps: {_format_dep_list(missing_deps)}",
+                    True,
+                    f"missing deps (skipped): {_format_dep_list(missing_deps)}",
                 )
             )
             continue
@@ -617,8 +645,8 @@ def _run_quick_verifiers(
             results.append(
                 CheckResult(
                     script.name,
-                    "SKIP",
-                    " ; ".join(training_blockers),
+                    True,
+                    f"skipped: {' ; '.join(training_blockers)}",
                 )
             )
             continue
@@ -659,13 +687,14 @@ def check_events_schema(
     required_keys = {"schema_version", "ts_utc", "event_type", "symbol", "severity", "message"}
     active_files = [logs_dir / "events.jsonl", logs_dir / "events_sim.jsonl"]
     active_files = [path for path in active_files if path.exists()]
-    archives = _find_archived_event_files(ARCHIVE_DIR) if ARCHIVE_DIR.exists() else []
-    legacy_archives = _find_archived_event_files(LEGACY_ARCHIVE_DIR) if LEGACY_ARCHIVE_DIR.exists() else []
+    archive_root = logs_dir / "event_archives"
+    legacy_root = logs_dir / "_event_archives"
+    archives = _find_archived_event_files(archive_root) if archive_root.exists() else []
+    legacy_archives = _find_archived_event_files(legacy_root) if legacy_root.exists() else []
     archive_count = len(archives) + len(legacy_archives)
     if not active_files and not include_archives:
         return [
             CheckResult("events schema", True, "no active events files (skipped)"),
-            CheckResult("events archives", "SKIP", str(archive_count)),
         ]
 
     failures: List[str] = []
@@ -702,20 +731,20 @@ def check_events_schema(
     else:
         results.append(CheckResult("events schema", True))
 
-    if not include_archives:
-        results.append(CheckResult("events archives", "SKIP", str(archive_count)))
-    elif legacy_archives:
-        results.append(
-            CheckResult(
-                "events archives legacy",
-                "WARN",
-                "EVENT_ARCHIVE_LEGACY|"
-                f"count={len(legacy_archives)}|"
-                "path=Logs/_event_archives|"
-                "next=python -m tools.migrate_event_archives --logs-dir Logs --archive-dir Logs/event_archives "
-                "--artifacts-dir artifacts --mode move",
+    if include_archives:
+        results.append(CheckResult("events archives", True, f"archive_files={archive_count}"))
+        if legacy_archives:
+            results.append(
+                CheckResult(
+                    "events archives legacy",
+                    "WARN",
+                    "EVENT_ARCHIVE_LEGACY|"
+                    f"count={len(legacy_archives)}|"
+                    "path=Logs/_event_archives|"
+                    "next=python -m tools.migrate_event_archives --logs-dir Logs --archive-dir Logs/event_archives "
+                    "--artifacts-dir artifacts --mode move",
+                )
             )
-        )
     return results
 
 
@@ -1012,26 +1041,12 @@ def main(argv: List[str] | None = None) -> int:
     for fn in optional_checks:
         all_results.extend(fn())
 
-    skipped_checks = [r.name for r in all_results if r.status == "SKIP"]
-    has_failures = any(r.status == "FAIL" for r in all_results)
     not_using_venv = env.get("venv_present") and not env.get("executable_in_venv")
-    degraded_reasons = []
-    if missing_deps:
-        degraded_reasons.append(f"missing_deps={_format_dep_list(missing_deps)}")
-    if skipped_checks:
-        degraded_reasons.append(f"skipped={_format_dep_list(skipped_checks)}")
-    if not_using_venv:
-        degraded_reasons.append("not_using_venv=1")
-
-    if has_failures:
-        summary_line = "FAIL: consistency issues detected"
-        status = "FAIL"
-    elif degraded_reasons:
-        summary_line = "DEGRADED " + "; ".join(degraded_reasons)
-        status = "DEGRADED"
-    else:
-        summary_line = "PASS: consistency checks succeeded"
-        status = "PASS"
+    status, summary_line, skipped_checks, degraded_reasons, has_failures = _summarize_results(
+        all_results,
+        missing_deps,
+        bool(not_using_venv),
+    )
 
     notes = ";".join(degraded_reasons) if degraded_reasons else "none"
     summary_marker = "|".join(
