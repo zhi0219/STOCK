@@ -159,7 +159,9 @@ def select_candidates(pool: Dict[str, object], count: int, seed: int) -> List[Di
     )
     if not ordered:
         return []
-    count = max(1, min(int(count), len(ordered)))
+    count = max(0, min(int(count), len(ordered)))
+    if count == 0:
+        return []
     offset = int(seed) % len(ordered)
     selected: List[Dict[str, object]] = []
     for idx in range(count):

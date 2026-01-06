@@ -15,6 +15,7 @@ from tools.replay_artifacts import build_decision_cards, write_replay_artifacts
 from tools.strategy_pool import load_strategy_pool, select_candidates, write_strategy_pool_manifest
 from tools.paths import to_repo_relative
 from tools.experiment_ledger import DEFAULT_BASELINES, append_entry, build_entry
+from tools.multiple_testing_control import TrialBudgetError, enforce_budget, write_enforcement_artifact
 
 ROOT = Path(__file__).resolve().parent.parent
 LOGS_DIR = ROOT / "Logs"
@@ -245,10 +246,39 @@ def run_pr28_flow(config: PR28Config) -> Dict[str, Path]:
     latest_dir = config.runs_root / "_latest"
     latest_dir.mkdir(parents=True, exist_ok=True)
 
+    enforcement = None
+    try:
+        enforcement = enforce_budget(
+            requested_candidate_count=config.candidate_count,
+            baseline_count=len(BASELINE_CANDIDATES),
+        )
+    except TrialBudgetError as exc:
+        raise RuntimeError(str(exc)) from exc
+
+    enforcement_path = ROOT / "artifacts" / f"multitest_enforcement_{run_id}.json"
+    write_enforcement_artifact(enforcement_path, enforcement)
+    if enforcement.status != "OK":
+        print(
+            "|".join(
+                [
+                    "MULTITEST_ENFORCEMENT",
+                    f"status={enforcement.status}",
+                    f"requested_candidate_count={enforcement.requested_candidate_count}",
+                    f"enforced_candidate_count={enforcement.enforced_candidate_count}",
+                    f"requested_trial_count={enforcement.requested_trial_count}",
+                    f"enforced_trial_count={enforcement.enforced_trial_count}",
+                    f"budget_candidate_count={enforcement.budget_candidate_count}",
+                    f"budget_trial_count={enforcement.budget_trial_count}",
+                    f"artifact={to_repo_relative(enforcement_path)}",
+                    f"reasons={','.join(enforcement.reasons) if enforcement.reasons else 'none'}",
+                ]
+            )
+        )
+
     pool_path = config.runs_root / "strategy_pool.json"
     pool = _ensure_pool_manifest(pool_path)
-    candidates = select_candidates(pool, config.candidate_count, config.seed)
-    if not candidates:
+    candidates = select_candidates(pool, enforcement.enforced_candidate_count, config.seed)
+    if not candidates and enforcement.enforced_candidate_count > 0:
         candidates = [
             {
                 "candidate_id": "momentum_fallback",
@@ -386,6 +416,10 @@ def run_pr28_flow(config: PR28Config) -> Dict[str, Path]:
             ROOT / "tools" / "sim_tournament.py",
             ROOT / "tools" / "promotion_gate_v2.py",
         ],
+        requested_candidate_count=enforcement.requested_candidate_count,
+        requested_trial_count=enforcement.requested_trial_count,
+        enforced_candidate_count=enforcement.enforced_candidate_count,
+        enforced_trial_count=enforcement.enforced_trial_count,
     )
     append_entry(ROOT / "artifacts", ledger_entry)
 

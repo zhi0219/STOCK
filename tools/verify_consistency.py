@@ -916,9 +916,14 @@ def check_redteam_integrity(artifacts_dir: Path, python_exec: str) -> List[Check
 
 
 def check_multiple_testing_control(artifacts_dir: Path, python_exec: str) -> List[CheckResult]:
-    from tools.experiment_ledger import DEFAULT_BASELINES, append_entry, build_entry
+    from tools.experiment_ledger import (
+        DEFAULT_BASELINES,
+        append_entry,
+        build_entry,
+        resolve_latest_ledger_path,
+    )
 
-    ledger_path = artifacts_dir / "experiment_ledger.jsonl"
+    ledger_path = resolve_latest_ledger_path(artifacts_dir, fallback=artifacts_dir / "experiment_ledger.jsonl")
     if not ledger_path.exists():
         entry = build_entry(
             run_id="consistency_seed",

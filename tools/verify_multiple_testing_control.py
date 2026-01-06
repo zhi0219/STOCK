@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
-from tools.experiment_ledger import DEFAULT_BASELINES
+from tools.experiment_ledger import DEFAULT_BASELINES, resolve_latest_ledger_path
 from tools.paths import repo_root, to_repo_relative
 
 ROOT = repo_root()
@@ -150,7 +150,9 @@ def main(argv: list[str] | None = None) -> int:
     artifacts_dir = Path(args.artifacts_dir).expanduser().resolve()
     artifacts_dir.mkdir(parents=True, exist_ok=True)
 
-    ledger_path = Path(args.ledger_path) if args.ledger_path else artifacts_dir / "experiment_ledger.jsonl"
+    ledger_path = Path(args.ledger_path) if args.ledger_path else resolve_latest_ledger_path(
+        artifacts_dir, fallback=artifacts_dir / "experiment_ledger.jsonl"
+    )
     budget_path = Path(args.budget_path)
 
     summary_path = artifacts_dir / "experiment_ledger_summary.json"
@@ -188,10 +190,23 @@ def main(argv: list[str] | None = None) -> int:
 
     trial_count = int(latest_entry.get("trial_count") or 0) if isinstance(latest_entry, dict) else 0
     candidate_count = int(latest_entry.get("candidate_count") or 0) if isinstance(latest_entry, dict) else 0
+    requested_trial_count = int(latest_entry.get("requested_trial_count") or trial_count) if isinstance(
+        latest_entry, dict
+    ) else trial_count
+    requested_candidate_count = int(
+        latest_entry.get("requested_candidate_count") or candidate_count
+    ) if isinstance(latest_entry, dict) else candidate_count
+    enforced_trial_count = int(latest_entry.get("enforced_trial_count") or trial_count) if isinstance(
+        latest_entry, dict
+    ) else trial_count
+    enforced_candidate_count = int(
+        latest_entry.get("enforced_candidate_count") or candidate_count
+    ) if isinstance(latest_entry, dict) else candidate_count
     baselines_used = latest_entry.get("baselines_used") if isinstance(latest_entry, dict) else []
     override_flag = bool(latest_entry.get("trial_budget_override")) if isinstance(latest_entry, dict) else False
 
     budget_trial_count = budget.get("trial_count") if isinstance(budget, dict) else None
+    budget_candidate_count = budget.get("candidate_count") if isinstance(budget, dict) else None
     penalty = None
     if isinstance(budget_trial_count, int):
         penalty = _penalty(trial_count, budget_trial_count)
@@ -211,6 +226,26 @@ def main(argv: list[str] | None = None) -> int:
                     "trial_budget",
                     "PASS",
                     f"trial_count={trial_count} budget={budget_trial_count}",
+                )
+            )
+
+    if isinstance(budget_candidate_count, int):
+        if candidate_count > budget_candidate_count and not override_flag:
+            status = "FAIL"
+            reasons.append("candidate_budget_exceeded")
+            case_results.append(
+                CaseResult(
+                    "candidate_budget",
+                    "FAIL",
+                    f"candidate_count={candidate_count} budget={budget_candidate_count}",
+                )
+            )
+        else:
+            case_results.append(
+                CaseResult(
+                    "candidate_budget",
+                    "PASS",
+                    f"candidate_count={candidate_count} budget={budget_candidate_count}",
                 )
             )
 
@@ -236,6 +271,10 @@ def main(argv: list[str] | None = None) -> int:
         "latest_entry": latest_entry,
         "trial_count": trial_count,
         "candidate_count": candidate_count,
+        "requested_trial_count": requested_trial_count,
+        "requested_candidate_count": requested_candidate_count,
+        "enforced_trial_count": enforced_trial_count,
+        "enforced_candidate_count": enforced_candidate_count,
         "baselines_used": baselines_used,
         "required_baselines": DEFAULT_BASELINES,
         "trial_budget": budget,
@@ -251,6 +290,10 @@ def main(argv: list[str] | None = None) -> int:
                 f"status={status}",
                 f"trial_count={trial_count}",
                 f"candidate_count={candidate_count}",
+                f"requested_trial_count={requested_trial_count}",
+                f"requested_candidate_count={requested_candidate_count}",
+                f"enforced_trial_count={enforced_trial_count}",
+                f"enforced_candidate_count={enforced_candidate_count}",
                 f"penalty={penalty if penalty is not None else 'n/a'}",
                 f"detail={summary_detail}",
                 f"report={to_repo_relative(summary_path)}",

@@ -13,8 +13,10 @@ REQUIRED_RULES = [
     "Logs/status.json",
     "logs/status.json",
     "Logs/policy_registry.json",
+    "Logs/data_runtime/",
     "Logs/runtime/",
     "logs/policy_registry.json",
+    "logs/data_runtime/",
     "logs/runtime/",
     "Logs/train_daemon_state.json",
     "logs/train_daemon_state.json",
@@ -41,10 +43,12 @@ REQUIRED_RULES = [
 
 RUNTIME_ROOTS = [
     "Logs/",
+    "Logs/data_runtime/",
     "Logs/runtime/",
     "Logs/event_archives/",
     "Logs/_event_archives/",
     "logs/",
+    "logs/data_runtime/",
     "logs/runtime/",
     "Reports/",
     "reports/",

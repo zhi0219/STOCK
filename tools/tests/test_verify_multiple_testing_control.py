@@ -62,6 +62,26 @@ class VerifyMultipleTestingControlTests(unittest.TestCase):
         self.assertEqual(report["status"], "FAIL")
         self.assertIn("trial_budget_exceeded", report["reasons"])
 
+    def test_exceeded_candidate_budget_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            artifacts_dir = tmp_path / "artifacts"
+            budget_path = self._write_budget(tmp_path, trial_count=6, candidate_count=1)
+            entry = {
+                "run_id": "run_candidate",
+                "timestamp": "2024-01-01T00:00:00Z",
+                "candidate_count": 2,
+                "trial_count": 3,
+                "baselines_used": ["DoNothing", "Buy&Hold", "SimpleMomentum"],
+                "window_config_hash": "hash",
+                "code_hash": "hash",
+            }
+            self._write_ledger(artifacts_dir, entry)
+            rc, report = self._run_gate(artifacts_dir, budget_path)
+        self.assertNotEqual(rc, 0)
+        self.assertEqual(report["status"], "FAIL")
+        self.assertIn("candidate_budget_exceeded", report["reasons"])
+
     def test_missing_baselines_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
@@ -93,6 +113,10 @@ class VerifyMultipleTestingControlTests(unittest.TestCase):
                 "timestamp": "2024-01-01T00:00:00Z",
                 "candidate_count": 2,
                 "trial_count": 2,
+                "requested_candidate_count": 3,
+                "requested_trial_count": 5,
+                "enforced_candidate_count": 2,
+                "enforced_trial_count": 2,
                 "baselines_used": ["DoNothing", "Buy&Hold", "SimpleMomentum"],
                 "window_config_hash": "hash",
                 "code_hash": "hash",

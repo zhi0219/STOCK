@@ -16,6 +16,7 @@ CONFIRM_TOKEN = "DELETE-RUNTIME"
 
 RUNTIME_PREFIXES = [
     "Logs/",
+    "Logs/data_runtime/",
     "Logs/runtime/",
     "Logs/train_runs/",
     "Logs/train_service/",
@@ -23,6 +24,7 @@ RUNTIME_PREFIXES = [
     "Logs/event_archives/",
     "Logs/_event_archives/",
     "logs/",
+    "logs/data_runtime/",
     "logs/runtime/",
     "logs/train_runs/",
     "logs/train_service/",
