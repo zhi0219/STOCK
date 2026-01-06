@@ -26,7 +26,7 @@ MEMORY_COMMIT:
     )
 
     gates_text = """
-MEMORY_COMMIT:\n- test\n\n# Gates\n\nPASS means success.\nDEGRADED means warnings.\nFAIL means fail-closed.\nPASS vs DEGRADED is explicit.\n\ncompile_check\nsyntax_guard\nps_parse_guard\nsafe_push_contract\npowershell_join_path_contract\nui_preflight\ndocs_contract\nverify_edits_contract\ninventory_repo\nverify_inventory_contract\napply_edits_dry_run\nextract_json_strict_negative\nverify_pr36_gate\nimport_contract\nverify_pr40_gate.py\nverify_foundation.py\nverify_consistency.py\n"""
+MEMORY_COMMIT:\n- test\n\n# Gates\n\nPASS means success.\nDEGRADED means warnings.\nFAIL means fail-closed.\nPASS vs DEGRADED is explicit.\n\ncompile_check\nsyntax_guard\nps_parse_guard\nsafe_push_contract\nverify_repo_doctor_contract\npowershell_join_path_contract\nui_preflight\ndocs_contract\nverify_edits_contract\ninventory_repo\nverify_inventory_contract\napply_edits_dry_run\nextract_json_strict_negative\nverify_pr36_gate\nimport_contract\nverify_pr40_gate.py\nverify_foundation.py\nverify_consistency.py\n"""
     (docs_dir / "gates.md").write_text(gates_text, encoding="utf-8")
 
     backlog_lines = ["# Backlog", "", "## P0"]
