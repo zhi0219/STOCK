@@ -198,6 +198,22 @@ if safe_push_contract_path.exists():
         )
         safe_push_contract_errors = safe_push_contract_result.get("errors") or []
 
+repo_doctor_contract_path = artifacts_dir / "verify_repo_doctor_contract.json"
+repo_doctor_contract_status = "UNKNOWN"
+repo_doctor_contract_errors = []
+if repo_doctor_contract_path.exists():
+    try:
+        repo_doctor_contract_result = json.loads(
+            repo_doctor_contract_path.read_text(encoding="utf-8", errors="replace")
+        )
+    except Exception:
+        repo_doctor_contract_result = {"status": "UNKNOWN", "errors": []}
+    if isinstance(repo_doctor_contract_result, dict):
+        repo_doctor_contract_status = str(
+            repo_doctor_contract_result.get("status", "UNKNOWN")
+        )
+        repo_doctor_contract_errors = repo_doctor_contract_result.get("errors") or []
+
 powershell_join_path_path = artifacts_dir / "powershell_join_path_contract_result.json"
 powershell_join_path_status = "UNKNOWN"
 powershell_join_path_errors = []
@@ -294,6 +310,8 @@ summary = {
     "ps_parse_errors": ps_parse_errors,
     "safe_push_contract_status": safe_push_contract_status,
     "safe_push_contract_errors": safe_push_contract_errors,
+    "repo_doctor_contract_status": repo_doctor_contract_status,
+    "repo_doctor_contract_errors": repo_doctor_contract_errors,
     "powershell_join_path_status": powershell_join_path_status,
     "powershell_join_path_errors": powershell_join_path_errors,
     "ui_preflight_status": ui_preflight_status,
@@ -346,6 +364,8 @@ summary_lines = [
     f"- **ps_parse_errors**: `{ps_parse_errors}`",
     f"- **safe_push_contract_status**: `{safe_push_contract_status}`",
     f"- **safe_push_contract_errors**: `{safe_push_contract_errors}`",
+    f"- **repo_doctor_contract_status**: `{repo_doctor_contract_status}`",
+    f"- **repo_doctor_contract_errors**: `{repo_doctor_contract_errors}`",
     f"- **powershell_join_path_status**: `{powershell_join_path_status}`",
     f"- **powershell_join_path_errors**: `{powershell_join_path_errors}`",
     f"- **ui_preflight_status**: `{ui_preflight_status}`",
@@ -439,6 +459,18 @@ if [[ ${rc} -eq 0 ]]; then
     status="FAIL"
     failing_gate="safe_push_contract"
     rc=${safe_push_contract_exit}
+  fi
+fi
+
+if [[ ${rc} -eq 0 ]]; then
+  set +e
+  python3 -m tools.verify_repo_doctor_contract --artifacts-dir "${artifacts_dir}"
+  repo_doctor_contract_exit=$?
+  set -e
+  if [[ ${repo_doctor_contract_exit} -ne 0 ]]; then
+    status="FAIL"
+    failing_gate="verify_repo_doctor_contract"
+    rc=${repo_doctor_contract_exit}
   fi
 fi
 
