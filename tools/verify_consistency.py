@@ -552,6 +552,7 @@ def _py_compile_targets() -> List[Path]:
         "verify_run_completeness_contract.py",
         "verify_latest_artifacts.py",
         "verify_multiple_testing_control.py",
+        "verify_powershell_no_goto_labels_contract.py",
         "experiment_ledger.py",
     ]:
         target = TOOLS_DIR / name
@@ -829,6 +830,34 @@ def check_docs_contract(artifacts_dir: Path, python_exec: str) -> List[CheckResu
     return [CheckResult("docs contract", False, detail)]
 
 
+def check_powershell_no_goto_labels_contract(
+    artifacts_dir: Path, python_exec: str
+) -> List[CheckResult]:
+    cmd = [
+        python_exec,
+        "-m",
+        "tools.verify_powershell_no_goto_labels_contract",
+        "--artifacts-dir",
+        str(artifacts_dir),
+    ]
+    try:
+        completed = subprocess.run(
+            cmd,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except Exception as exc:  # pragma: no cover - subprocess guard
+        return [CheckResult("powershell no goto", False, f"error={exc}")]
+    if completed.returncode == 0:
+        return [CheckResult("powershell no goto", True)]
+    detail = (
+        "exit_code="
+        f"{completed.returncode}; see {artifacts_dir / 'verify_powershell_no_goto_labels_contract.txt'}"
+    )
+    return [CheckResult("powershell no goto", False, detail)]
+
+
 def check_inventory_contract(artifacts_dir: Path, python_exec: str) -> List[CheckResult]:
     cmd = [
         python_exec,
@@ -1022,6 +1051,9 @@ def main(argv: List[str] | None = None) -> int:
         lambda: check_events_schema(args.include_event_archives),
         check_status_json,
         check_read_only_guard,
+        lambda: check_powershell_no_goto_labels_contract(
+            Path(args.artifacts_dir), python_exec
+        ),
         lambda: check_docs_contract(Path(args.artifacts_dir), python_exec),
         lambda: check_inventory_contract(Path(args.artifacts_dir), python_exec),
         lambda: check_execution_model(Path(args.artifacts_dir), python_exec),
