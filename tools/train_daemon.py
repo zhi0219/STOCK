@@ -26,6 +26,7 @@ from tools.policy_registry import promote_policy as _promote_policy
 from tools.execution_friction import load_friction_policy
 from tools.promotion_gate_v2 import GateConfig, evaluate_promotion_gate
 from tools.experiment_ledger import DEFAULT_BASELINES, append_entry, build_entry
+from tools.multiple_testing_control import TrialBudgetError, enforce_budget, write_enforcement_artifact
 from tools.trade_activity_audit import build_report as build_trade_activity_report
 from tools.trade_activity_audit import write_trade_activity_report
 from tools.sim_autopilot import _kill_switch_enabled, _kill_switch_path, run_step
@@ -42,7 +43,7 @@ from tools.strategy_pool import select_candidates, write_strategy_pool_manifest
 from tools.progress_index import build_progress_index, write_progress_index
 from tools import progress_judge
 from tools.stress_harness import evaluate_stress
-from tools.paths import no_lookahead_latest_dir, walk_forward_latest_dir
+from tools.paths import no_lookahead_latest_dir, to_repo_relative, walk_forward_latest_dir
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_INPUT = ROOT / "Data" / "quotes.csv"
@@ -1140,7 +1141,36 @@ def main(argv: List[str] | None = None) -> int:
 
     strategy_pool_path = RUNS_ROOT / "strategy_pool.json"
     strategy_pool = write_strategy_pool_manifest(strategy_pool_path)
-    selected_candidates = select_candidates(strategy_pool, count=6, seed=seed)
+    requested_candidate_count = 6
+    try:
+        enforcement = enforce_budget(
+            requested_candidate_count=requested_candidate_count,
+            baseline_count=len(BASELINE_CANDIDATES),
+        )
+    except TrialBudgetError as exc:
+        raise RuntimeError(str(exc)) from exc
+    enforcement_path = ROOT / "artifacts" / f"multitest_enforcement_{run_id}.json"
+    write_enforcement_artifact(enforcement_path, enforcement)
+    if enforcement.status != "OK":
+        print(
+            "|".join(
+                [
+                    "MULTITEST_ENFORCEMENT",
+                    f"status={enforcement.status}",
+                    f"requested_candidate_count={enforcement.requested_candidate_count}",
+                    f"enforced_candidate_count={enforcement.enforced_candidate_count}",
+                    f"requested_trial_count={enforcement.requested_trial_count}",
+                    f"enforced_trial_count={enforcement.enforced_trial_count}",
+                    f"budget_candidate_count={enforcement.budget_candidate_count}",
+                    f"budget_trial_count={enforcement.budget_trial_count}",
+                    f"artifact={to_repo_relative(enforcement_path)}",
+                    f"reasons={','.join(enforcement.reasons) if enforcement.reasons else 'none'}",
+                ]
+            )
+        )
+    selected_candidates = select_candidates(
+        strategy_pool, count=enforcement.enforced_candidate_count, seed=seed
+    )
     created_utc = _now().isoformat()
     candidates_payload = {
         "schema_version": 1,
@@ -1213,6 +1243,10 @@ def main(argv: List[str] | None = None) -> int:
             ROOT / "tools" / "sim_tournament.py",
             ROOT / "tools" / "promotion_gate_v2.py",
         ],
+        requested_candidate_count=enforcement.requested_candidate_count,
+        requested_trial_count=enforcement.requested_trial_count,
+        enforced_candidate_count=enforcement.enforced_candidate_count,
+        enforced_trial_count=enforcement.enforced_trial_count,
     )
     append_entry(ROOT / "artifacts", ledger_entry)
 

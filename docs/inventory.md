@@ -38,6 +38,7 @@ Version: v1
 - **launch_ui** (py_module): `tools/launch_ui.py` -> `python -m tools.launch_ui`
 - **make_ai_packet** (py_module): `tools/make_ai_packet.py` -> `python -m tools.make_ai_packet --help`
 - **migrate_event_archives** (py_module): `tools/migrate_event_archives.py` -> `python -m tools.migrate_event_archives --help`
+- **multiple_testing_control** (py_module): `tools/multiple_testing_control.py` -> `python -m tools.multiple_testing_control`
 - **no_lookahead_audit** (py_module): `tools/no_lookahead_audit.py` -> `python -m tools.no_lookahead_audit --help`
 - **normalize_edits** (py_module): `tools/normalize_edits.py` -> `python -m tools.normalize_edits --help`
 - **overtrading_budget** (py_module): `tools/overtrading_budget.py` -> `python -m tools.overtrading_budget`
@@ -469,6 +470,11 @@ Version: v1
   - commands: python -m tools.migrate_event_archives --help
   - gates: none
   - artifacts: artifacts/migrate_event_archives.json, artifacts/migrate_event_archives.txt
+- **multiple_testing_control**
+  - files: tools/multiple_testing_control.py
+  - commands: python -m tools.multiple_testing_control
+  - gates: none
+  - artifacts: none
 - **no_lookahead_audit**
   - files: tools/no_lookahead_audit.py
   - commands: python -m tools.no_lookahead_audit --help

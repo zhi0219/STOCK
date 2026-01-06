@@ -26,6 +26,8 @@ logs/status.json
 Logs/supervisor_state.json
 Logs/policy_registry.json
 logs/policy_registry.json
+Logs/data_runtime/
+logs/data_runtime/
 Logs/tournament_runs/
 logs/tournament_runs/
 Logs/train_runs/

@@ -7,6 +7,7 @@ class RepoHygieneRuntimeTests(unittest.TestCase):
     def test_runtime_path_classification(self) -> None:
         runtime_paths = [
             "Logs/events_2024-01-01.jsonl",
+            "Logs/data_runtime/quotes.csv",
             "Logs/runtime/policy_registry.json",
             "Logs/event_archives/events_2024-01-01.jsonl",
             "Logs/_event_archives/events_2024-01-01.jsonl",

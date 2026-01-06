@@ -173,15 +173,22 @@ Fail-closed red-team suite for leakage, misalignment, and survivorship bias.
 ## Multiple-Testing Control Gate (P0)
 Fail-closed governance guardrail for search-scale auditing.
 - Gate: `python -m tools.verify_multiple_testing_control --artifacts-dir artifacts`
-- Inputs: `artifacts/experiment_ledger.jsonl` plus `fixtures/multiple_testing_control/trial_budget.json`.
+- Inputs: latest ledger pointer (`artifacts/experiment_ledger_latest.json`) pointing to a per-run ledger (for example, `artifacts/experiment_ledger_<run_id>.jsonl`), plus `fixtures/multiple_testing_control/trial_budget.json`.
 - Artifacts:
   - `artifacts/experiment_ledger_summary.json`
 - Output markers:
   - `MULTITEST_START`
   - `MULTITEST_CASE|name=...|status=...|detail=...`
-  - `MULTITEST_SUMMARY|status=PASS/FAIL|trial_count=...|candidate_count=...|penalty=...|detail=...|report=...`
+  - `MULTITEST_SUMMARY|status=PASS/FAIL|trial_count=...|candidate_count=...|requested_trial_count=...|requested_candidate_count=...|enforced_trial_count=...|enforced_candidate_count=...|penalty=...|detail=...|report=...`
   - `MULTITEST_END`
 - FAIL triggers: missing ledger fields, missing baselines (DoNothing, Buy&Hold, SimpleMomentum), or trial budget exceeded without override.
+- Enforcement:
+  - Candidate generation and tournament scheduling clamp to the trial budget (both candidate_count and total trial_count).
+  - When upstream requests exceed budget, the run clamps and records enforcement artifacts/markers; if the budget is below baseline coverage, the run fails with `next=reduce search scale`.
+
+## Runtime data zone policy
+- `Data/` remains controlled (tracked or governed fixtures only).
+- `Logs/data_runtime/` is an approved runtime-only zone for transient data (ignored by git and allowed by repo hygiene).
 
 ## PR Ready Gate (P0)
 Single deterministic signal for local PR readiness (fail-closed).
