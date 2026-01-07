@@ -115,7 +115,8 @@ if ($gitStatus.ExitCode -ne 0) {
 }
 $gitStdout = if (Test-Path -LiteralPath $gitStatus.StdoutPath) { Get-Content -Raw -LiteralPath $gitStatus.StdoutPath } else { "" }
 $gitStderr = if (Test-Path -LiteralPath $gitStatus.StderrPath) { Get-Content -Raw -LiteralPath $gitStatus.StderrPath } else { "" }
-$gitCombined = ([string]$gitStdout + [string]$gitStderr).Trim()
+$gitCombined = [string]($gitStdout + $gitStderr)
+$gitCombined = $gitCombined.Trim()
 if (-not [string]::IsNullOrWhiteSpace($gitCombined)) {
   Fail-RepoDoctor -Reason "dirty_worktree" -FailedStep "preflight_clean_worktree" -Next "git status --porcelain"
 }

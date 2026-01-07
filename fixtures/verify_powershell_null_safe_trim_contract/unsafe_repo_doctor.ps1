@@ -1,0 +1,1 @@
+$gitCombined = ($gitStdout + $gitStderr).Trim()
