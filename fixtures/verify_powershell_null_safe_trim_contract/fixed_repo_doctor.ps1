@@ -1,2 +1,2 @@
-$gitCombined = [string]($gitStdout + $gitStderr)
+$gitCombined = [string]::Concat([string]$gitStdout, [string]$gitStderr)
 $gitCombined = $gitCombined.Trim()

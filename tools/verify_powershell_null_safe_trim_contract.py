@@ -21,7 +21,6 @@ EXCLUDED_DIRS = {
 }
 
 TRIM_PATTERN = re.compile(r"\.Trim\s*\(")
-STRING_CAST_PATTERN = re.compile(r"\[string\]\s*$", re.IGNORECASE)
 
 
 def _ts_utc() -> str:
@@ -87,35 +86,6 @@ def _has_top_level_plus(expr: str) -> bool:
     return False
 
 
-def _variable_indices(expr: str) -> list[int]:
-    indices: list[int] = []
-    in_single = False
-    in_double = False
-    for idx, char in enumerate(expr):
-        if char == "'" and not in_double:
-            in_single = not in_single
-        elif char == '"' and not in_single:
-            in_double = not in_double
-        if in_single or in_double:
-            continue
-        if char == "$":
-            next_char = expr[idx + 1] if idx + 1 < len(expr) else ""
-            if next_char.isalpha() or next_char in "_{(":
-                indices.append(idx)
-    return indices
-
-
-def _all_variables_cast_to_string(expr: str) -> bool:
-    indices = _variable_indices(expr)
-    if not indices:
-        return True
-    for idx in indices:
-        prefix = expr[:idx]
-        if not STRING_CAST_PATTERN.search(prefix):
-            return False
-    return True
-
-
 def _iter_ps1_files(root: Path) -> Iterable[Path]:
     for folder in SCAN_DIRS:
         base = root / folder
@@ -127,39 +97,42 @@ def _iter_ps1_files(root: Path) -> Iterable[Path]:
             yield path
 
 
+def _line_number_from_index(text: str, index: int) -> int:
+    return text.count("\n", 0, index) + 1
+
+
 def _scan_file(path: Path) -> list[dict[str, str | int]]:
     offenses: list[dict[str, str | int]] = []
-    lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
-    for line_number, raw_line in enumerate(lines, start=1):
-        line = _strip_inline_comment(raw_line)
-        if ".Trim" not in line:
+    raw_lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    stripped_lines = [_strip_inline_comment(line) for line in raw_lines]
+    content = "\n".join(stripped_lines)
+    if ".Trim" not in content:
+        return offenses
+    pairs = _paren_pairs(content)
+    for match in TRIM_PATTERN.finditer(content):
+        trim_start = match.start()
+        idx = trim_start - 1
+        while idx >= 0 and content[idx].isspace():
+            idx -= 1
+        if idx < 0 or content[idx] != ")":
             continue
-        pairs = _paren_pairs(line)
-        for match in TRIM_PATTERN.finditer(line):
-            trim_start = match.start()
-            close_idx = None
-            for idx in sorted(pairs.keys(), reverse=True):
-                if idx < trim_start and not line[idx + 1 : trim_start].strip():
-                    close_idx = idx
-                    break
-            if close_idx is None:
-                continue
-            open_idx = pairs[close_idx]
-            expr = line[open_idx + 1 : close_idx]
-            if not _has_top_level_plus(expr):
-                continue
-            if not _variable_indices(expr):
-                continue
-            if _all_variables_cast_to_string(expr):
-                continue
-            offenses.append(
-                {
-                    "file": path.as_posix(),
-                    "line": line_number,
-                    "rule_id": RULE_ID,
-                    "content": raw_line.rstrip(),
-                }
-            )
+        close_idx = idx
+        open_idx = pairs.get(close_idx)
+        if open_idx is None:
+            continue
+        expr = content[open_idx + 1 : close_idx]
+        if not _has_top_level_plus(expr):
+            continue
+        line_number = _line_number_from_index(content, match.start())
+        raw_line = raw_lines[line_number - 1] if line_number - 1 < len(raw_lines) else ""
+        offenses.append(
+            {
+                "file": path.as_posix(),
+                "line": line_number,
+                "rule_id": RULE_ID,
+                "content": raw_line.rstrip(),
+            }
+        )
     return offenses
 
 

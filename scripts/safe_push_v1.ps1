@@ -126,7 +126,7 @@ $runResult = Invoke-PsRunner -Command $pythonExe -Arguments @("-m", "tools.verif
 $prReadyExit = $runResult.ExitCode
 $stdoutText = if (Test-Path -LiteralPath $runResult.StdoutPath) { Get-Content -Raw -LiteralPath $runResult.StdoutPath } else { "" }
 $stderrText = if (Test-Path -LiteralPath $runResult.StderrPath) { Get-Content -Raw -LiteralPath $runResult.StderrPath } else { "" }
-$combinedText = ([string]$stdoutText + [string]$stderrText).Trim()
+$combinedText = [string]::Concat([string]$stdoutText, [string]$stderrText).Trim()
 Set-Content -LiteralPath $prReadyLog -Value $combinedText -Encoding utf8
 $prReadyStatus = Get-PrReadyStatus -LogPath $prReadyLog
 if (-not (Is-PrReadyStatusOk -Status $prReadyStatus)) {

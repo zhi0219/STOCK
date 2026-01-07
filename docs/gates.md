@@ -33,9 +33,10 @@ Each gate must emit PASS/FAIL semantics and fail-closed by default.
    - FAIL: any Join-Path call uses 3+ positional arguments or `-AdditionalChildPath`.
    - Rule: use nested `Join-Path` or `[IO.Path]::Combine` for 3+ segments.
 7) **verify_powershell_null_safe_trim_contract** (`python -m tools.verify_powershell_null_safe_trim_contract --artifacts-dir artifacts`)
-   - PASS: PowerShell Trim concatenation uses explicit string casting or interpolation.
-   - FAIL: any Trim called on concatenation without explicit string casts.
-   - Rule: cast with `[string]` or use string interpolation before `.Trim()`.
+   - PASS: PowerShell Trim only uses null-safe patterns (`[string]::Concat(...).Trim()` or explicit null-guard before `.Trim()`).
+   - FAIL: any `(... + ...).Trim()` concatenation, even with explicit casts.
+   - Rule: prefer `[string]::Concat(...)` before `.Trim()` or guard nulls before trimming.
+   - Artifacts: `artifacts/verify_powershell_null_safe_trim_contract.json`, `artifacts/verify_powershell_null_safe_trim_contract.txt`.
 8) **verify_powershell_no_goto_labels_contract** (`python -m tools.verify_powershell_no_goto_labels_contract --artifacts-dir artifacts`)
    - PASS: no PowerShell goto statements or bare label lines detected.
    - FAIL: any line starts with `goto` or is a bare `:Label`.
