@@ -73,9 +73,25 @@ function Run-Git {
     [Parameter(ValueFromRemainingArguments=$true)][string[]]$Args
   )
   $runResult = Invoke-PsRunner -Command $GitExe -Arguments $Args -RepoRoot $RepoRoot -ArtifactsDir $ArtifactsDir -MarkerPrefix $MarkerPrefix
-  $stdoutText = if (Test-Path -LiteralPath $runResult.StdoutPath) { Get-Content -Raw -LiteralPath $runResult.StdoutPath } else { "" }
-  $stderrText = if (Test-Path -LiteralPath $runResult.StderrPath) { Get-Content -Raw -LiteralPath $runResult.StderrPath } else { "" }
-  $combinedText = ($stdoutText + $stderrText).Trim()
+  $stdoutText = ""
+  if (Test-Path -LiteralPath $runResult.StdoutPath) {
+    try {
+      $stdoutText = Get-Content -Raw -LiteralPath $runResult.StdoutPath -ErrorAction Stop
+    } catch {
+      Fail "git_stdout_read_failed" ("inspect_ps_runner_artifacts:" + $runResult.StdoutPath)
+    }
+  }
+  if ($null -eq $stdoutText) { $stdoutText = "" }
+  $stderrText = ""
+  if (Test-Path -LiteralPath $runResult.StderrPath) {
+    try {
+      $stderrText = Get-Content -Raw -LiteralPath $runResult.StderrPath -ErrorAction Stop
+    } catch {
+      Fail "git_stderr_read_failed" ("inspect_ps_runner_artifacts:" + $runResult.StderrPath)
+    }
+  }
+  if ($null -eq $stderrText) { $stderrText = "" }
+  $combinedText = [string]::Concat($stdoutText, $stderrText).Trim()
   return @($runResult.ExitCode, $combinedText)
 }
 
@@ -167,8 +183,10 @@ if (-not [string]::IsNullOrWhiteSpace($statusResult[1])) {
   $script:AutoStashLog.Add("stash_push_command=git stash push -u -m " + $stashMessage)
   $stashResult = Invoke-PsRunner -Command $gitExe -Arguments @("stash", "push", "-u", "-m", $stashMessage) -RepoRoot $repoRoot -ArtifactsDir $artifactsDir -MarkerPrefix "SAFE_PULL_AUTOSTASH_PUSH"
   $stashStdout = if (Test-Path -LiteralPath $stashResult.StdoutPath) { Get-Content -Raw -LiteralPath $stashResult.StdoutPath } else { "" }
+  if ($null -eq $stashStdout) { $stashStdout = "" }
   $stashStderr = if (Test-Path -LiteralPath $stashResult.StderrPath) { Get-Content -Raw -LiteralPath $stashResult.StderrPath } else { "" }
-  $stashCombined = ($stashStdout + $stashStderr).Trim()
+  if ($null -eq $stashStderr) { $stashStderr = "" }
+  $stashCombined = [string]::Concat($stashStdout, $stashStderr).Trim()
   $script:AutoStashLog.Add("stash_push_output=" + $stashCombined)
 
   if ($stashResult.ExitCode -ne 0) {
@@ -217,8 +235,10 @@ if (-not [string]::IsNullOrWhiteSpace($Branch)) { $pullArgs += $Branch }
 
 $runResult = Invoke-PsRunner -Command $gitExe -Arguments $pullArgs -RepoRoot $repoRoot -ArtifactsDir $artifactsDir -MarkerPrefix "SAFE_PULL_GIT_PULL"
 $stdoutText = if (Test-Path -LiteralPath $runResult.StdoutPath) { Get-Content -Raw -LiteralPath $runResult.StdoutPath } else { "" }
+if ($null -eq $stdoutText) { $stdoutText = "" }
 $stderrText = if (Test-Path -LiteralPath $runResult.StderrPath) { Get-Content -Raw -LiteralPath $runResult.StderrPath } else { "" }
-$combinedText = ($stdoutText + $stderrText).Trim()
+if ($null -eq $stderrText) { $stderrText = "" }
+$combinedText = [string]::Concat($stdoutText, $stderrText).Trim()
 $pullLog = Join-Path $artifactsDir "safe_pull_git_pull.txt"
 Set-Content -LiteralPath $pullLog -Value $combinedText -Encoding utf8
 
@@ -229,8 +249,10 @@ if ($runResult.ExitCode -ne 0) {
     $script:AutoStashLog.Add("stash_pop_command=git stash pop")
     $rollbackResult = Invoke-PsRunner -Command $gitExe -Arguments @("stash", "pop") -RepoRoot $repoRoot -ArtifactsDir $artifactsDir -MarkerPrefix "SAFE_PULL_AUTOSTASH_POP"
     $rollbackStdout = if (Test-Path -LiteralPath $rollbackResult.StdoutPath) { Get-Content -Raw -LiteralPath $rollbackResult.StdoutPath } else { "" }
+    if ($null -eq $rollbackStdout) { $rollbackStdout = "" }
     $rollbackStderr = if (Test-Path -LiteralPath $rollbackResult.StderrPath) { Get-Content -Raw -LiteralPath $rollbackResult.StderrPath } else { "" }
-    $rollbackCombined = ($rollbackStdout + $rollbackStderr).Trim()
+    if ($null -eq $rollbackStderr) { $rollbackStderr = "" }
+    $rollbackCombined = [string]::Concat($rollbackStdout, $rollbackStderr).Trim()
     $script:AutoStashLog.Add("stash_pop_output=" + $rollbackCombined)
     $script:AutoStashSummary.rollback_status = if ($rollbackResult.ExitCode -eq 0) { "PASS" } else { "FAIL" }
   }

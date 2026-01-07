@@ -34,6 +34,10 @@ REQUIRED_STATE_PATTERNS = [
     r"rebase-merge",
     r"AM",
 ]
+UNSAFE_STDIO_TRIM_PATTERN = r"\(\s*\$stdoutText\s*\+\s*\$stderrText\s*\)\.Trim\(\)"
+SAFE_STDIO_CONCAT_PATTERN = r"\[string\]::Concat\(\s*\$stdoutText\s*,\s*\$stderrText\s*\)\.Trim\(\)"
+STDOUT_NULL_GUARD_PATTERN = r"if\s*\(\s*\$null\s*-eq\s*\$stdoutText\s*\)\s*\{\s*\$stdoutText\s*=\s*\"\"\s*\}"
+STDERR_NULL_GUARD_PATTERN = r"if\s*\(\s*\$null\s*-eq\s*\$stderrText\s*\)\s*\{\s*\$stderrText\s*=\s*\"\"\s*\}"
 
 
 def _ts_utc() -> str:
@@ -81,6 +85,18 @@ def _check_contract(script_path: Path) -> tuple[str, list[str]]:
     for pattern in REQUIRED_STATE_PATTERNS:
         if not re.search(pattern, content):
             errors.append(f"missing_state_pattern:{pattern}")
+
+    if re.search(UNSAFE_STDIO_TRIM_PATTERN, content):
+        errors.append("unsafe_stdio_trim:stdout_stderr_concat")
+
+    if not re.search(SAFE_STDIO_CONCAT_PATTERN, content):
+        errors.append("missing_stdio_concat:[string]::Concat")
+
+    if not re.search(STDOUT_NULL_GUARD_PATTERN, content):
+        errors.append("missing_stdout_null_guard")
+
+    if not re.search(STDERR_NULL_GUARD_PATTERN, content):
+        errors.append("missing_stderr_null_guard")
 
     status = "PASS" if not errors else "FAIL"
     return status, errors

@@ -56,6 +56,15 @@ class SafePullContractTests(unittest.TestCase):
         self.assertIn("SAFE_PULL_AUTOSTASH_POP", content)
         self.assertIn("rollback_status", content)
 
+    def test_safe_pull_run_git_null_safe(self) -> None:
+        content = (Path("scripts") / "safe_pull_v1.ps1").read_text(
+            encoding="utf-8", errors="replace"
+        )
+        self.assertNotIn("($stdoutText + $stderrText).Trim()", content)
+        self.assertIn("[string]::Concat($stdoutText, $stderrText).Trim()", content)
+        self.assertIn('if ($null -eq $stdoutText) { $stdoutText = "" }', content)
+        self.assertIn('if ($null -eq $stderrText) { $stderrText = "" }', content)
+
 
 if __name__ == "__main__":
     unittest.main()
