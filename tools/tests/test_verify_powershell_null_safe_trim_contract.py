@@ -31,6 +31,12 @@ class VerifyPowerShellNullSafeTrimContractTests(unittest.TestCase):
                 verify_powershell_null_safe_trim_contract.RULE_ID,
             )
 
+    def test_repo_doctor_unsafe_trim_fails(self) -> None:
+        path = self.fixtures_dir / "unsafe_repo_doctor.ps1"
+        offenses = verify_powershell_null_safe_trim_contract._scan_file(path)
+        self.assertEqual(len(offenses), 1)
+        self.assertEqual(offenses[0]["line"], 1)
+
     def test_good_cast_passes(self) -> None:
         offenses = verify_powershell_null_safe_trim_contract._scan_file(
             self.fixtures_dir / "good_cast.ps1"
@@ -40,6 +46,12 @@ class VerifyPowerShellNullSafeTrimContractTests(unittest.TestCase):
     def test_good_interp_passes(self) -> None:
         offenses = verify_powershell_null_safe_trim_contract._scan_file(
             self.fixtures_dir / "good_interp.ps1"
+        )
+        self.assertEqual(offenses, [])
+
+    def test_repo_doctor_fixed_trim_passes(self) -> None:
+        offenses = verify_powershell_null_safe_trim_contract._scan_file(
+            self.fixtures_dir / "fixed_repo_doctor.ps1"
         )
         self.assertEqual(offenses, [])
 
