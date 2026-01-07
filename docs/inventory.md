@@ -115,6 +115,7 @@ Version: v1
 - **verify_policy_promotion** (py_module): `tools/verify_policy_promotion.py` -> `python -m tools.verify_policy_promotion --help`
 - **verify_powershell_join_path_contract** (py_module): `tools/verify_powershell_join_path_contract.py` -> `python -m tools.verify_powershell_join_path_contract --help`
 - **verify_powershell_no_goto_labels_contract** (py_module): `tools/verify_powershell_no_goto_labels_contract.py` -> `python -m tools.verify_powershell_no_goto_labels_contract --help`
+- **verify_powershell_null_safe_trim_contract** (py_module): `tools/verify_powershell_null_safe_trim_contract.py` -> `python -m tools.verify_powershell_null_safe_trim_contract --help`
 - **verify_powershell_runner_contract** (py_module): `tools/verify_powershell_runner_contract.py` -> `python -m tools.verify_powershell_runner_contract --help`
 - **verify_pr11_gate** (py_module): `tools/verify_pr11_gate.py` -> `python -m tools.verify_pr11_gate`
 - **verify_pr12_gate** (py_module): `tools/verify_pr12_gate.py` -> `python -m tools.verify_pr12_gate`
@@ -202,6 +203,9 @@ Version: v1
 - **tools.verify_powershell_join_path_contract**: `python3 -m tools.verify_powershell_join_path_contract --artifacts-dir "${artifacts_dir}"`
   - markers_expected: none
   - artifacts_expected: artifacts/powershell_join_path_contract.txt, artifacts/powershell_join_path_contract_result.json
+- **tools.verify_powershell_null_safe_trim_contract**: `python3 -m tools.verify_powershell_null_safe_trim_contract --artifacts-dir "${artifacts_dir}"`
+  - markers_expected: none
+  - artifacts_expected: artifacts/verify_powershell_null_safe_trim_contract.json, artifacts/verify_powershell_null_safe_trim_contract.txt
 - **tools.verify_powershell_no_goto_labels_contract**: `python3 -m tools.verify_powershell_no_goto_labels_contract --artifacts-dir "${artifacts_dir}"`
   - markers_expected: none
   - artifacts_expected: artifacts/verify_powershell_no_goto_labels_contract.json, artifacts/verify_powershell_no_goto_labels_contract.txt
@@ -312,6 +316,8 @@ Version: v1
 - `artifacts/verify_inventory_contract.txt` (produced_by: tools/verify_consistency.py, tools/verify_inventory_contract.py)
 - `artifacts/verify_powershell_no_goto_labels_contract.json` (produced_by: tools/verify_powershell_no_goto_labels_contract.py)
 - `artifacts/verify_powershell_no_goto_labels_contract.txt` (produced_by: tools/verify_consistency.py, tools/verify_powershell_no_goto_labels_contract.py)
+- `artifacts/verify_powershell_null_safe_trim_contract.json` (produced_by: tools/verify_powershell_null_safe_trim_contract.py)
+- `artifacts/verify_powershell_null_safe_trim_contract.txt` (produced_by: tools/verify_consistency.py, tools/verify_powershell_null_safe_trim_contract.py)
 - `artifacts/verify_repo_doctor_contract.json` (produced_by: scripts/ci_gates.sh, tools/verify_repo_doctor_contract.py)
 - `artifacts/verify_repo_doctor_contract.txt` (produced_by: tools/verify_consistency.py, tools/verify_repo_doctor_contract.py)
 - `artifacts/walk_forward_report.json` (produced_by: tools/verify_walk_forward.py)
@@ -787,7 +793,7 @@ Version: v1
   - files: tools/verify_consistency.py
   - commands: python -m tools.verify_consistency --help
   - gates: none
-  - artifacts: artifacts/data_health_report.txt, artifacts/execution_model_report.txt, artifacts/experiment_ledger.jsonl, artifacts/experiment_ledger_summary.json, artifacts/redteam_report.txt, artifacts/verify_docs_contract.txt, artifacts/verify_inventory_contract.txt, artifacts/verify_powershell_no_goto_labels_contract.txt, artifacts/verify_repo_doctor_contract.txt, artifacts/walk_forward_report.txt
+  - artifacts: artifacts/data_health_report.txt, artifacts/execution_model_report.txt, artifacts/experiment_ledger.jsonl, artifacts/experiment_ledger_summary.json, artifacts/redteam_report.txt, artifacts/verify_docs_contract.txt, artifacts/verify_inventory_contract.txt, artifacts/verify_powershell_no_goto_labels_contract.txt, artifacts/verify_powershell_null_safe_trim_contract.txt, artifacts/verify_repo_doctor_contract.txt, artifacts/walk_forward_report.txt
 - **verify_cooldown**
   - files: tools/verify_cooldown.py
   - commands: python -m tools.verify_cooldown
@@ -898,6 +904,11 @@ Version: v1
   - commands: python -m tools.verify_powershell_no_goto_labels_contract --help
   - gates: tools.verify_powershell_no_goto_labels_contract
   - artifacts: artifacts/verify_powershell_no_goto_labels_contract.json, artifacts/verify_powershell_no_goto_labels_contract.txt
+- **verify_powershell_null_safe_trim_contract**
+  - files: tools/verify_powershell_null_safe_trim_contract.py
+  - commands: python -m tools.verify_powershell_null_safe_trim_contract --help
+  - gates: tools.verify_powershell_null_safe_trim_contract
+  - artifacts: artifacts/verify_powershell_null_safe_trim_contract.json, artifacts/verify_powershell_null_safe_trim_contract.txt
 - **verify_powershell_runner_contract**
   - files: tools/verify_powershell_runner_contract.py
   - commands: python -m tools.verify_powershell_runner_contract --help

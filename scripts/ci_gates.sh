@@ -488,6 +488,18 @@ fi
 
 if [[ ${rc} -eq 0 ]]; then
   set +e
+  python3 -m tools.verify_powershell_null_safe_trim_contract --artifacts-dir "${artifacts_dir}"
+  powershell_trim_exit=$?
+  set -e
+  if [[ ${powershell_trim_exit} -ne 0 ]]; then
+    status="FAIL"
+    failing_gate="verify_powershell_null_safe_trim_contract"
+    rc=${powershell_trim_exit}
+  fi
+fi
+
+if [[ ${rc} -eq 0 ]]; then
+  set +e
   python3 -m tools.verify_powershell_no_goto_labels_contract --artifacts-dir "${artifacts_dir}"
   powershell_no_goto_exit=$?
   set -e
