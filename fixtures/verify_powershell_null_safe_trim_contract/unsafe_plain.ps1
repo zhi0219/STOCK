@@ -1,0 +1,1 @@
+$clean = ($a + $b).Trim()
