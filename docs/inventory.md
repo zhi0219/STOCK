@@ -106,6 +106,7 @@ Version: v1
 - **verify_foundation** (py_module): `tools/verify_foundation.py` -> `python -m tools.verify_foundation --help`
 - **verify_import_contract** (py_module): `tools/verify_import_contract.py` -> `python -m tools.verify_import_contract --help`
 - **verify_inventory_contract** (py_module): `tools/verify_inventory_contract.py` -> `python -m tools.verify_inventory_contract --help`
+- **verify_inventory_docs_posix_paths** (py_module): `tools/verify_inventory_docs_posix_paths.py` -> `python -m tools.verify_inventory_docs_posix_paths --help`
 - **verify_kill_switch_recovery** (py_module): `tools/verify_kill_switch_recovery.py` -> `python -m tools.verify_kill_switch_recovery`
 - **verify_kill_switch_ui_flow** (py_module): `tools/verify_kill_switch_ui_flow.py` -> `python -m tools.verify_kill_switch_ui_flow`
 - **verify_latest_artifacts** (py_module): `tools/verify_latest_artifacts.py` -> `python -m tools.verify_latest_artifacts`
@@ -224,6 +225,9 @@ Version: v1
 - **tools.verify_inventory_contract**: `python3 -m tools.verify_inventory_contract --artifacts-dir "${artifacts_dir}"`
   - markers_expected: none
   - artifacts_expected: artifacts/inventory_diff.txt, artifacts/verify_inventory_contract.json, artifacts/verify_inventory_contract.txt
+- **tools.verify_inventory_docs_posix_paths**: `python3 -m tools.verify_inventory_docs_posix_paths --artifacts-dir "${artifacts_dir}"`
+  - markers_expected: none
+  - artifacts_expected: artifacts/verify_inventory_docs_posix_paths.json, artifacts/verify_inventory_docs_posix_paths.txt
 - **tools.verify_execution_model**: `python3 -m tools.verify_execution_model --artifacts-dir "${artifacts_dir}"`
   - markers_expected: none
   - artifacts_expected: artifacts/execution_model_report.json, artifacts/execution_model_report.txt, artifacts/execution_model_runs
@@ -314,6 +318,8 @@ Version: v1
 - `artifacts/verify_edits_payload.txt` (produced_by: tools/ui_app.py, tools/verify_edits_payload.py)
 - `artifacts/verify_inventory_contract.json` (produced_by: tools/verify_inventory_contract.py)
 - `artifacts/verify_inventory_contract.txt` (produced_by: tools/verify_consistency.py, tools/verify_inventory_contract.py)
+- `artifacts/verify_inventory_docs_posix_paths.json` (produced_by: tools/verify_inventory_docs_posix_paths.py)
+- `artifacts/verify_inventory_docs_posix_paths.txt` (produced_by: tools/verify_consistency.py, tools/verify_inventory_docs_posix_paths.py)
 - `artifacts/verify_powershell_no_goto_labels_contract.json` (produced_by: tools/verify_powershell_no_goto_labels_contract.py)
 - `artifacts/verify_powershell_no_goto_labels_contract.txt` (produced_by: tools/verify_consistency.py, tools/verify_powershell_no_goto_labels_contract.py)
 - `artifacts/verify_powershell_null_safe_trim_contract.json` (produced_by: tools/verify_powershell_null_safe_trim_contract.py)
@@ -793,7 +799,7 @@ Version: v1
   - files: tools/verify_consistency.py
   - commands: python -m tools.verify_consistency --help
   - gates: none
-  - artifacts: artifacts/data_health_report.txt, artifacts/execution_model_report.txt, artifacts/experiment_ledger.jsonl, artifacts/experiment_ledger_summary.json, artifacts/redteam_report.txt, artifacts/verify_docs_contract.txt, artifacts/verify_inventory_contract.txt, artifacts/verify_powershell_no_goto_labels_contract.txt, artifacts/verify_powershell_null_safe_trim_contract.txt, artifacts/verify_repo_doctor_contract.txt, artifacts/walk_forward_report.txt
+  - artifacts: artifacts/data_health_report.txt, artifacts/execution_model_report.txt, artifacts/experiment_ledger.jsonl, artifacts/experiment_ledger_summary.json, artifacts/redteam_report.txt, artifacts/verify_docs_contract.txt, artifacts/verify_inventory_contract.txt, artifacts/verify_inventory_docs_posix_paths.txt, artifacts/verify_powershell_no_goto_labels_contract.txt, artifacts/verify_powershell_null_safe_trim_contract.txt, artifacts/verify_repo_doctor_contract.txt, artifacts/walk_forward_report.txt
 - **verify_cooldown**
   - files: tools/verify_cooldown.py
   - commands: python -m tools.verify_cooldown
@@ -859,6 +865,11 @@ Version: v1
   - commands: python -m tools.verify_inventory_contract --help
   - gates: tools.verify_inventory_contract
   - artifacts: artifacts/inventory_diff.txt, artifacts/verify_inventory_contract.json, artifacts/verify_inventory_contract.txt
+- **verify_inventory_docs_posix_paths**
+  - files: tools/verify_inventory_docs_posix_paths.py
+  - commands: python -m tools.verify_inventory_docs_posix_paths --help
+  - gates: tools.verify_inventory_docs_posix_paths
+  - artifacts: artifacts/verify_inventory_docs_posix_paths.json, artifacts/verify_inventory_docs_posix_paths.txt
 - **verify_kill_switch_recovery**
   - files: tools/verify_kill_switch_recovery.py
   - commands: python -m tools.verify_kill_switch_recovery

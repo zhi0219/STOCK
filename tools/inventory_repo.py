@@ -4,7 +4,7 @@ import argparse
 import ast
 import json
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Iterable, Sequence
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -26,6 +26,24 @@ def _normalize_artifact(path_value: str) -> str:
     normalized = path_value.replace("\\\\", "/").replace("\\", "/")
     normalized = normalized.strip().strip("\"'")
     return normalized
+
+
+def _is_ambiguous_doc_path(path_value: str) -> bool:
+    posix_path = PurePosixPath(path_value)
+    windows_path = PureWindowsPath(path_value)
+    if posix_path.is_absolute():
+        return True
+    if windows_path.is_absolute() or windows_path.drive:
+        return True
+    if path_value.startswith("\\\\"):
+        return True
+    return False
+
+
+def _normalize_doc_path(path_value: str) -> str:
+    if _is_ambiguous_doc_path(path_value):
+        raise ValueError(f"inventory doc path must be repo-relative: {path_value}")
+    return path_value.replace("\\", "/")
 
 
 def _extract_markers(text: str) -> list[str]:
@@ -63,7 +81,7 @@ def _iter_tool_entrypoints() -> list[dict[str, str]]:
             {
                 "name": module,
                 "type": "py_module",
-                "path": str(path.relative_to(ROOT)),
+                "path": _normalize_doc_path(str(path.relative_to(ROOT))),
                 "usage_hint": usage,
             }
         )
@@ -74,23 +92,25 @@ def _iter_script_entrypoints() -> list[dict[str, str]]:
     entrypoints: list[dict[str, str]] = []
     for path in sorted(SCRIPTS_DIR.glob("*.sh")):
         text = _read_text(path)
-        usage = _usage_hint(path.stem, text, f"{path.relative_to(ROOT)} --help")
+        rel_path = _normalize_doc_path(str(path.relative_to(ROOT)))
+        usage = _usage_hint(path.stem, text, f"{rel_path} --help")
         entrypoints.append(
             {
                 "name": path.stem,
                 "type": "sh",
-                "path": str(path.relative_to(ROOT)),
+                "path": rel_path,
                 "usage_hint": usage,
             }
         )
     for path in sorted(SCRIPTS_DIR.glob("*.ps1")):
         text = _read_text(path)
-        usage = _usage_hint(path.stem, text, f"{path.relative_to(ROOT)}")
+        rel_path = _normalize_doc_path(str(path.relative_to(ROOT)))
+        usage = _usage_hint(path.stem, text, rel_path)
         entrypoints.append(
             {
                 "name": path.stem,
                 "type": "ps1",
-                "path": str(path.relative_to(ROOT)),
+                "path": rel_path,
                 "usage_hint": usage,
             }
         )
@@ -189,7 +209,9 @@ def _collect_artifacts_from_files(paths: Sequence[Path]) -> dict[str, set[str]]:
     for path in paths:
         text = _read_text(path)
         for artifact in _extract_artifacts(text):
-            artifact_map.setdefault(artifact, set()).add(str(path.relative_to(ROOT)))
+            artifact_map.setdefault(artifact, set()).add(
+                _normalize_doc_path(str(path.relative_to(ROOT)))
+            )
     return artifact_map
 
 
@@ -241,7 +263,7 @@ def _workflow_features(repo_root: Path) -> list[dict[str, object]]:
             features.append(
                 {
                     "feature": f"workflow:{path.stem}",
-                    "files": [str(path.relative_to(repo_root))],
+                    "files": [_normalize_doc_path(str(path.relative_to(repo_root)))],
                     "commands": sorted(set(commands)),
                     "gates": [],
                     "artifacts": [],
@@ -264,7 +286,7 @@ def _contracts() -> list[dict[str, str]]:
                 {
                     "name": name,
                     "enforced_by": "docs_contract",
-                    "docs_path": str(path.relative_to(ROOT)),
+                    "docs_path": _normalize_doc_path(str(path.relative_to(ROOT))),
                 }
             )
     return sorted(contracts, key=lambda item: item["name"])

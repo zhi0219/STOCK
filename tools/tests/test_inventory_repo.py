@@ -57,6 +57,20 @@ class InventoryRepoTests(unittest.TestCase):
             with self.subTest(pattern=pattern):
                 self.assertIsNone(re.search(pattern, markdown, re.IGNORECASE))
 
+    def test_normalize_doc_path_rejects_absolute(self) -> None:
+        with self.assertRaises(ValueError):
+            inventory_repo._normalize_doc_path("/absolute/path")
+        with self.assertRaises(ValueError):
+            inventory_repo._normalize_doc_path("C:\\absolute\\path")
+        with self.assertRaises(ValueError):
+            inventory_repo._normalize_doc_path("\\\\server\\share\\path")
+
+    def test_normalize_doc_path_uses_posix_separators(self) -> None:
+        self.assertEqual(
+            inventory_repo._normalize_doc_path("tools\\verify_inventory_contract.py"),
+            "tools/verify_inventory_contract.py",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

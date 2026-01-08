@@ -77,6 +77,16 @@ def _build_gate_specs(artifacts_dir: Path) -> list[GateSpec]:
             ],
         ),
         GateSpec(
+            name="verify_inventory_docs_posix_paths",
+            args=[
+                sys.executable,
+                "-m",
+                "tools.verify_inventory_docs_posix_paths",
+                "--artifacts-dir",
+                str(artifacts_dir),
+            ],
+        ),
+        GateSpec(
             name="verify_foundation",
             args=[
                 sys.executable,

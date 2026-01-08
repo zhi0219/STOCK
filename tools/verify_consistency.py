@@ -910,6 +910,32 @@ def check_inventory_contract(artifacts_dir: Path, python_exec: str) -> List[Chec
     return [CheckResult("inventory contract", False, detail)]
 
 
+def check_inventory_docs_posix_paths(artifacts_dir: Path, python_exec: str) -> List[CheckResult]:
+    cmd = [
+        python_exec,
+        "-m",
+        "tools.verify_inventory_docs_posix_paths",
+        "--artifacts-dir",
+        str(artifacts_dir),
+    ]
+    try:
+        completed = subprocess.run(
+            cmd,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except Exception as exc:  # pragma: no cover - subprocess guard
+        return [CheckResult("inventory docs posix paths", False, f"error={exc}")]
+    if completed.returncode == 0:
+        return [CheckResult("inventory docs posix paths", True)]
+    detail = (
+        "exit_code="
+        f"{completed.returncode}; see {artifacts_dir / 'verify_inventory_docs_posix_paths.txt'}"
+    )
+    return [CheckResult("inventory docs posix paths", False, detail)]
+
+
 def check_repo_doctor_contract(artifacts_dir: Path, python_exec: str) -> List[CheckResult]:
     cmd = [
         python_exec,
@@ -1115,6 +1141,7 @@ def main(argv: List[str] | None = None) -> int:
         lambda: check_docs_contract(Path(args.artifacts_dir), python_exec),
         lambda: check_repo_doctor_contract(Path(args.artifacts_dir), python_exec),
         lambda: check_inventory_contract(Path(args.artifacts_dir), python_exec),
+        lambda: check_inventory_docs_posix_paths(Path(args.artifacts_dir), python_exec),
         lambda: check_execution_model(Path(args.artifacts_dir), python_exec),
         lambda: check_data_health(Path(args.artifacts_dir), python_exec),
         lambda: check_walk_forward(Path(args.artifacts_dir), python_exec),
