@@ -1,4 +1,4 @@
-# Repository Capability Inventory
+﻿# Repository Capability Inventory
 
 Version: v1
 
@@ -242,10 +242,10 @@ Version: v1
 - **tools.apply_edits**: `python3 -m tools.apply_edits --repo . --edits fixtures/edits_contract/good.json --artifacts-dir "${artifacts_dir}" --dry-run`
   - markers_expected: none
   - artifacts_expected: none
-- **tools.extract_json_strict**: `python3 -m tools.extract_json_strict \`
+- **tools.extract_json_strict**: `python3 -m tools.extract_json_strict`
   - markers_expected: none
   - artifacts_expected: none
-- **tools.verify_import_contract**: `python3 tools/verify_import_contract.py \`
+- **tools.verify_import_contract**: `python3 tools/verify_import_contract.py`
   - markers_expected: IMPORT_END, IMPORT_START, IMPORT_SUMMARY
   - artifacts_expected: artifacts/import_contract_result.json, artifacts/import_contract_traceback.txt
 - **tools.verify_foundation**: `python -m tools.verify_foundation --artifacts-dir artifacts`
@@ -1249,3 +1249,4 @@ Version: v1
   - commands: python -m tools.xp_model
   - gates: none
   - artifacts: none
+
