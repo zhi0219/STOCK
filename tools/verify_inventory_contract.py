@@ -25,6 +25,52 @@ def _truncate(value: str | None, limit: int = 160) -> str:
     return f"{sanitized[:limit - 3]}..."
 
 
+def _classify_mismatch(actual_line: str | None, expected_line: str | None) -> str:
+    if (actual_line and "\ufeff" in actual_line) or (expected_line and "\ufeff" in expected_line):
+        return "encoding"
+    if (actual_line and "\\" in actual_line) or (expected_line and "\\" in expected_line):
+        return "path_separator"
+    return "other"
+
+
+def _context_snippet(lines: list[str], index: int, radius: int = 2) -> list[dict[str, object]]:
+    start = max(0, index - radius)
+    end = min(len(lines), index + radius + 1)
+    return [{"line": i + 1, "text": lines[i]} for i in range(start, end)]
+
+
+def _diff_summary(actual: str, expected: str, limit: int = 10) -> dict[str, object]:
+    actual_lines = actual.splitlines()
+    expected_lines = expected.splitlines()
+    max_len = max(len(actual_lines), len(expected_lines))
+    mismatches: list[dict[str, object]] = []
+    for index in range(max_len):
+        actual_line = actual_lines[index] if index < len(actual_lines) else None
+        expected_line = expected_lines[index] if index < len(expected_lines) else None
+        if actual_line != expected_line:
+            mismatches.append(
+                {
+                    "line": index + 1,
+                    "actual": _truncate(actual_line),
+                    "expected": _truncate(expected_line),
+                    "context": {
+                        "actual": _context_snippet(actual_lines, index),
+                        "expected": _context_snippet(expected_lines, index),
+                    },
+                    "classification": _classify_mismatch(actual_line, expected_line),
+                }
+            )
+        if len(mismatches) >= limit:
+            break
+    return {
+        "limit": limit,
+        "actual_total_lines": len(actual_lines),
+        "expected_total_lines": len(expected_lines),
+        "mismatch_count": len(mismatches),
+        "mismatches": mismatches,
+    }
+
+
 def _first_diff_summary(actual: str, expected: str) -> str:
     actual_lines = actual.splitlines()
     expected_lines = expected.splitlines()
@@ -68,6 +114,7 @@ def main(argv: list[str] | None = None) -> int:
     artifacts_dir = Path(args.artifacts_dir).resolve()
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     diff_path = artifacts_dir / "inventory_diff.txt"
+    diff_summary_path = artifacts_dir / "inventory_diff_summary.json"
     json_report = artifacts_dir / "verify_inventory_contract.json"
     txt_report = artifacts_dir / "verify_inventory_contract.txt"
 
@@ -84,32 +131,36 @@ def main(argv: list[str] | None = None) -> int:
         if not docs_path.exists():
             status_ok = False
             detail = "docs/inventory.md missing"
-            diff_output = "\n".join([detail, "", next_hint, ""])
-            _write_text(diff_path, diff_output)
+            actual = ""
         else:
             actual, has_bom = _read_text(docs_path)
             if has_bom:
                 status_ok = False
                 detail = "docs/inventory.md has UTF-8 BOM"
+            elif "\r" in actual:
+                status_ok = False
+                detail = "docs/inventory.md contains CRLF"
             elif not _normalized_equal(actual, expected):
                 status_ok = False
                 detail = "docs/inventory.md mismatch"
 
-            if not status_ok:
-                normalized_actual = _normalize_newlines(actual)
-                normalized_expected = _normalize_newlines(expected)
-                diff = "\n".join(
-                    unified_diff(
-                        normalized_actual.splitlines(),
-                        normalized_expected.splitlines(),
-                        fromfile=str(docs_path),
-                        tofile="generated/inventory.md",
-                        lineterm="",
-                    )
+        if not status_ok:
+            normalized_actual = _normalize_newlines(actual)
+            normalized_expected = _normalize_newlines(expected)
+            diff_summary = _diff_summary(normalized_actual, normalized_expected)
+            diff = "\n".join(
+                unified_diff(
+                    normalized_actual.splitlines(),
+                    normalized_expected.splitlines(),
+                    fromfile=str(docs_path),
+                    tofile="generated/inventory.md",
+                    lineterm="",
                 )
-                first_diff = _first_diff_summary(normalized_actual, normalized_expected)
-                diff_output = "\n".join([first_diff, detail, diff, "", next_hint, ""])
-                _write_text(diff_path, diff_output)
+            )
+            first_diff = _first_diff_summary(normalized_actual, normalized_expected)
+            diff_output = "\n".join([first_diff, detail, diff, "", next_hint, ""])
+            _write_text(diff_path, diff_output)
+            _write_text(diff_summary_path, json.dumps(diff_summary, indent=2, sort_keys=True))
     except Exception as exc:  # pragma: no cover - defensive
         status_ok = False
         detail = f"error={exc}"
@@ -120,6 +171,7 @@ def main(argv: list[str] | None = None) -> int:
         "detail": detail,
         "docs_path": "docs/inventory.md",
         "diff_path": str(diff_path),
+        "diff_summary_path": str(diff_summary_path),
         "next": None if status_ok else next_hint,
     }
 

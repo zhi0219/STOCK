@@ -8,6 +8,15 @@ from tools import inventory_repo
 
 
 class InventoryRepoTests(unittest.TestCase):
+    def test_canonical_repo_path_normalizes_windows_separators(self) -> None:
+        self.assertEqual(inventory_repo._canonical_repo_path("tools\\x.py"), "tools/x.py")
+
+    def test_canonical_repo_path_handles_mixed_separators(self) -> None:
+        self.assertEqual(inventory_repo._canonical_repo_path("tools/dir\\x.py"), "tools/dir/x.py")
+
+    def test_canonical_repo_path_preserves_posix(self) -> None:
+        self.assertEqual(inventory_repo._canonical_repo_path("tools/x.py"), "tools/x.py")
+
     def test_deterministic_output(self) -> None:
         root = Path(__file__).resolve().parents[2]
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -31,6 +40,26 @@ class InventoryRepoTests(unittest.TestCase):
         first_md = inventory_repo._render_markdown(inventory_repo.generate_inventory(root))
         second_md = inventory_repo._render_markdown(inventory_repo.generate_inventory(root))
         self.assertEqual(first_md, second_md)
+
+    def test_write_text_invariants(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "out.txt"
+            inventory_repo._write_text(path, "line1\r\nline2\rline3")
+            data = path.read_bytes()
+            self.assertFalse(data.startswith(b"\xef\xbb\xbf"))
+            self.assertNotIn(b"\r", data)
+
+    def test_inventory_paths_have_no_backslashes(self) -> None:
+        root = Path(__file__).resolve().parents[2]
+        inventory = inventory_repo.generate_inventory(root)
+        path_fields = []
+        path_fields.extend(entry["path"] for entry in inventory["entrypoints"])
+        path_fields.extend(artifact["path_glob"] for artifact in inventory["artifacts"])
+        path_fields.extend(contract["docs_path"] for contract in inventory["contracts"])
+        for feature in inventory["feature_map"]:
+            path_fields.extend(feature["files"])
+        for value in path_fields:
+            self.assertNotIn("\\", value)
 
     def test_required_sections_exist(self) -> None:
         root = Path(__file__).resolve().parents[2]
