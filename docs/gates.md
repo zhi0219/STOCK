@@ -59,8 +59,8 @@ Each gate must emit PASS/FAIL semantics and fail-closed by default.
    - PASS: inventory artifacts and docs generated.
    - FAIL: inventory generation failed.
 15) **verify_inventory_contract** (`python -m tools.verify_inventory_contract --artifacts-dir artifacts`)
-   - PASS: docs/inventory.md matches generator output after LF normalization.
-   - FAIL: inventory docs mismatch, missing, or UTF-8 BOM detected.
+   - PASS: docs/inventory.md matches canonical generator output (UTF-8 no BOM, LF-only, POSIX paths).
+   - FAIL: inventory docs mismatch, missing, BOM, CRLF, or backslash paths detected.
 16) **verify_execution_model** (`python -m tools.verify_execution_model --artifacts-dir artifacts`)
    - PASS: execution model report generated and sensitivity stable.
    - FAIL: missing artifacts or friction sensitivity instability.
