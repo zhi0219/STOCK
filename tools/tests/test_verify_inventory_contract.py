@@ -44,6 +44,8 @@ class VerifyInventoryContractTests(unittest.TestCase):
                 self.assertEqual(stats["docs_len"], len(crlf_bytes))
                 self.assertEqual(stats["gen_len"], len(expected_bytes))
                 self.assertEqual(stats["gen_crlf_pairs"], 0)
+                self.assertEqual(stats["gen_path"], "generated/inventory.md")
+                self.assertIn("git_check_attr", stats)
                 self.assertEqual(stats["verdict"], "FAIL")
                 self.assertIn("VERIFY_INVENTORY_EOLS", output.getvalue())
             finally:

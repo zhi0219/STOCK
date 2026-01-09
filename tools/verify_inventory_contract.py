@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import subprocess
 import sys
 import traceback
 from difflib import unified_diff
@@ -101,6 +102,36 @@ def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def _clip_text(value: str | None, limit: int = 2000) -> str:
+    if value is None:
+        return ""
+    if len(value) <= limit:
+        return value
+    return f"{value[:limit]}..."
+
+
+def _git_check_attr(repo_root: Path, path: Path) -> dict[str, object]:
+    try:
+        completed = subprocess.run(
+            ["git", "check-attr", "-a", "--", str(path)],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return {
+            "ok": True,
+            "stdout": _clip_text(completed.stdout),
+            "stderr": _clip_text(completed.stderr),
+        }
+    except Exception as exc:  # pragma: no cover - best effort
+        return {
+            "ok": False,
+            "stdout": "",
+            "stderr": _clip_text(str(exc)),
+        }
+
+
 def _normalized_equal(actual: str, expected: str) -> bool:
     return _normalize_newlines(actual) == _normalize_newlines(expected)
 
@@ -138,8 +169,11 @@ def main(argv: list[str] | None = None) -> int:
     try:
         inventory = inventory_repo.generate_inventory(repo_root)
         expected = inventory_repo._render_markdown(inventory)
-        _write_text(gen_markdown_path, expected)
-        gen_data = expected.encode("utf-8")
+        if gen_markdown_path.exists():
+            gen_data = gen_markdown_path.read_bytes()
+        else:
+            gen_data = expected.encode("utf-8")
+            gen_path = "generated/inventory.md"
 
         if not docs_path.exists():
             status_ok = False
@@ -193,6 +227,7 @@ def main(argv: list[str] | None = None) -> int:
         "gen_crlf_pairs": _count_crlf_pairs(gen_data),
         "gen_has_bom": gen_data.startswith(UTF8_BOM),
         "gen_sha256": _sha256(gen_data),
+        "git_check_attr": _git_check_attr(repo_root, docs_path),
         "verdict": "PASS" if status_ok else "FAIL",
         "detail": detail,
     }

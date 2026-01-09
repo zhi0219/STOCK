@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 
 from tools import inventory_repo
+from tools import repo_hygiene
 
 
 class InventoryRepoTests(unittest.TestCase):
@@ -73,6 +74,20 @@ class InventoryRepoTests(unittest.TestCase):
                 self.assertFalse(data.startswith(b"\xef\xbb\xbf"))
                 self.assertTrue(data.endswith(b"\n"))
                 self.assertFalse(data.endswith(b"\n\n"))
+            status_lines, error = repo_hygiene.git_status_porcelain(include_ignored=False)
+            if error or status_lines:
+                self.skipTest("dirty worktree; skipping verify_inventory_contract integration check")
+            from tools import verify_inventory_contract
+
+            verify_rc = verify_inventory_contract.main(
+                [
+                    "--artifacts-dir",
+                    str(artifacts_dir),
+                    "--repo-root",
+                    str(root),
+                ]
+            )
+            self.assertEqual(verify_rc, 0)
 
     def test_inventory_paths_have_no_backslashes(self) -> None:
         root = Path(__file__).resolve().parents[2]

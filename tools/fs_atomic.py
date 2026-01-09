@@ -136,6 +136,11 @@ def atomic_write_text(
     backoff_ms: int = 50,
     fsync: bool = True,
 ) -> AtomicWriteResult:
+    """Atomically write UTF-8 text with LF-only newlines.
+
+    Do not replace this with Path.write_text() in this pipeline; it does not
+    allow control over newline translation on Windows.
+    """
     if retries < 1:
         raise ValueError("retries must be >= 1")
     path.parent.mkdir(parents=True, exist_ok=True)
