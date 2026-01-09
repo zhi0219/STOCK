@@ -32,8 +32,10 @@ class VerifyRepoDoctorContractTests(unittest.TestCase):
     def test_marker_output_contract(self) -> None:
         mocked_output = [
             "REPO_DOCTOR_START|ts_utc=2024-01-01T00:00:00Z|cwd=/repo|repo_root=/repo|artifacts_dir=/repo/artifacts",
+            "REPO_DOCTOR_CONFIG|write_docs=NO|python=/repo/.venv/Scripts/python.exe|repo_root=/repo|artifacts_dir=/repo/artifacts",
             "REPO_DOCTOR_STEP|name=inventory_repo|status=PASS|exit_code=0",
             "REPO_DOCTOR_STEP|name=verify_pr_ready|status=PASS|exit_code=0",
+            "REPO_DOCTOR_CLEAN_POST|status=PASS|reason=ok",
             "REPO_DOCTOR_SUMMARY|status=PASS|failed_step=none|next=none",
             "REPO_DOCTOR_END",
         ]

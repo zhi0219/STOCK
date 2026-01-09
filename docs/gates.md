@@ -28,66 +28,86 @@ Each gate must emit PASS/FAIL semantics and fail-closed by default.
 5) **verify_repo_doctor_contract** (`python -m tools.verify_repo_doctor_contract --artifacts-dir artifacts`)
    - PASS: repo doctor contract intact.
    - FAIL: required markers or command guardrails missing.
-6) **powershell_join_path_contract** (`python -m tools.verify_powershell_join_path_contract --artifacts-dir artifacts`)
+6) **verify_win_daily_green_contract** (`python -m tools.verify_win_daily_green_contract --artifacts-dir artifacts`)
+   - PASS: daily green entrypoint contract intact.
+   - FAIL: required markers or command guardrails missing.
+7) **verify_write_allowlist_contract** (`python -m tools.verify_write_allowlist_contract --artifacts-dir artifacts`)
+   - PASS: daily scripts only write under artifacts.
+   - FAIL: detected write outside allowlist.
+8) **powershell_join_path_contract** (`python -m tools.verify_powershell_join_path_contract --artifacts-dir artifacts`)
    - PASS: PowerShell Join-Path usage is PowerShell 5.1-safe.
    - FAIL: any Join-Path call uses 3+ positional arguments or `-AdditionalChildPath`.
    - Rule: use nested `Join-Path` or `[IO.Path]::Combine` for 3+ segments.
-7) **verify_powershell_null_safe_trim_contract** (`python -m tools.verify_powershell_null_safe_trim_contract --artifacts-dir artifacts`)
+9) **verify_powershell_null_safe_trim_contract** (`python -m tools.verify_powershell_null_safe_trim_contract --artifacts-dir artifacts`)
    - PASS: PowerShell Trim only uses null-safe patterns (`[string]::Concat(...).Trim()` or explicit null-guard before `.Trim()`).
    - FAIL: any `(... + ...).Trim()` concatenation, even with explicit casts.
    - Rule: prefer `[string]::Concat(...)` before `.Trim()` or guard nulls before trimming.
    - Artifacts: `artifacts/verify_powershell_null_safe_trim_contract.json`, `artifacts/verify_powershell_null_safe_trim_contract.txt`.
-8) **verify_powershell_no_goto_labels_contract** (`python -m tools.verify_powershell_no_goto_labels_contract --artifacts-dir artifacts`)
+10) **verify_powershell_no_goto_labels_contract** (`python -m tools.verify_powershell_no_goto_labels_contract --artifacts-dir artifacts`)
    - PASS: no PowerShell goto statements or bare label lines detected.
    - FAIL: any line starts with `goto` or is a bare `:Label`.
-9) **ui_preflight** (`python -m tools.ui_preflight --ci --artifacts-dir artifacts`)
+11) **ui_preflight** (`python -m tools.ui_preflight --ci --artifacts-dir artifacts`)
    - PASS: UI preflight OK.
    - FAIL: preflight error.
-10) **docs_contract** (`python -m tools.verify_docs_contract --artifacts-dir artifacts`)
+12) **docs_contract** (`python -m tools.verify_docs_contract --artifacts-dir artifacts`)
    - PASS: required docs and sections present.
    - FAIL: missing docs/sections/IMP list.
-11) **verify_edits_contract** (`python -m tools.verify_edits_contract --artifacts-dir artifacts`)
+13) **verify_edits_contract** (`python -m tools.verify_edits_contract --artifacts-dir artifacts`)
    - PASS: edits contract valid.
    - FAIL: edits contract violation.
-12) **inventory_repo** (`python -m tools.inventory_repo --artifacts-dir artifacts --write-docs`)
+14) **inventory_repo** (`python -m tools.inventory_repo --artifacts-dir artifacts --write-docs`)
    - PASS: inventory artifacts and docs generated.
    - FAIL: inventory generation failed.
-13) **verify_inventory_contract** (`python -m tools.verify_inventory_contract --artifacts-dir artifacts`)
+15) **verify_inventory_contract** (`python -m tools.verify_inventory_contract --artifacts-dir artifacts`)
    - PASS: docs/inventory.md matches generator output after LF normalization.
    - FAIL: inventory docs mismatch, missing, or UTF-8 BOM detected.
-14) **verify_execution_model** (`python -m tools.verify_execution_model --artifacts-dir artifacts`)
+16) **verify_execution_model** (`python -m tools.verify_execution_model --artifacts-dir artifacts`)
    - PASS: execution model report generated and sensitivity stable.
    - FAIL: missing artifacts or friction sensitivity instability.
-15) **verify_data_health** (`python -m tools.verify_data_health --artifacts-dir artifacts`)
+17) **verify_data_health** (`python -m tools.verify_data_health --artifacts-dir artifacts`)
    - PASS: data health report generated with no critical anomalies.
    - FAIL: integrity checks failed (monotonicity, parse errors, missingness, or jump detection).
-16) **verify_walk_forward** (`python -m tools.verify_walk_forward --artifacts-dir artifacts`)
+18) **verify_walk_forward** (`python -m tools.verify_walk_forward --artifacts-dir artifacts`)
    - PASS: walk-forward report generated with non-zero embargo and baseline comparisons.
    - FAIL: missing windows, zero/invalid embargo, or missing artifacts.
-17) **verify_redteam_integrity** (`python -m tools.verify_redteam_integrity --artifacts-dir artifacts`)
+19) **verify_redteam_integrity** (`python -m tools.verify_redteam_integrity --artifacts-dir artifacts`)
    - PASS: red-team cases detected expected failures and control passed.
    - FAIL: unexpected pass/fail in any case or missing trial budget metadata.
-18) **verify_multiple_testing_control** (`python -m tools.verify_multiple_testing_control --artifacts-dir artifacts`)
+20) **verify_multiple_testing_control** (`python -m tools.verify_multiple_testing_control --artifacts-dir artifacts`)
    - PASS: experiment ledger present, baseline coverage intact, and trials within budget (or override recorded).
    - FAIL: missing ledger fields, missing baselines, or trial budget exceeded without override.
-19) **apply_edits_dry_run** (`python -m tools.apply_edits --repo . --edits fixtures/edits_contract/good.json --artifacts-dir artifacts --dry-run`)
+21) **apply_edits_dry_run** (`python -m tools.apply_edits --repo . --edits fixtures/edits_contract/good.json --artifacts-dir artifacts --dry-run`)
    - PASS: edits dry-run succeeded.
    - FAIL: edits dry-run failed.
-20) **extract_json_strict_negative** (`python -m tools.extract_json_strict --raw-text fixtures/extract_json_strict/bad_fenced.txt --out-json artifacts/extract_json_strict_bad.json`)
+22) **extract_json_strict_negative** (`python -m tools.extract_json_strict --raw-text fixtures/extract_json_strict/bad_fenced.txt --out-json artifacts/extract_json_strict_bad.json`)
    - PASS: gate fails as expected on bad input.
    - FAIL: unexpected success on bad input.
-21) **verify_pr36_gate** (preflight, if present)
+23) **verify_pr36_gate** (preflight, if present)
    - PASS: preflight gate OK.
    - FAIL: preflight gate failed.
-22) **import_contract** (`python -m tools.verify_import_contract --module <canonical_gate> --artifacts-dir artifacts`)
+24) **import_contract** (`python -m tools.verify_import_contract --module <canonical_gate> --artifacts-dir artifacts`)
    - PASS: canonical gate module imports.
    - FAIL: import contract failed.
-23) **canonical gate runner** (one of the following):
+25) **canonical gate runner** (one of the following):
    - `python tools/verify_prNN_gate.py` (highest available PR gate, e.g., verify_pr40_gate)
    - `python tools/verify_foundation.py` (fallback)
    - `python tools/verify_consistency.py` (fallback)
    - PASS: gate summary PASS/DEGRADED.
    - FAIL: gate summary FAIL or non-zero exit.
+
+## Daily Green (Windows)
+Stable Windows entrypoint for daily sync + health checks.
+- Entrypoint: `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/win_daily_green_v1.ps1 -RepoRoot . -ArtifactsDir artifacts`
+- PASS criteria:
+  - `DAILY_GREEN_SUMMARY|status=PASS` marker emitted.
+  - Worktree clean both before and after (daily green fails closed otherwise).
+  - Artifacts under `artifacts/<run_stamp>/` with `safe_pull/` and `repo_doctor/` subfolders.
+- FAIL criteria:
+  - Any non-zero ExitCode in safe pull or repo doctor, or dirty worktree before/after.
+  - Summary includes `next=...` pointing at the next inspection step.
+- Notes:
+  - `repo_doctor_v1.ps1` defaults to `-WriteDocs NO` (non-mutating).
+  - Use `scripts/win_inventory_refresh_v1.ps1` for the explicit, mutating inventory refresh workflow.
 
 ## Foundation Gate (P0)
 One-shot, fail-closed aggregator gate used by CI and UI.

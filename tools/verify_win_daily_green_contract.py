@@ -8,32 +8,34 @@ from pathlib import Path
 from typing import Any, Iterable
 
 REQUIRED_MARKERS = [
-    "REPO_DOCTOR_START",
-    "REPO_DOCTOR_CONFIG",
-    "REPO_DOCTOR_STEP",
-    "REPO_DOCTOR_SUMMARY",
-    "REPO_DOCTOR_CLEAN_POST",
-    "REPO_DOCTOR_END",
+    "DAILY_GREEN_START",
+    "DAILY_GREEN_STEP",
+    "DAILY_GREEN_SUMMARY",
+    "DAILY_GREEN_END",
 ]
 
 REQUIRED_COMMAND_PATTERNS = [
-    r"tools\.inventory_repo",
-    r"tools\.verify_pr_ready",
+    r"safe_pull_v1\.ps1",
+    r"repo_doctor_v1\.ps1",
+    r"-WriteDocs",
+    r"-WriteDocs[\s\S]*?\"NO\"",
+    r"-AutoStash",
     r"git status --porcelain",
-    r"\[string\]\$WriteDocs\s*=\s*\"NO\"",
-    r"\$WriteDocs",
-    r"\$PythonExe",
-    r"\.venv",
+    r"Start-Process",
+    r"-RedirectStandardOutput",
+    r"-RedirectStandardError",
+    r"daily_green_out\.txt",
+    r"daily_green_err\.txt",
+    r"safe_pull",
+    r"repo_doctor",
 ]
 
 DISALLOWED_COMMAND_PATTERNS = [
-    r"git push",
-    r"git merge",
-    r"git pull",
-    r"gh pr merge",
+    r"Out-Host",
+    r"Write-Error",
 ]
 
-SUMMARY_MARKER = "REPO_DOCTOR_CONTRACT_SUMMARY"
+SUMMARY_MARKER = "WIN_DAILY_GREEN_CONTRACT_SUMMARY"
 
 
 def _ts_utc() -> str:
@@ -46,12 +48,12 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
 
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Repo doctor contract check.")
+    parser = argparse.ArgumentParser(description="Windows daily green contract check.")
     parser.add_argument(
         "--script",
         type=Path,
-        default=Path("scripts/repo_doctor_v1.ps1"),
-        help="Repo doctor script to validate.",
+        default=Path("scripts/win_daily_green_v1.ps1"),
+        help="Daily green script to validate.",
     )
     parser.add_argument(
         "--artifacts-dir",
@@ -104,32 +106,14 @@ def validate_marker_output(output: str | Iterable[str]) -> tuple[bool, list[str]
         if not present:
             errors.append(f"missing_output_marker:{marker}")
 
-    summary_lines = [line for line in lines if line.startswith("REPO_DOCTOR_SUMMARY")]
+    summary_lines = [line for line in lines if line.startswith("DAILY_GREEN_SUMMARY")]
     if summary_lines:
         summary_line = summary_lines[-1]
-        for token in ("status=", "failed_step=", "next="):
+        for token in ("status=", "failed_step=", "next=", "run_dir="):
             if token not in summary_line:
                 errors.append(f"summary_missing_token:{token}")
     else:
         errors.append("summary_line_missing")
-
-    config_lines = [line for line in lines if line.startswith("REPO_DOCTOR_CONFIG")]
-    if config_lines:
-        config_line = config_lines[-1]
-        for token in ("write_docs=", "python=", "repo_root=", "artifacts_dir="):
-            if token not in config_line:
-                errors.append(f"config_missing_token:{token}")
-    else:
-        errors.append("config_line_missing")
-
-    clean_lines = [line for line in lines if line.startswith("REPO_DOCTOR_CLEAN_POST")]
-    if clean_lines:
-        clean_line = clean_lines[-1]
-        for token in ("status=", "reason="):
-            if token not in clean_line:
-                errors.append(f"clean_post_missing_token:{token}")
-    else:
-        errors.append("clean_post_line_missing")
 
     return not errors, errors
 
@@ -145,15 +129,15 @@ def main(argv: list[str] | None = None) -> int:
     }
 
     artifacts_dir = args.artifacts_dir
-    _write_json(artifacts_dir / "verify_repo_doctor_contract.json", payload)
-    (artifacts_dir / "verify_repo_doctor_contract.txt").write_text(
+    _write_json(artifacts_dir / "verify_win_daily_green_contract.json", payload)
+    (artifacts_dir / "verify_win_daily_green_contract.txt").write_text(
         "\n".join(errors) if errors else "ok",
         encoding="utf-8",
     )
 
-    print("REPO_DOCTOR_CONTRACT_START")
+    print("WIN_DAILY_GREEN_CONTRACT_START")
     print(f"{SUMMARY_MARKER}|status={status}|errors={len(errors)}")
-    print("REPO_DOCTOR_CONTRACT_END")
+    print("WIN_DAILY_GREEN_CONTRACT_END")
 
     return 0 if status == "PASS" else 1
 

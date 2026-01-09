@@ -476,6 +476,30 @@ fi
 
 if [[ ${rc} -eq 0 ]]; then
   set +e
+  python3 -m tools.verify_win_daily_green_contract --artifacts-dir "${artifacts_dir}"
+  win_daily_green_contract_exit=$?
+  set -e
+  if [[ ${win_daily_green_contract_exit} -ne 0 ]]; then
+    status="FAIL"
+    failing_gate="verify_win_daily_green_contract"
+    rc=${win_daily_green_contract_exit}
+  fi
+fi
+
+if [[ ${rc} -eq 0 ]]; then
+  set +e
+  python3 -m tools.verify_write_allowlist_contract --artifacts-dir "${artifacts_dir}"
+  write_allowlist_contract_exit=$?
+  set -e
+  if [[ ${write_allowlist_contract_exit} -ne 0 ]]; then
+    status="FAIL"
+    failing_gate="verify_write_allowlist_contract"
+    rc=${write_allowlist_contract_exit}
+  fi
+fi
+
+if [[ ${rc} -eq 0 ]]; then
+  set +e
   python3 -m tools.verify_powershell_join_path_contract --artifacts-dir "${artifacts_dir}"
   powershell_join_path_exit=$?
   set -e

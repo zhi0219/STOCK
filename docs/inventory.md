@@ -15,6 +15,8 @@ Version: v1
 - **run_ui_windows** (ps1): `scripts/run_ui_windows.ps1` -> `scripts/run_ui_windows.ps1`
 - **safe_pull_v1** (ps1): `scripts/safe_pull_v1.ps1` -> `scripts/safe_pull_v1.ps1`
 - **safe_push_v1** (ps1): `scripts/safe_push_v1.ps1` -> `scripts/safe_push_v1.ps1`
+- **win_daily_green_v1** (ps1): `scripts/win_daily_green_v1.ps1` -> `scripts/win_daily_green_v1.ps1`
+- **win_inventory_refresh_v1** (ps1): `scripts/win_inventory_refresh_v1.ps1` -> `scripts/win_inventory_refresh_v1.ps1`
 - **windows_launch_ui** (ps1): `scripts/windows_launch_ui.ps1` -> `scripts/windows_launch_ui.ps1`
 - **action_center_apply** (py_module): `tools/action_center_apply.py` -> `python -m tools.action_center_apply --help`
 - **action_center_report** (py_module): `tools/action_center_report.py` -> `python -m tools.action_center_report --help`
@@ -176,7 +178,9 @@ Version: v1
 - **verify_ui_wakeup_dashboard** (py_module): `tools/verify_ui_wakeup_dashboard.py` -> `python -m tools.verify_ui_wakeup_dashboard`
 - **verify_utf8_stdio** (py_module): `tools/verify_utf8_stdio.py` -> `python -m tools.verify_utf8_stdio`
 - **verify_walk_forward** (py_module): `tools/verify_walk_forward.py` -> `python -m tools.verify_walk_forward --help`
+- **verify_win_daily_green_contract** (py_module): `tools/verify_win_daily_green_contract.py` -> `python -m tools.verify_win_daily_green_contract --help`
 - **verify_windows_smoke** (py_module): `tools/verify_windows_smoke.py` -> `python -m tools.verify_windows_smoke --help`
+- **verify_write_allowlist_contract** (py_module): `tools/verify_write_allowlist_contract.py` -> `python -m tools.verify_write_allowlist_contract --help`
 - **wakeup_dashboard** (py_module): `tools/wakeup_dashboard.py` -> `python -m tools.wakeup_dashboard`
 - **walk_forward_eval** (py_module): `tools/walk_forward_eval.py` -> `python -m tools.walk_forward_eval --help`
 - **write_xp_snapshot** (py_module): `tools/write_xp_snapshot.py` -> `python -m tools.write_xp_snapshot --help`
@@ -200,6 +204,12 @@ Version: v1
 - **tools.verify_repo_doctor_contract**: `python3 -m tools.verify_repo_doctor_contract --artifacts-dir "${artifacts_dir}"`
   - markers_expected: none
   - artifacts_expected: artifacts/verify_repo_doctor_contract.json, artifacts/verify_repo_doctor_contract.txt
+- **tools.verify_win_daily_green_contract**: `python3 -m tools.verify_win_daily_green_contract --artifacts-dir "${artifacts_dir}"`
+  - markers_expected: none
+  - artifacts_expected: artifacts/verify_win_daily_green_contract.json, artifacts/verify_win_daily_green_contract.txt
+- **tools.verify_write_allowlist_contract**: `python3 -m tools.verify_write_allowlist_contract --artifacts-dir "${artifacts_dir}"`
+  - markers_expected: none
+  - artifacts_expected: artifacts/verify_write_allowlist_contract.json, artifacts/verify_write_allowlist_contract.txt
 - **tools.verify_powershell_join_path_contract**: `python3 -m tools.verify_powershell_join_path_contract --artifacts-dir "${artifacts_dir}"`
   - markers_expected: none
   - artifacts_expected: artifacts/powershell_join_path_contract.txt, artifacts/powershell_join_path_contract_result.json
@@ -320,6 +330,10 @@ Version: v1
 - `artifacts/verify_powershell_null_safe_trim_contract.txt` (produced_by: tools/verify_consistency.py, tools/verify_powershell_null_safe_trim_contract.py)
 - `artifacts/verify_repo_doctor_contract.json` (produced_by: scripts/ci_gates.sh, tools/verify_repo_doctor_contract.py)
 - `artifacts/verify_repo_doctor_contract.txt` (produced_by: tools/verify_consistency.py, tools/verify_repo_doctor_contract.py)
+- `artifacts/verify_win_daily_green_contract.json` (produced_by: scripts/ci_gates.sh, tools/verify_win_daily_green_contract.py)
+- `artifacts/verify_win_daily_green_contract.txt` (produced_by: tools/verify_consistency.py, tools/verify_win_daily_green_contract.py)
+- `artifacts/verify_write_allowlist_contract.json` (produced_by: scripts/ci_gates.sh, tools/verify_write_allowlist_contract.py)
+- `artifacts/verify_write_allowlist_contract.txt` (produced_by: tools/verify_consistency.py, tools/verify_write_allowlist_contract.py)
 - `artifacts/walk_forward_report.json` (produced_by: tools/verify_walk_forward.py)
 - `artifacts/walk_forward_report.txt` (produced_by: tools/verify_consistency.py, tools/verify_walk_forward.py)
 - `artifacts/walk_forward_windows.csv` (produced_by: tools/verify_walk_forward.py)
@@ -383,7 +397,7 @@ Version: v1
   - files: scripts/ci_gates.sh
   - commands: scripts/ci_gates.sh --help
   - gates: none
-  - artifacts: artifacts/ci_job_summary.md, artifacts/compile_check.log, artifacts/compile_check_result.json, artifacts/gates.log, artifacts/import_contract_result.json, artifacts/import_contract_traceback.txt, artifacts/powershell_join_path_contract_result.json, artifacts/proof_summary.json, artifacts/ps_parse_result.json, artifacts/safe_push_contract_result.json, artifacts/syntax_guard_excerpt.txt, artifacts/syntax_guard_result.json, artifacts/ui_preflight_result.json, artifacts/verify_repo_doctor_contract.json
+  - artifacts: artifacts/ci_job_summary.md, artifacts/compile_check.log, artifacts/compile_check_result.json, artifacts/gates.log, artifacts/import_contract_result.json, artifacts/import_contract_traceback.txt, artifacts/powershell_join_path_contract_result.json, artifacts/proof_summary.json, artifacts/ps_parse_result.json, artifacts/safe_push_contract_result.json, artifacts/syntax_guard_excerpt.txt, artifacts/syntax_guard_result.json, artifacts/ui_preflight_result.json, artifacts/verify_repo_doctor_contract.json, artifacts/verify_win_daily_green_contract.json, artifacts/verify_write_allowlist_contract.json
 - **clip_ci_artifacts**
   - files: scripts/clip_ci_artifacts.ps1
   - commands: scripts/clip_ci_artifacts.ps1
@@ -644,6 +658,16 @@ Version: v1
   - commands: scripts/run_ui_windows.ps1
   - gates: none
   - artifacts: none
+- **win_daily_green_v1**
+  - files: scripts/win_daily_green_v1.ps1
+  - commands: scripts/win_daily_green_v1.ps1
+  - gates: none
+  - artifacts: none
+- **win_inventory_refresh_v1**
+  - files: scripts/win_inventory_refresh_v1.ps1
+  - commands: scripts/win_inventory_refresh_v1.ps1
+  - gates: none
+  - artifacts: none
 - **runtime_hygiene**
   - files: tools/runtime_hygiene.py
   - commands: python -m tools.runtime_hygiene --help
@@ -793,7 +817,7 @@ Version: v1
   - files: tools/verify_consistency.py
   - commands: python -m tools.verify_consistency --help
   - gates: none
-  - artifacts: artifacts/data_health_report.txt, artifacts/execution_model_report.txt, artifacts/experiment_ledger.jsonl, artifacts/experiment_ledger_summary.json, artifacts/redteam_report.txt, artifacts/verify_docs_contract.txt, artifacts/verify_inventory_contract.txt, artifacts/verify_powershell_no_goto_labels_contract.txt, artifacts/verify_powershell_null_safe_trim_contract.txt, artifacts/verify_repo_doctor_contract.txt, artifacts/walk_forward_report.txt
+  - artifacts: artifacts/data_health_report.txt, artifacts/execution_model_report.txt, artifacts/experiment_ledger.jsonl, artifacts/experiment_ledger_summary.json, artifacts/redteam_report.txt, artifacts/verify_docs_contract.txt, artifacts/verify_inventory_contract.txt, artifacts/verify_powershell_no_goto_labels_contract.txt, artifacts/verify_powershell_null_safe_trim_contract.txt, artifacts/verify_repo_doctor_contract.txt, artifacts/verify_win_daily_green_contract.txt, artifacts/verify_write_allowlist_contract.txt, artifacts/walk_forward_report.txt
 - **verify_cooldown**
   - files: tools/verify_cooldown.py
   - commands: python -m tools.verify_cooldown
@@ -1084,6 +1108,16 @@ Version: v1
   - commands: python -m tools.verify_repo_doctor_contract --help
   - gates: tools.verify_repo_doctor_contract
   - artifacts: artifacts/verify_repo_doctor_contract.json, artifacts/verify_repo_doctor_contract.txt
+- **verify_win_daily_green_contract**
+  - files: tools/verify_win_daily_green_contract.py
+  - commands: python -m tools.verify_win_daily_green_contract --help
+  - gates: tools.verify_win_daily_green_contract
+  - artifacts: artifacts/verify_win_daily_green_contract.json, artifacts/verify_win_daily_green_contract.txt
+- **verify_write_allowlist_contract**
+  - files: tools/verify_write_allowlist_contract.py
+  - commands: python -m tools.verify_write_allowlist_contract --help
+  - gates: tools.verify_write_allowlist_contract
+  - artifacts: artifacts/verify_write_allowlist_contract.json, artifacts/verify_write_allowlist_contract.txt
 - **verify_repo_hygiene**
   - files: tools/verify_repo_hygiene.py
   - commands: python -m tools.verify_repo_hygiene
@@ -1249,4 +1283,3 @@ Version: v1
   - commands: python -m tools.xp_model
   - gates: none
   - artifacts: none
-
