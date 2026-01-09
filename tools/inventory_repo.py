@@ -349,9 +349,8 @@ def _render_markdown(inventory: dict[str, object]) -> str:
 
 def _normalize_text(text: str) -> str:
     normalized = text.replace("\r\n", "\n").replace("\r", "\n")
-    if not normalized.endswith("\n"):
-        normalized += "\n"
-    return normalized
+    normalized = normalized.rstrip("\n")
+    return f"{normalized}\n"
 
 
 def _write_text(path: Path, text: str) -> None:

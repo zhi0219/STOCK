@@ -67,7 +67,7 @@ def atomic_write_json(
         tmp_path = path.with_name(f".{path.name}.tmp.{os.getpid()}.{attempt}")
         _log_marker("ATOMIC_WRITE_JSON_ATTEMPT", path=path.as_posix(), attempt=attempt, tmp=tmp_path.name)
         try:
-            with tmp_path.open("w", encoding="utf-8") as handle:
+            with tmp_path.open("w", encoding="utf-8", newline="\n") as handle:
                 handle.write(payload)
                 handle.flush()
                 if fsync:
@@ -136,6 +136,11 @@ def atomic_write_text(
     backoff_ms: int = 50,
     fsync: bool = True,
 ) -> AtomicWriteResult:
+    """Atomically write UTF-8 text with LF-only newlines.
+
+    Do not replace this with Path.write_text() in this pipeline; it does not
+    allow control over newline translation on Windows.
+    """
     if retries < 1:
         raise ValueError("retries must be >= 1")
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -145,7 +150,7 @@ def atomic_write_text(
         tmp_path = path.with_name(f".{path.name}.tmp.{os.getpid()}.{attempt}")
         _log_marker("ATOMIC_WRITE_TEXT_ATTEMPT", path=path.as_posix(), attempt=attempt, tmp=tmp_path.name)
         try:
-            with tmp_path.open("w", encoding="utf-8") as handle:
+            with tmp_path.open("w", encoding="utf-8", newline="\n") as handle:
                 handle.write(payload)
                 handle.flush()
                 if fsync:

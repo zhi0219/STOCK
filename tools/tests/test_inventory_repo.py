@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 
 from tools import inventory_repo
+from tools import repo_hygiene
 
 
 class InventoryRepoTests(unittest.TestCase):
@@ -48,6 +49,45 @@ class InventoryRepoTests(unittest.TestCase):
             data = path.read_bytes()
             self.assertFalse(data.startswith(b"\xef\xbb\xbf"))
             self.assertNotIn(b"\r", data)
+
+    def test_inventory_outputs_use_lf_only(self) -> None:
+        root = Path(__file__).resolve().parents[2]
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            artifacts_dir = Path(tmp_dir) / "artifacts"
+            rc = inventory_repo.main(
+                [
+                    "--artifacts-dir",
+                    str(artifacts_dir),
+                    "--repo-root",
+                    str(root),
+                ]
+            )
+            self.assertEqual(rc, 0)
+            outputs = [
+                artifacts_dir / "repo_inventory.md",
+                root / "docs" / "inventory.md",
+            ]
+            for path in outputs:
+                data = path.read_bytes()
+                self.assertNotIn(b"\r\n", data)
+                self.assertNotIn(b"\r", data)
+                self.assertFalse(data.startswith(b"\xef\xbb\xbf"))
+                self.assertTrue(data.endswith(b"\n"))
+                self.assertFalse(data.endswith(b"\n\n"))
+            status_lines, error = repo_hygiene.git_status_porcelain(include_ignored=False)
+            if error or status_lines:
+                self.skipTest("dirty worktree; skipping verify_inventory_contract integration check")
+            from tools import verify_inventory_contract
+
+            verify_rc = verify_inventory_contract.main(
+                [
+                    "--artifacts-dir",
+                    str(artifacts_dir),
+                    "--repo-root",
+                    str(root),
+                ]
+            )
+            self.assertEqual(verify_rc, 0)
 
     def test_inventory_paths_have_no_backslashes(self) -> None:
         root = Path(__file__).resolve().parents[2]
