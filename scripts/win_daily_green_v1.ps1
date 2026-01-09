@@ -127,6 +127,8 @@ if (-not (@("YES", "NO") -contains $autoStashValue)) {
   Write-Host ("DAILY_GREEN_START|ts_utc=" + $ts + "|repo_root=" + $repoRootFull + "|artifacts_dir=" + $artifactsRoot + "|run_dir=" + $runDir)
   Fail-DailyGreen -FailedStep "preflight_autostash" -Next "set -AutoStash YES|NO"
 }
+$allowStash = $autoStashValue -eq "YES"
+$requireClean = $autoStashValue -eq "NO"
 
 $pythonExe = Resolve-PythonExe -RepoRoot $repoRootFull
 if (-not $pythonExe) {
@@ -166,8 +168,10 @@ $safePullArgs = @(
   $safePullScript,
   "-ArtifactsDir",
   $safePullDir,
-  "-AutoStash",
-  $autoStashValue
+  "-DryRun:$false",
+  "-AllowStash:$allowStash",
+  "-IncludeUntracked:$false",
+  "-RequireClean:$requireClean"
 )
 $safePullStep = Invoke-DailyStep -Name "safe_pull" -FilePath "powershell.exe" -Arguments $safePullArgs -WorkingDirectory $repoRootFull -StepDir $safePullDir
 if ($safePullStep.ExitCode -ne 0) {

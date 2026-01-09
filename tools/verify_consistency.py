@@ -964,6 +964,34 @@ def check_win_daily_green_contract(
     return [CheckResult("win daily green contract", False, detail)]
 
 
+def check_safe_pull_contract(artifacts_dir: Path, python_exec: str) -> List[CheckResult]:
+    fixture_dir = ROOT / "fixtures" / "safe_pull_contract" / "good"
+    if not fixture_dir.exists():
+        return [CheckResult("safe pull contract", False, "missing fixtures/safe_pull_contract/good")]
+    cmd = [
+        python_exec,
+        "-m",
+        "tools.verify_safe_pull_contract",
+        "--artifacts-dir",
+        str(artifacts_dir),
+        "--input-dir",
+        str(fixture_dir),
+    ]
+    try:
+        completed = subprocess.run(
+            cmd,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except Exception as exc:  # pragma: no cover - subprocess guard
+        return [CheckResult("safe pull contract", False, f"error={exc}")]
+    if completed.returncode == 0:
+        return [CheckResult("safe pull contract", True)]
+    detail = f"exit_code={completed.returncode}; see {artifacts_dir / 'verify_safe_pull_contract.txt'}"
+    return [CheckResult("safe pull contract", False, detail)]
+
+
 def check_write_allowlist_contract(
     artifacts_dir: Path, python_exec: str
 ) -> List[CheckResult]:
@@ -1170,6 +1198,7 @@ def main(argv: List[str] | None = None) -> int:
         ),
         lambda: check_docs_contract(Path(args.artifacts_dir), python_exec),
         lambda: check_win_daily_green_contract(Path(args.artifacts_dir), python_exec),
+        lambda: check_safe_pull_contract(Path(args.artifacts_dir), python_exec),
         lambda: check_write_allowlist_contract(Path(args.artifacts_dir), python_exec),
         lambda: check_repo_doctor_contract(Path(args.artifacts_dir), python_exec),
         lambda: check_inventory_contract(Path(args.artifacts_dir), python_exec),

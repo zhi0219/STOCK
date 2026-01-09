@@ -17,6 +17,7 @@ class VerifyPrReadyTests(unittest.TestCase):
             SimpleNamespace(returncode=0, stdout="docs ok", stderr=""),
             SimpleNamespace(returncode=0, stdout="inventory ok", stderr=""),
             SimpleNamespace(returncode=0, stdout="foundation ok", stderr=""),
+            SimpleNamespace(returncode=0, stdout="safe pull ok", stderr=""),
             SimpleNamespace(
                 returncode=1,
                 stdout="CONSISTENCY_SUMMARY|status=DEGRADED|skipped=x",
