@@ -67,7 +67,7 @@ def atomic_write_json(
         tmp_path = path.with_name(f".{path.name}.tmp.{os.getpid()}.{attempt}")
         _log_marker("ATOMIC_WRITE_JSON_ATTEMPT", path=path.as_posix(), attempt=attempt, tmp=tmp_path.name)
         try:
-            with tmp_path.open("w", encoding="utf-8") as handle:
+            with tmp_path.open("w", encoding="utf-8", newline="\n") as handle:
                 handle.write(payload)
                 handle.flush()
                 if fsync:
@@ -145,7 +145,7 @@ def atomic_write_text(
         tmp_path = path.with_name(f".{path.name}.tmp.{os.getpid()}.{attempt}")
         _log_marker("ATOMIC_WRITE_TEXT_ATTEMPT", path=path.as_posix(), attempt=attempt, tmp=tmp_path.name)
         try:
-            with tmp_path.open("w", encoding="utf-8") as handle:
+            with tmp_path.open("w", encoding="utf-8", newline="\n") as handle:
                 handle.write(payload)
                 handle.flush()
                 if fsync:

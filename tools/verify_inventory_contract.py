@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 import traceback
 from difflib import unified_diff
 from pathlib import Path
+from datetime import datetime, timezone
 
 from tools import inventory_repo
 
@@ -88,14 +90,15 @@ def _first_diff_summary(actual: str, expected: str) -> str:
 
 def _write_text(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(_normalize_newlines(text), encoding="utf-8")
+    path.write_text(_normalize_newlines(text), encoding="utf-8", newline="\n")
 
 
-def _read_text(path: Path) -> tuple[str, bool]:
-    data = path.read_bytes()
-    has_bom = data.startswith(UTF8_BOM)
-    text = data.decode("utf-8-sig")
-    return text, has_bom
+def _count_crlf_pairs(data: bytes) -> int:
+    return data.count(b"\r\n")
+
+
+def _sha256(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
 
 
 def _normalized_equal(actual: str, expected: str) -> bool:
@@ -117,27 +120,39 @@ def main(argv: list[str] | None = None) -> int:
     diff_summary_path = artifacts_dir / "inventory_diff_summary.json"
     json_report = artifacts_dir / "verify_inventory_contract.json"
     txt_report = artifacts_dir / "verify_inventory_contract.txt"
+    eol_stats_path = artifacts_dir / "verify_inventory_eol_stats.json"
 
     print("VERIFY_INVENTORY_CONTRACT_START")
     status_ok = True
     detail = "ok"
     next_hint = f"next=python -m tools.inventory_repo --artifacts-dir {artifacts_dir} --write-docs"
 
+    expected = ""
+    actual = ""
+    docs_data = b""
+    gen_data = b""
+    docs_path = repo_root / "docs" / "inventory.md"
+    gen_markdown_path = artifacts_dir / "repo_inventory.md"
+    gen_path = "artifacts/repo_inventory.md"
+
     try:
         inventory = inventory_repo.generate_inventory(repo_root)
         expected = inventory_repo._render_markdown(inventory)
-        docs_path = repo_root / "docs" / "inventory.md"
+        _write_text(gen_markdown_path, expected)
+        gen_data = expected.encode("utf-8")
 
         if not docs_path.exists():
             status_ok = False
             detail = "docs/inventory.md missing"
             actual = ""
         else:
-            actual, has_bom = _read_text(docs_path)
+            docs_data = docs_path.read_bytes()
+            actual = docs_data.decode("utf-8-sig")
+            has_bom = docs_data.startswith(UTF8_BOM)
             if has_bom:
                 status_ok = False
                 detail = "docs/inventory.md has UTF-8 BOM"
-            elif "\r" in actual:
+            elif _count_crlf_pairs(docs_data) > 0 or b"\r" in docs_data:
                 status_ok = False
                 detail = "docs/inventory.md contains CRLF"
             elif not _normalized_equal(actual, expected):
@@ -166,6 +181,23 @@ def main(argv: list[str] | None = None) -> int:
         detail = f"error={exc}"
         _write_text(diff_path, "\n".join([traceback.format_exc(), next_hint, ""]))
 
+    eol_stats = {
+        "ts_utc": datetime.now(timezone.utc).isoformat(),
+        "docs_path": "docs/inventory.md",
+        "docs_len": len(docs_data),
+        "docs_crlf_pairs": _count_crlf_pairs(docs_data),
+        "docs_has_bom": docs_data.startswith(UTF8_BOM),
+        "docs_sha256": _sha256(docs_data),
+        "gen_path": gen_path,
+        "gen_len": len(gen_data),
+        "gen_crlf_pairs": _count_crlf_pairs(gen_data),
+        "gen_has_bom": gen_data.startswith(UTF8_BOM),
+        "gen_sha256": _sha256(gen_data),
+        "verdict": "PASS" if status_ok else "FAIL",
+        "detail": detail,
+    }
+    _write_text(eol_stats_path, json.dumps(eol_stats, indent=2, sort_keys=True))
+
     result = {
         "status": "PASS" if status_ok else "FAIL",
         "detail": detail,
@@ -183,6 +215,16 @@ def main(argv: list[str] | None = None) -> int:
         print("VERIFY_INVENTORY_CONTRACT_END")
         return 0
 
+    print(
+        "VERIFY_INVENTORY_EOLS"
+        f"|docs_crlf_pairs={eol_stats['docs_crlf_pairs']}"
+        f"|docs_has_bom={eol_stats['docs_has_bom']}"
+        f"|docs_len={eol_stats['docs_len']}"
+        f"|gen_crlf_pairs={eol_stats['gen_crlf_pairs']}"
+        f"|gen_has_bom={eol_stats['gen_has_bom']}"
+        f"|gen_len={eol_stats['gen_len']}"
+        f"|stats={eol_stats_path.as_posix()}"
+    )
     print(f"VERIFY_INVENTORY_CONTRACT_SUMMARY|status=FAIL|detail={detail}|{next_hint}")
     print("VERIFY_INVENTORY_CONTRACT_END")
     return 1
