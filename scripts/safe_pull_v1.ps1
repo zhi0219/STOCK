@@ -1,6 +1,7 @@
 param(
   [string]$Remote = "",
   [string]$Branch = "",
+  [string]$ArtifactsDir = "",
   [string]$AutoStash = "NO"
 )
 
@@ -133,7 +134,9 @@ if (-not (@("YES", "NO") -contains $autoStashValue)) {
 }
 $autoStashEnabled = $autoStashValue -eq "YES"
 
-$initialArtifactsDir = Join-Path $cwd "artifacts"
+$initialArtifactsRoot = if ([string]::IsNullOrWhiteSpace($ArtifactsDir)) { Join-Path $cwd "artifacts" } else { $ArtifactsDir }
+$initialArtifactsRoot = if ([IO.Path]::IsPathRooted($initialArtifactsRoot)) { $initialArtifactsRoot } else { Join-Path $cwd $initialArtifactsRoot }
+$initialArtifactsDir = [IO.Path]::GetFullPath($initialArtifactsRoot)
 $gitVersionResult = Run-Git -GitExe $gitExe -RepoRoot $cwd -ArtifactsDir $initialArtifactsDir -MarkerPrefix "SAFE_PULL_GIT_VERSION" --version
 $gitVersionText = if ($gitVersionResult[0] -eq 0 -and -not [string]::IsNullOrWhiteSpace($gitVersionResult[1])) { $gitVersionResult[1] } else { "unknown" }
 Write-Host ("SAFE_PULL_START|ts_utc=" + $ts + "|cwd=" + $cwd + "|git_exe=" + $gitExe + "|git_version=" + $gitVersionText)
@@ -150,7 +153,9 @@ if ($cwdFull -ne $repoFull) {
 }
 $repoRoot = $repoFull
 
-$artifactsDir = Join-Path $repoRoot "artifacts"
+$artifactsRoot = if ([string]::IsNullOrWhiteSpace($ArtifactsDir)) { Join-Path $repoRoot "artifacts" } else { $ArtifactsDir }
+$artifactsRoot = if ([IO.Path]::IsPathRooted($artifactsRoot)) { $artifactsRoot } else { Join-Path $repoRoot $artifactsRoot }
+$artifactsDir = [IO.Path]::GetFullPath($artifactsRoot)
 New-Item -ItemType Directory -Force -Path $artifactsDir | Out-Null
 
 $script:AutoStashArtifactsDir = $artifactsDir

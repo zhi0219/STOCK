@@ -936,6 +936,62 @@ def check_repo_doctor_contract(artifacts_dir: Path, python_exec: str) -> List[Ch
     return [CheckResult("repo doctor contract", False, detail)]
 
 
+def check_win_daily_green_contract(
+    artifacts_dir: Path, python_exec: str
+) -> List[CheckResult]:
+    cmd = [
+        python_exec,
+        "-m",
+        "tools.verify_win_daily_green_contract",
+        "--artifacts-dir",
+        str(artifacts_dir),
+    ]
+    try:
+        completed = subprocess.run(
+            cmd,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except Exception as exc:  # pragma: no cover - subprocess guard
+        return [CheckResult("win daily green contract", False, f"error={exc}")]
+    if completed.returncode == 0:
+        return [CheckResult("win daily green contract", True)]
+    detail = (
+        f"exit_code={completed.returncode}; see "
+        f"{artifacts_dir / 'verify_win_daily_green_contract.txt'}"
+    )
+    return [CheckResult("win daily green contract", False, detail)]
+
+
+def check_write_allowlist_contract(
+    artifacts_dir: Path, python_exec: str
+) -> List[CheckResult]:
+    cmd = [
+        python_exec,
+        "-m",
+        "tools.verify_write_allowlist_contract",
+        "--artifacts-dir",
+        str(artifacts_dir),
+    ]
+    try:
+        completed = subprocess.run(
+            cmd,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except Exception as exc:  # pragma: no cover - subprocess guard
+        return [CheckResult("write allowlist contract", False, f"error={exc}")]
+    if completed.returncode == 0:
+        return [CheckResult("write allowlist contract", True)]
+    detail = (
+        f"exit_code={completed.returncode}; see "
+        f"{artifacts_dir / 'verify_write_allowlist_contract.txt'}"
+    )
+    return [CheckResult("write allowlist contract", False, detail)]
+
+
 def check_execution_model(artifacts_dir: Path, python_exec: str) -> List[CheckResult]:
     cmd = [
         python_exec,
@@ -1113,6 +1169,8 @@ def main(argv: List[str] | None = None) -> int:
             Path(args.artifacts_dir), python_exec
         ),
         lambda: check_docs_contract(Path(args.artifacts_dir), python_exec),
+        lambda: check_win_daily_green_contract(Path(args.artifacts_dir), python_exec),
+        lambda: check_write_allowlist_contract(Path(args.artifacts_dir), python_exec),
         lambda: check_repo_doctor_contract(Path(args.artifacts_dir), python_exec),
         lambda: check_inventory_contract(Path(args.artifacts_dir), python_exec),
         lambda: check_execution_model(Path(args.artifacts_dir), python_exec),
