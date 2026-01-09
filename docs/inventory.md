@@ -239,7 +239,7 @@ Version: v1
   - artifacts_expected: artifacts/inventory_write_docs_after_status.txt, artifacts/inventory_write_docs_before_status.txt, artifacts/repo_inventory.json, artifacts/repo_inventory.md, artifacts/repo_inventory_error.txt
 - **tools.verify_inventory_contract**: `python3 -m tools.verify_inventory_contract --artifacts-dir "${artifacts_dir}"`
   - markers_expected: none
-  - artifacts_expected: artifacts/inventory_diff.txt, artifacts/inventory_diff_summary.json, artifacts/verify_inventory_contract.json, artifacts/verify_inventory_contract.txt
+  - artifacts_expected: artifacts/inventory_diff.txt, artifacts/inventory_diff_summary.json, artifacts/repo_inventory.md, artifacts/verify_inventory_contract.json, artifacts/verify_inventory_contract.txt, artifacts/verify_inventory_eol_stats.json
 - **tools.verify_execution_model**: `python3 -m tools.verify_execution_model --artifacts-dir "${artifacts_dir}"`
   - markers_expected: none
   - artifacts_expected: artifacts/execution_model_report.json, artifacts/execution_model_report.txt, artifacts/execution_model_runs
@@ -316,7 +316,7 @@ Version: v1
 - `artifacts/redteam_report.json` (produced_by: tools/verify_redteam_integrity.py)
 - `artifacts/redteam_report.txt` (produced_by: tools/verify_consistency.py, tools/verify_redteam_integrity.py)
 - `artifacts/repo_inventory.json` (produced_by: tools/inventory_repo.py)
-- `artifacts/repo_inventory.md` (produced_by: tools/inventory_repo.py)
+- `artifacts/repo_inventory.md` (produced_by: tools/inventory_repo.py, tools/verify_inventory_contract.py)
 - `artifacts/repo_inventory_error.txt` (produced_by: tools/inventory_repo.py)
 - `artifacts/safe_pull_contract.txt` (produced_by: tools/safe_pull_contract.py)
 - `artifacts/safe_pull_contract_result.json` (produced_by: tools/safe_pull_contract.py)
@@ -334,6 +334,7 @@ Version: v1
 - `artifacts/verify_edits_payload.txt` (produced_by: tools/ui_app.py, tools/verify_edits_payload.py)
 - `artifacts/verify_inventory_contract.json` (produced_by: tools/verify_inventory_contract.py)
 - `artifacts/verify_inventory_contract.txt` (produced_by: tools/verify_consistency.py, tools/verify_inventory_contract.py)
+- `artifacts/verify_inventory_eol_stats.json` (produced_by: tools/verify_inventory_contract.py)
 - `artifacts/verify_powershell_no_goto_labels_contract.json` (produced_by: tools/verify_powershell_no_goto_labels_contract.py)
 - `artifacts/verify_powershell_no_goto_labels_contract.txt` (produced_by: tools/verify_consistency.py, tools/verify_powershell_no_goto_labels_contract.py)
 - `artifacts/verify_powershell_null_safe_trim_contract.json` (produced_by: tools/verify_powershell_null_safe_trim_contract.py)
@@ -884,7 +885,7 @@ Version: v1
   - files: tools/verify_inventory_contract.py
   - commands: python -m tools.verify_inventory_contract --help
   - gates: tools.verify_inventory_contract
-  - artifacts: artifacts/inventory_diff.txt, artifacts/inventory_diff_summary.json, artifacts/verify_inventory_contract.json, artifacts/verify_inventory_contract.txt
+  - artifacts: artifacts/inventory_diff.txt, artifacts/inventory_diff_summary.json, artifacts/repo_inventory.md, artifacts/verify_inventory_contract.json, artifacts/verify_inventory_contract.txt, artifacts/verify_inventory_eol_stats.json
 - **verify_kill_switch_recovery**
   - files: tools/verify_kill_switch_recovery.py
   - commands: python -m tools.verify_kill_switch_recovery
