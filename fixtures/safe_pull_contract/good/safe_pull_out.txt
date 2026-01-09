@@ -1,0 +1,1 @@
+SAFE_PULL_START|ts_utc=2024-01-01T00:00:00Z|repo_root=/repo|cwd=/repo|git=git|mode=dry_run

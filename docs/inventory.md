@@ -157,6 +157,7 @@ Version: v1
 - **verify_repo_doctor_contract** (py_module): `tools/verify_repo_doctor_contract.py` -> `python -m tools.verify_repo_doctor_contract --help`
 - **verify_repo_hygiene** (py_module): `tools/verify_repo_hygiene.py` -> `python -m tools.verify_repo_hygiene`
 - **verify_run_completeness_contract** (py_module): `tools/verify_run_completeness_contract.py` -> `python -m tools.verify_run_completeness_contract`
+- **verify_safe_pull_contract** (py_module): `tools/verify_safe_pull_contract.py` -> `python -m tools.verify_safe_pull_contract --help`
 - **verify_select_evidence** (py_module): `tools/verify_select_evidence.py` -> `python -m tools.verify_select_evidence`
 - **verify_sim_replay** (py_module): `tools/verify_sim_replay.py` -> `python -m tools.verify_sim_replay`
 - **verify_sim_safety_pack** (py_module): `tools/verify_sim_safety_pack.py` -> `python -m tools.verify_sim_safety_pack`
@@ -209,6 +210,9 @@ Version: v1
 - **tools.verify_win_daily_green_contract**: `python3 -m tools.verify_win_daily_green_contract --artifacts-dir "${artifacts_dir}"`
   - markers_expected: none
   - artifacts_expected: artifacts/verify_win_daily_green_contract.json, artifacts/verify_win_daily_green_contract.txt
+- **tools.verify_safe_pull_contract**: `python3 -m tools.verify_safe_pull_contract \`
+  - markers_expected: none
+  - artifacts_expected: artifacts/verify_safe_pull_contract.json, artifacts/verify_safe_pull_contract.txt
 - **tools.verify_write_allowlist_contract**: `python3 -m tools.verify_write_allowlist_contract --artifacts-dir "${artifacts_dir}"`
   - markers_expected: none
   - artifacts_expected: artifacts/verify_write_allowlist_contract.json, artifacts/verify_write_allowlist_contract.txt
@@ -336,6 +340,8 @@ Version: v1
 - `artifacts/verify_powershell_null_safe_trim_contract.txt` (produced_by: tools/verify_consistency.py, tools/verify_powershell_null_safe_trim_contract.py)
 - `artifacts/verify_repo_doctor_contract.json` (produced_by: scripts/ci_gates.sh, tools/verify_repo_doctor_contract.py)
 - `artifacts/verify_repo_doctor_contract.txt` (produced_by: tools/verify_consistency.py, tools/verify_repo_doctor_contract.py)
+- `artifacts/verify_safe_pull_contract.json` (produced_by: tools/verify_safe_pull_contract.py)
+- `artifacts/verify_safe_pull_contract.txt` (produced_by: tools/verify_consistency.py, tools/verify_safe_pull_contract.py)
 - `artifacts/verify_win_daily_green_contract.json` (produced_by: tools/verify_win_daily_green_contract.py)
 - `artifacts/verify_win_daily_green_contract.txt` (produced_by: tools/verify_consistency.py, tools/verify_win_daily_green_contract.py)
 - `artifacts/verify_write_allowlist_contract.json` (produced_by: tools/verify_write_allowlist_contract.py)
@@ -813,7 +819,7 @@ Version: v1
   - files: tools/verify_consistency.py
   - commands: python -m tools.verify_consistency --help
   - gates: none
-  - artifacts: artifacts/data_health_report.txt, artifacts/execution_model_report.txt, artifacts/experiment_ledger.jsonl, artifacts/experiment_ledger_summary.json, artifacts/redteam_report.txt, artifacts/verify_docs_contract.txt, artifacts/verify_inventory_contract.txt, artifacts/verify_powershell_no_goto_labels_contract.txt, artifacts/verify_powershell_null_safe_trim_contract.txt, artifacts/verify_repo_doctor_contract.txt, artifacts/verify_win_daily_green_contract.txt, artifacts/verify_write_allowlist_contract.txt, artifacts/walk_forward_report.txt
+  - artifacts: artifacts/data_health_report.txt, artifacts/execution_model_report.txt, artifacts/experiment_ledger.jsonl, artifacts/experiment_ledger_summary.json, artifacts/redteam_report.txt, artifacts/verify_docs_contract.txt, artifacts/verify_inventory_contract.txt, artifacts/verify_powershell_no_goto_labels_contract.txt, artifacts/verify_powershell_null_safe_trim_contract.txt, artifacts/verify_repo_doctor_contract.txt, artifacts/verify_safe_pull_contract.txt, artifacts/verify_win_daily_green_contract.txt, artifacts/verify_write_allowlist_contract.txt, artifacts/walk_forward_report.txt
 - **verify_cooldown**
   - files: tools/verify_cooldown.py
   - commands: python -m tools.verify_cooldown
@@ -1114,6 +1120,11 @@ Version: v1
   - commands: python -m tools.verify_run_completeness_contract
   - gates: none
   - artifacts: none
+- **verify_safe_pull_contract**
+  - files: tools/verify_safe_pull_contract.py
+  - commands: python -m tools.verify_safe_pull_contract --help
+  - gates: tools.verify_safe_pull_contract
+  - artifacts: artifacts/verify_safe_pull_contract.json, artifacts/verify_safe_pull_contract.txt
 - **verify_select_evidence**
   - files: tools/verify_select_evidence.py
   - commands: python -m tools.verify_select_evidence

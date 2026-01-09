@@ -1,0 +1,169 @@
+from __future__ import annotations
+
+import argparse
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+REQUIRED_MARKERS = [
+    "SAFE_PULL_START",
+    "SAFE_PULL_PRECHECK",
+    "SAFE_PULL_LOCK",
+    "SAFE_PULL_STASH",
+    "SAFE_PULL_FETCH",
+    "SAFE_PULL_PULL_FF_ONLY",
+    "SAFE_PULL_POSTCHECK",
+    "SAFE_PULL_SUMMARY",
+]
+
+REQUIRED_ARTIFACTS = [
+    "safe_pull_summary.json",
+    "safe_pull_out.txt",
+    "safe_pull_err.txt",
+    "safe_pull_markers.txt",
+    "git_status_before.txt",
+    "git_status_after.txt",
+    "git_porcelain_before.txt",
+    "git_porcelain_after.txt",
+    "git_rev_before.txt",
+    "git_rev_after.txt",
+    "config_snapshot.txt",
+]
+
+
+def _ts_utc() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def _parse_args(argv: list[str] | None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Verify safe pull artifacts contract.")
+    parser.add_argument(
+        "--artifacts-dir",
+        type=Path,
+        default=Path("artifacts"),
+        help="Artifacts directory to write results.",
+    )
+    parser.add_argument(
+        "--input-dir",
+        type=Path,
+        default=None,
+        help="Directory containing safe pull artifacts (defaults to artifacts dir).",
+    )
+    return parser.parse_args(argv)
+
+
+def _read_text(path: Path) -> str:
+    return path.read_text(encoding="utf-8", errors="replace") if path.exists() else ""
+
+
+def _parse_markers(lines: list[str]) -> list[str]:
+    errors: list[str] = []
+    for line in lines:
+        if "|" not in line:
+            if line in {"SAFE_PULL_END"}:
+                continue
+            errors.append(f"marker_missing_delimiter:{line}")
+            continue
+        parts = line.split("|")
+        if not parts[0]:
+            errors.append(f"marker_missing_prefix:{line}")
+        for token in parts[1:]:
+            if "=" not in token:
+                errors.append(f"marker_missing_key_value:{line}")
+                break
+    return errors
+
+
+def _validate_summary(payload: dict[str, Any]) -> list[str]:
+    required_keys = ["status", "mode", "next", "dry_run", "artifacts_dir"]
+    errors: list[str] = []
+    for key in required_keys:
+        if key not in payload:
+            errors.append(f"summary_missing_key:{key}")
+    if payload.get("status") not in {"PASS", "FAIL", "DEGRADED"}:
+        errors.append("summary_invalid_status")
+    return errors
+
+
+def _validate_invariants(input_dir: Path, summary: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    before = _read_text(input_dir / "git_porcelain_before.txt")
+    after = _read_text(input_dir / "git_porcelain_after.txt")
+    if summary.get("status") == "PASS":
+        if after.strip():
+            errors.append("postcheck_porcelain_not_empty")
+    if summary.get("dry_run"):
+        if before != after:
+            errors.append("dry_run_porcelain_changed")
+    return errors
+
+
+def _check_contract(input_dir: Path) -> tuple[str, list[str]]:
+    errors: list[str] = []
+    for artifact in REQUIRED_ARTIFACTS:
+        if not (input_dir / artifact).exists():
+            errors.append(f"missing_artifact:{artifact}")
+
+    markers_path = input_dir / "safe_pull_markers.txt"
+    marker_lines = [
+        line.strip()
+        for line in _read_text(markers_path).splitlines()
+        if line.strip()
+    ]
+    if marker_lines:
+        errors.extend(_parse_markers(marker_lines))
+    for marker in REQUIRED_MARKERS:
+        if not any(line.startswith(marker) for line in marker_lines):
+            errors.append(f"missing_marker:{marker}")
+
+    summary_path = input_dir / "safe_pull_summary.json"
+    summary_payload: dict[str, Any] = {}
+    if summary_path.exists():
+        try:
+            summary_payload = json.loads(summary_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            errors.append("summary_json_invalid")
+    else:
+        summary_payload = {}
+
+    errors.extend(_validate_summary(summary_payload))
+    errors.extend(_validate_invariants(input_dir, summary_payload))
+
+    status = "PASS" if not errors else "FAIL"
+    return status, errors
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _parse_args(argv)
+    input_dir = args.input_dir if args.input_dir is not None else args.artifacts_dir
+    status, errors = _check_contract(input_dir)
+
+    payload = {
+        "status": status,
+        "errors": errors,
+        "input_dir": input_dir.as_posix(),
+        "ts_utc": _ts_utc(),
+    }
+
+    artifacts_dir = args.artifacts_dir
+    _write_json(artifacts_dir / "verify_safe_pull_contract.json", payload)
+    (artifacts_dir / "verify_safe_pull_contract.txt").write_text(
+        "\n".join(errors) if errors else "ok",
+        encoding="utf-8",
+    )
+
+    print("SAFE_PULL_CONTRACT_START")
+    print(f"SAFE_PULL_CONTRACT_SUMMARY|status={status}|errors={len(errors)}")
+    print("SAFE_PULL_CONTRACT_END")
+
+    return 0 if status == "PASS" else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

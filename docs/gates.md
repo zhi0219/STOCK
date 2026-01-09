@@ -31,64 +31,67 @@ Each gate must emit PASS/FAIL semantics and fail-closed by default.
 6) **verify_win_daily_green_contract** (`python -m tools.verify_win_daily_green_contract --artifacts-dir artifacts`)
    - PASS: daily green entrypoint contract intact.
    - FAIL: required markers or command guardrails missing.
-7) **verify_write_allowlist_contract** (`python -m tools.verify_write_allowlist_contract --artifacts-dir artifacts`)
+7) **verify_safe_pull_contract** (`python -m tools.verify_safe_pull_contract --artifacts-dir artifacts --input-dir fixtures/safe_pull_contract/good`)
+   - PASS: safe pull artifacts contract parsed successfully.
+   - FAIL: required markers or artifacts missing, or invariant checks failed.
+8) **verify_write_allowlist_contract** (`python -m tools.verify_write_allowlist_contract --artifacts-dir artifacts`)
    - PASS: daily scripts only write under artifacts.
    - FAIL: detected write outside allowlist.
-8) **powershell_join_path_contract** (`python -m tools.verify_powershell_join_path_contract --artifacts-dir artifacts`)
+9) **powershell_join_path_contract** (`python -m tools.verify_powershell_join_path_contract --artifacts-dir artifacts`)
    - PASS: PowerShell Join-Path usage is PowerShell 5.1-safe.
    - FAIL: any Join-Path call uses 3+ positional arguments or `-AdditionalChildPath`.
    - Rule: use nested `Join-Path` or `[IO.Path]::Combine` for 3+ segments.
-9) **verify_powershell_null_safe_trim_contract** (`python -m tools.verify_powershell_null_safe_trim_contract --artifacts-dir artifacts`)
+10) **verify_powershell_null_safe_trim_contract** (`python -m tools.verify_powershell_null_safe_trim_contract --artifacts-dir artifacts`)
    - PASS: PowerShell Trim only uses null-safe patterns (`[string]::Concat(...).Trim()` or explicit null-guard before `.Trim()`).
    - FAIL: any `(... + ...).Trim()` concatenation, even with explicit casts.
    - Rule: prefer `[string]::Concat(...)` before `.Trim()` or guard nulls before trimming.
    - Artifacts: `artifacts/verify_powershell_null_safe_trim_contract.json`, `artifacts/verify_powershell_null_safe_trim_contract.txt`.
-10) **verify_powershell_no_goto_labels_contract** (`python -m tools.verify_powershell_no_goto_labels_contract --artifacts-dir artifacts`)
+11) **verify_powershell_no_goto_labels_contract** (`python -m tools.verify_powershell_no_goto_labels_contract --artifacts-dir artifacts`)
    - PASS: no PowerShell goto statements or bare label lines detected.
    - FAIL: any line starts with `goto` or is a bare `:Label`.
-11) **ui_preflight** (`python -m tools.ui_preflight --ci --artifacts-dir artifacts`)
+12) **ui_preflight** (`python -m tools.ui_preflight --ci --artifacts-dir artifacts`)
    - PASS: UI preflight OK.
    - FAIL: preflight error.
-12) **docs_contract** (`python -m tools.verify_docs_contract --artifacts-dir artifacts`)
+13) **docs_contract** (`python -m tools.verify_docs_contract --artifacts-dir artifacts`)
    - PASS: required docs and sections present.
    - FAIL: missing docs/sections/IMP list.
-13) **verify_edits_contract** (`python -m tools.verify_edits_contract --artifacts-dir artifacts`)
+14) **verify_edits_contract** (`python -m tools.verify_edits_contract --artifacts-dir artifacts`)
    - PASS: edits contract valid.
    - FAIL: edits contract violation.
-14) **inventory_repo** (`python -m tools.inventory_repo --artifacts-dir artifacts --write-docs`)
+15) **inventory_repo** (`python -m tools.inventory_repo --artifacts-dir artifacts --write-docs`)
    - PASS: inventory artifacts and docs generated.
    - FAIL: inventory generation failed.
-15) **verify_inventory_contract** (`python -m tools.verify_inventory_contract --artifacts-dir artifacts`)
+16) **verify_inventory_contract** (`python -m tools.verify_inventory_contract --artifacts-dir artifacts`)
    - PASS: docs/inventory.md matches canonical generator output (UTF-8 no BOM, LF-only, POSIX paths).
    - FAIL: inventory docs mismatch, missing, BOM, CRLF, or backslash paths detected.
-16) **verify_execution_model** (`python -m tools.verify_execution_model --artifacts-dir artifacts`)
+17) **verify_execution_model** (`python -m tools.verify_execution_model --artifacts-dir artifacts`)
    - PASS: execution model report generated and sensitivity stable.
    - FAIL: missing artifacts or friction sensitivity instability.
-17) **verify_data_health** (`python -m tools.verify_data_health --artifacts-dir artifacts`)
+18) **verify_data_health** (`python -m tools.verify_data_health --artifacts-dir artifacts`)
    - PASS: data health report generated with no critical anomalies.
    - FAIL: integrity checks failed (monotonicity, parse errors, missingness, or jump detection).
-18) **verify_walk_forward** (`python -m tools.verify_walk_forward --artifacts-dir artifacts`)
+19) **verify_walk_forward** (`python -m tools.verify_walk_forward --artifacts-dir artifacts`)
    - PASS: walk-forward report generated with non-zero embargo and baseline comparisons.
    - FAIL: missing windows, zero/invalid embargo, or missing artifacts.
-19) **verify_redteam_integrity** (`python -m tools.verify_redteam_integrity --artifacts-dir artifacts`)
+20) **verify_redteam_integrity** (`python -m tools.verify_redteam_integrity --artifacts-dir artifacts`)
    - PASS: red-team cases detected expected failures and control passed.
    - FAIL: unexpected pass/fail in any case or missing trial budget metadata.
-20) **verify_multiple_testing_control** (`python -m tools.verify_multiple_testing_control --artifacts-dir artifacts`)
+21) **verify_multiple_testing_control** (`python -m tools.verify_multiple_testing_control --artifacts-dir artifacts`)
    - PASS: experiment ledger present, baseline coverage intact, and trials within budget (or override recorded).
    - FAIL: missing ledger fields, missing baselines, or trial budget exceeded without override.
-21) **apply_edits_dry_run** (`python -m tools.apply_edits --repo . --edits fixtures/edits_contract/good.json --artifacts-dir artifacts --dry-run`)
+22) **apply_edits_dry_run** (`python -m tools.apply_edits --repo . --edits fixtures/edits_contract/good.json --artifacts-dir artifacts --dry-run`)
    - PASS: edits dry-run succeeded.
    - FAIL: edits dry-run failed.
-22) **extract_json_strict_negative** (`python -m tools.extract_json_strict --raw-text fixtures/extract_json_strict/bad_fenced.txt --out-json artifacts/extract_json_strict_bad.json`)
+23) **extract_json_strict_negative** (`python -m tools.extract_json_strict --raw-text fixtures/extract_json_strict/bad_fenced.txt --out-json artifacts/extract_json_strict_bad.json`)
    - PASS: gate fails as expected on bad input.
    - FAIL: unexpected success on bad input.
-23) **verify_pr36_gate** (preflight, if present)
+24) **verify_pr36_gate** (preflight, if present)
    - PASS: preflight gate OK.
    - FAIL: preflight gate failed.
-24) **import_contract** (`python -m tools.verify_import_contract --module <canonical_gate> --artifacts-dir artifacts`)
+25) **import_contract** (`python -m tools.verify_import_contract --module <canonical_gate> --artifacts-dir artifacts`)
    - PASS: canonical gate module imports.
    - FAIL: import contract failed.
-25) **canonical gate runner** (one of the following):
+26) **canonical gate runner** (one of the following):
    - `python tools/verify_prNN_gate.py` (highest available PR gate, e.g., verify_pr40_gate)
    - `python tools/verify_foundation.py` (fallback)
    - `python tools/verify_consistency.py` (fallback)
@@ -275,31 +278,32 @@ Run the safe pull script from repo root:
 `.\scripts\safe_pull_v1.ps1`
 
 Optional overrides:
-`.\scripts\safe_pull_v1.ps1 -Remote origin -Branch main`
+`.\scripts\safe_pull_v1.ps1 -DryRun:$false -AllowStash:$true -RequireClean:$false`
 
-AutoStash override (explicit opt-in, fail-closed by default):
-`.\scripts\safe_pull_v1.ps1 -AutoStash YES`
+Include untracked stashing (explicit opt-in):
+`.\scripts\safe_pull_v1.ps1 -DryRun:$false -AllowStash:$true -IncludeUntracked:$true`
 
 The wrapper enforces:
 - Repo root only (fails if not at repo root).
 - Clean worktree (`git status --porcelain` is empty).
 - No unmerged paths (`git ls-files -u` is empty).
 - No in-progress git states (MERGE_HEAD, CHERRY_PICK_HEAD, REVERT_HEAD, rebase-apply, rebase-merge, AM).
-- Fast-forward only (`git pull --ff-only`).
+- Fast-forward only (`git -c pull.ff=only -c pull.rebase=false pull --ff-only`).
 
-AutoStash behavior when `-AutoStash YES` and a dirty worktree is detected:
-- Stashes tracked + untracked changes with `git stash push -u` and a UTC timestamp label.
+Stash behavior when `-AllowStash:$true` and a dirty worktree is detected:
+- Stashes tracked changes only with `git stash push` and a UTC timestamp label.
+- Requires explicit `-IncludeUntracked:$true` to stash untracked files.
 - Re-checks status; if still dirty, fails closed.
-- Runs the fast-forward pull.
-- On pull success, preserves the stash (prints a NEXT marker).
-- On pull failure, attempts `git stash pop` to roll back and records the rollback status.
 
 Markers emitted:
 - `SAFE_PULL_START|...`
-- `SAFE_PULL_AUTOSTASH_START|...`
-- `SAFE_PULL_AUTOSTASH_SUMMARY|status=...|stash_created=...|pull_status=...|rollback_status=...|next=...`
-- `SAFE_PULL_AUTOSTASH_END`
-- `SAFE_PULL_SUMMARY|status=PASS/FAIL|reason=...|next=...`
+- `SAFE_PULL_PRECHECK|branch=...|detached=0/1|upstream=...|porcelain=...|untracked=...|ahead=...|behind=...|diverged=0/1`
+- `SAFE_PULL_LOCK|status=OK/SKIP/FAIL|path=...|owner=...|stale=...`
+- `SAFE_PULL_STASH|status=OK/SKIP/FAIL|ref=...|includes_untracked=0/1|message=...`
+- `SAFE_PULL_FETCH|status=OK/FAIL|exit=...|stdout=...|stderr=...`
+- `SAFE_PULL_PULL_FF_ONLY|status=OK/FAIL|exit=...|stdout=...|stderr=...|reason=...`
+- `SAFE_PULL_POSTCHECK|porcelain=...|branch=...|upstream=...|ahead=...|behind=...|diverged=...`
+- `SAFE_PULL_SUMMARY|status=PASS/FAIL/DEGRADED|next=...|artifacts_dir=...`
 - `SAFE_PULL_END`
 
 ## PowerShell Runner Contract (Windows)

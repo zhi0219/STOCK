@@ -121,6 +121,7 @@ def main(argv: list[str] | None = None) -> int:
                 "syntax_guard",
                 "ps_parse_guard",
                 "safe_push_contract",
+                "verify_safe_pull_contract",
                 "powershell_join_path_contract",
                 "ui_preflight",
                 "docs_contract",

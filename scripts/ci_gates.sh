@@ -488,6 +488,20 @@ fi
 
 if [[ ${rc} -eq 0 ]]; then
   set +e
+  python3 -m tools.verify_safe_pull_contract \
+    --artifacts-dir "${artifacts_dir}" \
+    --input-dir "fixtures/safe_pull_contract/good"
+  safe_pull_contract_exit=$?
+  set -e
+  if [[ ${safe_pull_contract_exit} -ne 0 ]]; then
+    status="FAIL"
+    failing_gate="verify_safe_pull_contract"
+    rc=${safe_pull_contract_exit}
+  fi
+fi
+
+if [[ ${rc} -eq 0 ]]; then
+  set +e
   python3 -m tools.verify_write_allowlist_contract --artifacts-dir "${artifacts_dir}"
   write_allowlist_contract_exit=$?
   set -e

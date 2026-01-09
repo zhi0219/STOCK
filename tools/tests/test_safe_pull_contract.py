@@ -16,7 +16,7 @@ class SafePullContractTests(unittest.TestCase):
             encoding="utf-8", errors="replace"
         )
         self.assertIn("git status --porcelain", content)
-        self.assertIn("git ls-files -u", content)
+        self.assertIn("ls-files -u", content)
         for state_marker in [
             "MERGE_HEAD",
             "CHERRY_PICK_HEAD",
@@ -27,34 +27,23 @@ class SafePullContractTests(unittest.TestCase):
         ]:
             self.assertIn(state_marker, content)
 
-    def test_safe_pull_autostash_contract(self) -> None:
+    def test_safe_pull_stash_contract(self) -> None:
         content = (Path("scripts") / "safe_pull_v1.ps1").read_text(
             encoding="utf-8", errors="replace"
         )
-        self.assertIn('[string]$AutoStash = "NO"', content)
         for marker in [
-            "SAFE_PULL_AUTOSTASH_START",
-            "SAFE_PULL_AUTOSTASH_SUMMARY",
-            "SAFE_PULL_AUTOSTASH_END",
+            "SAFE_PULL_STASH",
         ]:
             self.assertIn(marker, content)
-        self.assertIn("git stash push -u -m", content)
-        self.assertIn("git stash pop", content)
-        self.assertIn("safe_pull_autostash.json", content)
+        self.assertIn('\"stash\", \"push\"', content)
+        self.assertIn("stash_ref.txt", content)
 
-    def test_safe_pull_autostash_default_rejects_dirty(self) -> None:
+    def test_safe_pull_default_dry_run(self) -> None:
         content = (Path("scripts") / "safe_pull_v1.ps1").read_text(
             encoding="utf-8", errors="replace"
         )
-        self.assertIn("dirty_worktree", content)
-        self.assertIn("if (-not $autoStashEnabled)", content)
-
-    def test_safe_pull_autostash_rollback_contract(self) -> None:
-        content = (Path("scripts") / "safe_pull_v1.ps1").read_text(
-            encoding="utf-8", errors="replace"
-        )
-        self.assertIn("SAFE_PULL_AUTOSTASH_POP", content)
-        self.assertIn("rollback_status", content)
+        self.assertIn("[bool]$DryRun = $true", content)
+        self.assertIn("dirty_worktree_dry_run", content)
 
     def test_safe_pull_run_git_null_safe(self) -> None:
         content = (Path("scripts") / "safe_pull_v1.ps1").read_text(

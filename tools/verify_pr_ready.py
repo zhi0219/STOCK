@@ -87,6 +87,18 @@ def _build_gate_specs(artifacts_dir: Path) -> list[GateSpec]:
             ],
         ),
         GateSpec(
+            name="verify_safe_pull_contract",
+            args=[
+                sys.executable,
+                "-m",
+                "tools.verify_safe_pull_contract",
+                "--artifacts-dir",
+                str(artifacts_dir),
+                "--input-dir",
+                str(Path("fixtures") / "safe_pull_contract" / "good"),
+            ],
+        ),
+        GateSpec(
             name="verify_consistency",
             args=[
                 sys.executable,

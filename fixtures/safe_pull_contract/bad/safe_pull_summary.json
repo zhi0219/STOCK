@@ -1,0 +1,9 @@
+{
+  "status": "PASS",
+  "mode": "dry_run",
+  "next": "none",
+  "dry_run": true,
+  "artifacts_dir": "artifacts/safe_pull",
+  "warnings": [],
+  "ts_utc": "2024-01-01T00:00:00Z"
+}
