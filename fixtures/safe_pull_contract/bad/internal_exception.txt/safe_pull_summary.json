@@ -1,0 +1,14 @@
+{
+  "status": "FAIL",
+  "reason": "internal_exception",
+  "phase": "fetch",
+  "run_id": "2024-01-01T00:00:00Z-5555",
+  "mode": "dry_run",
+  "next": "artifacts/safe_pull/safe_pull_exception.txt",
+  "dry_run": true,
+  "notes": "fetch/pull_skipped",
+  "artifacts_dir": "artifacts/safe_pull",
+  "evidence_artifact": "artifacts/safe_pull/safe_pull_exception.txt",
+  "warnings": [],
+  "ts_utc": "2024-01-01T00:00:00Z"
+}

@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 REQUIRED_MARKERS = [
+    "SAFE_PULL_RUN_START",
     "SAFE_PULL_START",
     "SAFE_PULL_PRECHECK",
     "SAFE_PULL_LOCK",
@@ -16,6 +17,7 @@ REQUIRED_MARKERS = [
     "SAFE_PULL_PULL_FF_ONLY",
     "SAFE_PULL_POSTCHECK",
     "SAFE_PULL_SUMMARY",
+    "SAFE_PULL_RUN_END",
     "SAFE_PULL_END",
 ]
 
@@ -29,6 +31,8 @@ REQUIRED_COMMAND_PATTERNS = [
     r"git status --porcelain",
     r"ls-files -u",
     r"rev-list --left-right --count",
+    r"symbolic-ref -q --short HEAD",
+    r"rev-parse --abbrev-ref --symbolic-full-name",
 ]
 
 REQUIRED_STATE_PATTERNS = [
