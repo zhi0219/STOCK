@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 REQUIRED_MARKERS = [
+    "SAFE_PULL_RUN_START",
     "SAFE_PULL_START",
     "SAFE_PULL_PRECHECK",
     "SAFE_PULL_LOCK",
@@ -15,9 +16,11 @@ REQUIRED_MARKERS = [
     "SAFE_PULL_PULL_FF_ONLY",
     "SAFE_PULL_POSTCHECK",
     "SAFE_PULL_SUMMARY",
+    "SAFE_PULL_RUN_END",
 ]
 
 REQUIRED_ARTIFACTS = [
+    "safe_pull_run.json",
     "safe_pull_summary.json",
     "safe_pull_out.txt",
     "safe_pull_err.txt",
@@ -29,6 +32,9 @@ REQUIRED_ARTIFACTS = [
     "git_rev_before.txt",
     "git_rev_after.txt",
     "config_snapshot.txt",
+    "safe_pull_precheck_head.txt",
+    "safe_pull_precheck_upstream.txt",
+    "safe_pull_precheck_ahead_behind.txt",
 ]
 
 
@@ -62,8 +68,9 @@ def _read_text(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="replace") if path.exists() else ""
 
 
-def _parse_markers(lines: list[str]) -> list[str]:
+def _parse_markers(lines: list[str]) -> tuple[list[str], dict[str, dict[str, str]]]:
     errors: list[str] = []
+    parsed: dict[str, dict[str, str]] = {}
     for line in lines:
         if "|" not in line:
             if line in {"SAFE_PULL_END"}:
@@ -73,15 +80,29 @@ def _parse_markers(lines: list[str]) -> list[str]:
         parts = line.split("|")
         if not parts[0]:
             errors.append(f"marker_missing_prefix:{line}")
+        payload: dict[str, str] = {}
         for token in parts[1:]:
             if "=" not in token:
                 errors.append(f"marker_missing_key_value:{line}")
                 break
-    return errors
+            key, value = token.split("=", 1)
+            payload[key] = value
+        parsed[parts[0]] = payload
+    return errors, parsed
 
 
 def _validate_summary(payload: dict[str, Any]) -> list[str]:
-    required_keys = ["status", "mode", "next", "dry_run", "artifacts_dir"]
+    required_keys = [
+        "status",
+        "mode",
+        "next",
+        "dry_run",
+        "artifacts_dir",
+        "reason",
+        "phase",
+        "run_id",
+        "evidence_artifact",
+    ]
     errors: list[str] = []
     for key in required_keys:
         if key not in payload:
@@ -91,7 +112,9 @@ def _validate_summary(payload: dict[str, Any]) -> list[str]:
     return errors
 
 
-def _validate_invariants(input_dir: Path, summary: dict[str, Any]) -> list[str]:
+def _validate_invariants(
+    input_dir: Path, summary: dict[str, Any], markers: dict[str, dict[str, str]]
+) -> list[str]:
     errors: list[str] = []
     before = _read_text(input_dir / "git_porcelain_before.txt")
     after = _read_text(input_dir / "git_porcelain_after.txt")
@@ -101,6 +124,25 @@ def _validate_invariants(input_dir: Path, summary: dict[str, Any]) -> list[str]:
     if summary.get("dry_run"):
         if before != after:
             errors.append("dry_run_porcelain_changed")
+    precheck = markers.get("SAFE_PULL_PRECHECK", {})
+    if precheck.get("detached") == "0" and not precheck.get("branch"):
+        errors.append("precheck_branch_blank_not_detached")
+    if summary.get("status") == "FAIL" and summary.get("reason") == "internal_exception":
+        if not (input_dir / "safe_pull_exception.json").exists():
+            errors.append("exception_missing_json")
+        if not (input_dir / "safe_pull_exception.txt").exists():
+            errors.append("exception_missing_txt")
+        if "SAFE_PULL_EXCEPTION" not in markers:
+            errors.append("missing_marker:SAFE_PULL_EXCEPTION")
+    if summary.get("dry_run") and precheck:
+        if (
+            precheck.get("porcelain") == "0"
+            and precheck.get("untracked") == "0"
+            and precheck.get("diverged") == "0"
+            and precheck.get("detached") == "0"
+            and summary.get("status") != "PASS"
+        ):
+            errors.append("dry_run_clean_should_pass")
     return errors
 
 
@@ -116,8 +158,10 @@ def _check_contract(input_dir: Path) -> tuple[str, list[str]]:
         for line in _read_text(markers_path).splitlines()
         if line.strip()
     ]
+    marker_payloads: dict[str, dict[str, str]] = {}
     if marker_lines:
-        errors.extend(_parse_markers(marker_lines))
+        marker_errors, marker_payloads = _parse_markers(marker_lines)
+        errors.extend(marker_errors)
     for marker in REQUIRED_MARKERS:
         if not any(line.startswith(marker) for line in marker_lines):
             errors.append(f"missing_marker:{marker}")
@@ -133,7 +177,7 @@ def _check_contract(input_dir: Path) -> tuple[str, list[str]]:
         summary_payload = {}
 
     errors.extend(_validate_summary(summary_payload))
-    errors.extend(_validate_invariants(input_dir, summary_payload))
+    errors.extend(_validate_invariants(input_dir, summary_payload, marker_payloads))
 
     status = "PASS" if not errors else "FAIL"
     return status, errors

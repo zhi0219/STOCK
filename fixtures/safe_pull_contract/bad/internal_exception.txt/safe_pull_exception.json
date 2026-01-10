@@ -1,0 +1,12 @@
+{
+  "run_id": "2024-01-01T00:00:00Z-5555",
+  "ts_utc": "2024-01-01T00:00:00Z",
+  "phase": "fetch",
+  "type": "System.Exception",
+  "message": "boom",
+  "stack": "at line 1",
+  "repo_root": "/repo",
+  "cwd": "/repo",
+  "mode": "dry_run",
+  "git_path": "git"
+}
