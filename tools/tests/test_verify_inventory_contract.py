@@ -44,12 +44,30 @@ class VerifyInventoryContractTests(unittest.TestCase):
                 self.assertEqual(stats["docs_len"], len(crlf_bytes))
                 self.assertEqual(stats["gen_len"], len(expected_bytes))
                 self.assertEqual(stats["gen_crlf_pairs"], 0)
-                self.assertEqual(stats["gen_path"], "generated/inventory.md")
+                self.assertEqual(stats["gen_path"], "artifacts/verify_inventory_generated.md")
                 self.assertIn("git_check_attr", stats)
                 self.assertEqual(stats["verdict"], "FAIL")
                 self.assertIn("VERIFY_INVENTORY_EOLS", output.getvalue())
             finally:
                 docs_path.write_bytes(original)
+
+    def test_verify_does_not_write_generator_owned_artifacts(self) -> None:
+        root = Path(__file__).resolve().parents[2]
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            artifacts_dir = Path(tmp_dir) / "artifacts"
+            rc = verify_inventory_contract.main(
+                [
+                    "--artifacts-dir",
+                    str(artifacts_dir),
+                    "--repo-root",
+                    str(root),
+                ]
+            )
+            self.assertEqual(rc, 0)
+            self.assertTrue((artifacts_dir / "verify_inventory_eol_stats.json").exists())
+            self.assertTrue((artifacts_dir / "verify_inventory_generated.md").exists())
+            self.assertFalse((artifacts_dir / "repo_inventory.md").exists())
+            self.assertFalse((artifacts_dir / "repo_inventory.json").exists())
 
 
 if __name__ == "__main__":

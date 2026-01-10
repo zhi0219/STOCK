@@ -6,13 +6,29 @@ import json
 import subprocess
 import sys
 import traceback
+from datetime import datetime, timezone
 from difflib import unified_diff
 from pathlib import Path
-from datetime import datetime, timezone
 
 from tools import inventory_repo
+from tools.fs_atomic import atomic_write_text
 
 UTF8_BOM = b"\xef\xbb\xbf"
+GENERATOR_OWNED_ARTIFACTS = {
+    "repo_inventory.json",
+    "repo_inventory.md",
+    "repo_inventory_error.txt",
+    "inventory_write_docs_before_status.txt",
+    "inventory_write_docs_after_status.txt",
+}
+VERIFY_INVENTORY_ARTIFACTS = [
+    "artifacts/verify_inventory_contract.json",
+    "artifacts/verify_inventory_contract.txt",
+    "artifacts/inventory_diff.txt",
+    "artifacts/inventory_diff_summary.json",
+    "artifacts/verify_inventory_eol_stats.json",
+    "artifacts/verify_inventory_generated.md",
+]
 
 
 def _normalize_newlines(text: str) -> str:
@@ -89,9 +105,20 @@ def _first_diff_summary(actual: str, expected: str) -> str:
     return "FIRST_DIFF|none"
 
 
+def _normalize_output_text(text: str) -> str:
+    normalized = _normalize_newlines(text)
+    normalized = normalized.rstrip("\n")
+    return f"{normalized}\n"
+
+
+def _ensure_not_generator_owned(path: Path) -> None:
+    if path.name in GENERATOR_OWNED_ARTIFACTS:
+        raise ValueError(f"refusing to write generator-owned artifact: {path.name}")
+
+
 def _write_text(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(_normalize_newlines(text), encoding="utf-8", newline="\n")
+    _ensure_not_generator_owned(path)
+    atomic_write_text(path, _normalize_output_text(text))
 
 
 def _count_crlf_pairs(data: bytes) -> int:
@@ -136,6 +163,20 @@ def _normalized_equal(actual: str, expected: str) -> bool:
     return _normalize_newlines(actual) == _normalize_newlines(expected)
 
 
+def _eol_stats(data: bytes) -> dict[str, object]:
+    has_bom = data.startswith(UTF8_BOM)
+    return {
+        "len": len(data),
+        "crlf_pairs": _count_crlf_pairs(data),
+        "has_bom": has_bom,
+        "sha256": _sha256(data),
+    }
+
+
+def _ts_utc() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Verify inventory docs match generator output.")
     parser.add_argument("--artifacts-dir", required=True)
@@ -152,6 +193,7 @@ def main(argv: list[str] | None = None) -> int:
     json_report = artifacts_dir / "verify_inventory_contract.json"
     txt_report = artifacts_dir / "verify_inventory_contract.txt"
     eol_stats_path = artifacts_dir / "verify_inventory_eol_stats.json"
+    generated_md_path = artifacts_dir / "verify_inventory_generated.md"
 
     print("VERIFY_INVENTORY_CONTRACT_START")
     status_ok = True
@@ -163,17 +205,13 @@ def main(argv: list[str] | None = None) -> int:
     docs_data = b""
     gen_data = b""
     docs_path = repo_root / "docs" / "inventory.md"
-    gen_markdown_path = artifacts_dir / "repo_inventory.md"
-    gen_path = "artifacts/repo_inventory.md"
+    gen_path = "artifacts/verify_inventory_generated.md"
 
     try:
         inventory = inventory_repo.generate_inventory(repo_root)
         expected = inventory_repo._render_markdown(inventory)
-        if gen_markdown_path.exists():
-            gen_data = gen_markdown_path.read_bytes()
-        else:
-            gen_data = expected.encode("utf-8")
-            gen_path = "generated/inventory.md"
+        gen_data = expected.encode("utf-8")
+        _write_text(generated_md_path, expected)
 
         if not docs_path.exists():
             status_ok = False
@@ -202,7 +240,7 @@ def main(argv: list[str] | None = None) -> int:
                     normalized_actual.splitlines(),
                     normalized_expected.splitlines(),
                     fromfile=str(docs_path),
-                    tofile="generated/inventory.md",
+                    tofile=gen_path,
                     lineterm="",
                 )
             )
@@ -215,18 +253,20 @@ def main(argv: list[str] | None = None) -> int:
         detail = f"error={exc}"
         _write_text(diff_path, "\n".join([traceback.format_exc(), next_hint, ""]))
 
+    docs_stats = _eol_stats(docs_data)
+    gen_stats = _eol_stats(gen_data)
     eol_stats = {
-        "ts_utc": datetime.now(timezone.utc).isoformat(),
+        "ts_utc": _ts_utc(),
         "docs_path": "docs/inventory.md",
-        "docs_len": len(docs_data),
-        "docs_crlf_pairs": _count_crlf_pairs(docs_data),
-        "docs_has_bom": docs_data.startswith(UTF8_BOM),
-        "docs_sha256": _sha256(docs_data),
+        "docs_len": docs_stats["len"],
+        "docs_crlf_pairs": docs_stats["crlf_pairs"],
+        "docs_has_bom": docs_stats["has_bom"],
+        "docs_sha256": docs_stats["sha256"],
         "gen_path": gen_path,
-        "gen_len": len(gen_data),
-        "gen_crlf_pairs": _count_crlf_pairs(gen_data),
-        "gen_has_bom": gen_data.startswith(UTF8_BOM),
-        "gen_sha256": _sha256(gen_data),
+        "gen_len": gen_stats["len"],
+        "gen_crlf_pairs": gen_stats["crlf_pairs"],
+        "gen_has_bom": gen_stats["has_bom"],
+        "gen_sha256": gen_stats["sha256"],
         "git_check_attr": _git_check_attr(repo_root, docs_path),
         "verdict": "PASS" if status_ok else "FAIL",
         "detail": detail,

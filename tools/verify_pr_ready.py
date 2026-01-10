@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from dataclasses import dataclass
@@ -18,6 +19,13 @@ try:
 except Exception:  # pragma: no cover - fallback for import edge cases
     configure_stdio_utf8 = None  # type: ignore[assignment]
     run_cmd_utf8 = None  # type: ignore[assignment]
+
+PR_READY_ARTIFACTS = [
+    "artifacts/pr_ready.txt",
+    "artifacts/pr_ready_gates.log",
+    "artifacts/pr_ready_summary.json",
+    "artifacts/pr_ready/_latest.txt",
+]
 
 
 @dataclass
@@ -38,6 +46,10 @@ class GateResult:
 
 def _ts_utc() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _run_id() -> str:
+    return f"{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}_{os.getpid()}"
 
 
 def _build_gate_specs(artifacts_dir: Path) -> list[GateSpec]:
@@ -170,8 +182,16 @@ def main(argv: list[str] | None = None) -> int:
         except Exception:
             pass
 
-    artifacts_dir = args.artifacts_dir
-    gates = _build_gate_specs(artifacts_dir)
+    artifacts_root = args.artifacts_dir.resolve()
+    run_dir = artifacts_root / "pr_ready" / _run_id()
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (artifacts_root / "pr_ready").mkdir(parents=True, exist_ok=True)
+    latest_rel = "artifacts/pr_ready/_latest.txt"
+    latest_path = artifacts_root / "pr_ready" / "_latest.txt"
+    _write_text(latest_path, [run_dir.as_posix()])
+    print(f"PR_READY_RUN|run_dir={run_dir.as_posix()}")
+
+    gates = _build_gate_specs(run_dir)
 
     print("PR_READY_START")
     results: list[GateResult] = []
@@ -201,7 +221,7 @@ def main(argv: list[str] | None = None) -> int:
     degraded = sum(1 for result in results if result.status == "DEGRADED")
     if failed:
         summary_status = "FAIL"
-        next_action = f"inspect {artifacts_dir / 'pr_ready_gates.log'}"
+        next_action = f"inspect {run_dir / 'pr_ready_gates.log'}"
     elif degraded:
         summary_status = "DEGRADED"
         next_action = "none"
@@ -230,22 +250,33 @@ def main(argv: list[str] | None = None) -> int:
             for result in results
         ],
     }
-    (artifacts_dir / "pr_ready_summary.json").parent.mkdir(parents=True, exist_ok=True)
-    (artifacts_dir / "pr_ready_summary.json").write_text(
+    summary_payload["run_dir"] = run_dir.as_posix()
+    summary_payload["latest_pointer"] = latest_rel
+    (artifacts_root / "pr_ready_summary.json").parent.mkdir(parents=True, exist_ok=True)
+    (artifacts_root / "pr_ready_summary.json").write_text(
         json.dumps(summary_payload, indent=2, sort_keys=True),
         encoding="utf-8",
     )
     _write_text(
-        artifacts_dir / "pr_ready.txt",
+        artifacts_root / "pr_ready.txt",
         [
             f"PR_READY_SUMMARY|status={summary_status}|failed={failed}|degraded={degraded}|next={next_action}",
+            f"PR_READY_RUN|run_dir={run_dir.as_posix()}",
             *[
                 f"PR_READY_GATE|name={result.name}|status={result.status}|exit={result.returncode}"
                 for result in results
             ],
         ],
     )
-    _write_text(artifacts_dir / "pr_ready_gates.log", log_lines)
+    run_log_path = run_dir / "pr_ready_gates.log"
+    _write_text(run_log_path, log_lines)
+    _write_text(
+        artifacts_root / "pr_ready_gates.log",
+        [
+            f"PR_READY_RUN|run_dir={run_dir.as_posix()}",
+            f"PR_READY_GATES_LOG|path={run_log_path.as_posix()}",
+        ],
+    )
 
     return 0 if summary_status in {"PASS", "DEGRADED"} else 1
 

@@ -1,11 +1,20 @@
 from __future__ import annotations
 
+import argparse
+import json
 import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-GITIGNORE_PATH = ROOT / ".gitignore"
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from tools.fs_atomic import atomic_write_text
+
+REPO_HYGIENE_ARTIFACTS = [
+    "artifacts/repo_hygiene_untracked.json",
+]
 
 REQUIRED_RULES = [
     "Logs/events*.jsonl",
@@ -64,25 +73,45 @@ HIGHLIGHT_PATHS = {
     "logs/progress_index.json",
 }
 
+SOURCE_LIKE_ROOTS = [
+    "scripts/",
+    "tools/",
+    "tests/",
+    "docs/",
+    ".github/",
+    ".githooks/",
+    "fixtures/",
+]
+RUNTIME_LIKE_ROOTS = [
+    "artifacts/",
+    "work/",
+    "logs/",
+    "Logs/",
+    ".pytest_cache/",
+    ".mypy_cache/",
+    ".ruff_cache/",
+    "__pycache__/",
+]
+
 LEGACY_ARCHIVE_DIR = ROOT / "Logs" / "_event_archives"
 ARCHIVE_PATTERN = "events_*.jsonl"
 
 
-def _read_gitignore() -> str:
-    if not GITIGNORE_PATH.exists():
+def _read_gitignore(gitignore_path: Path) -> str:
+    if not gitignore_path.exists():
         return ""
-    return GITIGNORE_PATH.read_text(encoding="utf-8")
+    return gitignore_path.read_text(encoding="utf-8")
 
 
 def _missing_rules(content: str) -> list[str]:
     return [rule for rule in REQUIRED_RULES if rule not in content]
 
 
-def _collect_git_status() -> list[str]:
+def _collect_git_status(repo_root: Path) -> list[str]:
     try:
         result = subprocess.run(
-            ["git", "status", "--porcelain"],
-            cwd=ROOT,
+            ["git", "status", "--porcelain", "--untracked-files=all"],
+            cwd=repo_root,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -115,16 +144,96 @@ def _highlighted(untracked: list[str]) -> list[str]:
 def _format_list(items: list[str]) -> str:
     return ",".join(items) if items else "none"
 
+def _normalize_repo_path(path: str) -> str:
+    return path.replace("\\", "/").strip()
 
-def main() -> int:
-    content = _read_gitignore()
+
+def _classify_untracked(untracked: list[str]) -> dict[str, list[str]]:
+    source_like: list[str] = []
+    runtime_like: list[str] = []
+    other: list[str] = []
+    for raw in untracked:
+        normalized = _normalize_repo_path(raw)
+        if any(normalized.startswith(prefix) for prefix in SOURCE_LIKE_ROOTS):
+            source_like.append(normalized)
+        elif any(normalized.startswith(prefix) for prefix in RUNTIME_LIKE_ROOTS):
+            runtime_like.append(normalized)
+        else:
+            other.append(normalized)
+    return {
+        "source_like": sorted(source_like),
+        "runtime_like": sorted(runtime_like),
+        "other": sorted(other),
+    }
+
+
+def _truncate_list(values: list[str], limit: int) -> list[str]:
+    if len(values) <= limit:
+        return values
+    return values[:limit] + ["..."]
+
+
+def _write_untracked_artifact(
+    artifacts_dir: Path,
+    total: int,
+    source_like: list[str],
+    runtime_like: list[str],
+    other: list[str],
+    hint_paths: list[str],
+    sample_limit: int,
+) -> None:
+    payload = {
+        "total": total,
+        "counts": {
+            "source_like": len(source_like),
+            "runtime_like": len(runtime_like),
+            "other": len(other),
+        },
+        "sample": {
+            "source_like": _truncate_list(source_like, sample_limit),
+            "runtime_like": _truncate_list(runtime_like, sample_limit),
+            "other": _truncate_list(other, sample_limit),
+        },
+        "hint_git_add": hint_paths,
+    }
+    artifact_path = artifacts_dir / "repo_hygiene_untracked.json"
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(artifact_path, json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Verify repo hygiene for untracked or missing rules.")
+    parser.add_argument("--repo-root", default=None)
+    parser.add_argument("--artifacts-dir", default=None)
+    args = parser.parse_args(argv)
+
+    repo_root = Path(args.repo_root).resolve() if args.repo_root else ROOT
+    artifacts_dir = (
+        Path(args.artifacts_dir).resolve()
+        if args.artifacts_dir
+        else repo_root / "artifacts"
+    )
+    gitignore_path = repo_root / ".gitignore"
+    legacy_archive_dir = repo_root / "Logs" / "_event_archives"
+
+    content = _read_gitignore(gitignore_path)
     missing = _missing_rules(content)
-    status_lines = _collect_git_status()
+    status_lines = _collect_git_status(repo_root)
     untracked = _collect_untracked(status_lines)
     runtime_untracked = _runtime_untracked(untracked)
     unsafe_untracked = _unsafe_untracked(untracked)
     highlighted = _highlighted(runtime_untracked)
-    legacy_archives = sorted(LEGACY_ARCHIVE_DIR.glob(ARCHIVE_PATTERN)) if LEGACY_ARCHIVE_DIR.exists() else []
+    legacy_archives = (
+        sorted(legacy_archive_dir.glob(ARCHIVE_PATTERN))
+        if legacy_archive_dir.exists()
+        else []
+    )
+
+    classified = _classify_untracked(untracked)
+    source_like = classified["source_like"]
+    runtime_like = classified["runtime_like"]
+    other = classified["other"]
+    hint_paths = _truncate_list(source_like, 20)
 
     status = "PASS" if not missing and not runtime_untracked and not unsafe_untracked else "FAIL"
 
@@ -161,6 +270,27 @@ def main() -> int:
         print(
             "Unsafe to delete automatically (manual review required): "
             + ", ".join(sorted(set(unsafe_untracked)))
+        )
+
+    if untracked:
+        print(
+            "REPO_HYGIENE_UNTRACKED"
+            f"|total={len(untracked)}"
+            f"|source_like={len(source_like)}"
+            f"|runtime_like={len(runtime_like)}"
+            f"|other={len(other)}"
+        )
+        if source_like:
+            hint_text = " ".join(hint_paths)
+            print(f"REPO_HYGIENE_HINT_GIT_ADD|paths={hint_text}")
+        _write_untracked_artifact(
+            artifacts_dir=artifacts_dir,
+            total=len(untracked),
+            source_like=source_like,
+            runtime_like=runtime_like,
+            other=other,
+            hint_paths=hint_paths,
+            sample_limit=20,
         )
 
     if legacy_archives:
