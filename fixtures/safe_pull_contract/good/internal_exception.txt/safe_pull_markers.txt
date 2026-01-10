@@ -3,10 +3,10 @@ SAFE_PULL_START|ts_utc=2024-01-01T00:00:00Z|repo_root=/repo|cwd=/repo|git=git|mo
 SAFE_PULL_PRECHECK|branch=main|detached=0|upstream=origin/main|upstream_status=OK|porcelain=0|untracked=0|ahead=0|behind=0|diverged=0
 SAFE_PULL_LOCK|status=OK|path=/repo/artifacts/locks/safe_pull_v1.lock|owner=HOST|stale=0
 SAFE_PULL_STASH|status=SKIP|ref=|includes_untracked=0|message=clean
-SAFE_PULL_FETCH|status=OK|exit=0|stdout=out.txt|stderr=err.txt
+SAFE_PULL_FETCH|status=SKIP|exit=0|stdout=|stderr=
 SAFE_PULL_PULL_FF_ONLY|status=SKIP|exit=0|stdout=|stderr=|reason=dry_run
 SAFE_PULL_POSTCHECK|porcelain=0|branch=main|upstream=origin/main|ahead=0|behind=0|diverged=0
 SAFE_PULL_EXCEPTION|run_id=2024-01-01T00:00:00Z-5555|phase=fetch|type=System.Exception|message=boom|artifact=artifacts/safe_pull/safe_pull_exception.json
-SAFE_PULL_SUMMARY|status=FAIL|reason=internal_exception|phase=fetch|next=artifacts/safe_pull/safe_pull_exception.txt|run_id=2024-01-01T00:00:00Z-5555|mode=dry_run|notes=fetch/pull_skipped|artifacts_dir=artifacts/safe_pull
+SAFE_PULL_SUMMARY|status=FAIL|reason=internal_exception|phase=fetch|next=artifacts/safe_pull/safe_pull_exception.txt|run_id=2024-01-01T00:00:00Z-5555|mode=dry_run|notes=fetch/pull_skipped|artifacts_dir=artifacts/safe_pull|evidence=artifacts/safe_pull/safe_pull_exception.txt
 SAFE_PULL_RUN_END|run_id=2024-01-01T00:00:00Z-5555|status=FAIL|next=artifacts/safe_pull/safe_pull_exception.txt
 SAFE_PULL_END

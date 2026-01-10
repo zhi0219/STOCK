@@ -1,6 +1,6 @@
 {
   "status": "PASS",
-  "reason": "ok",
+  "reason": "noop_up_to_date",
   "phase": "summary",
   "run_id": "2024-01-01T00:00:00Z-1234",
   "mode": "dry_run",
