@@ -17,6 +17,12 @@ class AtomicWriteTextTests(unittest.TestCase):
             self.assertTrue(data.endswith(b"\n"))
             self.assertFalse(data.endswith(b"\n\n"))
 
+    def test_atomic_write_text_rejects_cr(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "out.txt"
+            with self.assertRaises(ValueError):
+                atomic_write_text(path, "a\r\nb\n")
+
 
 if __name__ == "__main__":
     unittest.main()

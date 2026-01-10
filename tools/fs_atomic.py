@@ -143,6 +143,8 @@ def atomic_write_text(
     """
     if retries < 1:
         raise ValueError("retries must be >= 1")
+    if "\r" in payload:
+        raise ValueError("payload contains CR characters; normalize to LF before writing")
     path.parent.mkdir(parents=True, exist_ok=True)
 
     last_error: Exception | None = None
