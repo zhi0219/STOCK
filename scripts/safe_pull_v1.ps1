@@ -149,7 +149,7 @@ function Initialize-Artifacts {
   $script:ErrPath = Join-Path $ArtifactsDir "safe_pull_err.txt"
   foreach ($path in @($script:MarkersPath, $script:OutPath, $script:ErrPath)) {
     if (-not (Test-Path -LiteralPath $path)) {
-      Set-Content -LiteralPath $path -Value "" -Encoding utf8
+      Write-MinimalTextArtifact -Path $path -Content ""
     }
   }
 }
@@ -159,7 +159,7 @@ function Write-Log {
     [string]$Line
   )
   if ($null -eq $Line) { $Line = "" }
-  Add-Content -LiteralPath $script:OutPath -Value $Line -Encoding utf8
+  Write-AppendTextArtifact -Path $script:OutPath -Content $Line
   Write-Output $Line
 }
 
@@ -168,7 +168,7 @@ function Write-ErrLog {
     [string]$Line
   )
   if ($null -eq $Line) { $Line = "" }
-  Add-Content -LiteralPath $script:ErrPath -Value $Line -Encoding utf8
+  Write-AppendTextArtifact -Path $script:ErrPath -Content $Line
   Write-Output $Line
 }
 
@@ -177,7 +177,7 @@ function Write-Marker {
     [string]$Line
   )
   if ($null -eq $Line) { $Line = "" }
-  Add-Content -LiteralPath $script:MarkersPath -Value $Line -Encoding utf8
+  Write-AppendTextArtifact -Path $script:MarkersPath -Content $Line
   Write-Log $Line
 }
 
@@ -283,6 +283,28 @@ function Write-TextArtifact {
       Write-Output $line
     } catch {
     }
+    throw
+  }
+}
+
+function Write-AppendTextArtifact {
+  param(
+    [string]$Path,
+    [string]$Content
+  )
+  try {
+    $p = [string]$Path
+    $s = if ($null -eq $Content) { "" } else { [string]$Content }
+    $parent = Split-Path -Parent $p
+    if (-not [string]::IsNullOrWhiteSpace($parent)) {
+      [IO.Directory]::CreateDirectory($parent) | Out-Null
+    }
+    $enc = New-Object System.Text.UTF8Encoding($false)
+    $writer = New-Object System.IO.StreamWriter($p, $true, $enc)
+    $writer.AutoFlush = $true
+    $writer.WriteLine($s)
+    $writer.Dispose()
+  } catch {
     throw
   }
 }
@@ -512,9 +534,9 @@ function Write-SummaryAndStop {
   Add-RunPhase -Phase $Phase -Status $Status
   Write-RunArtifact
   Emit-MissingMarkers
-  $summaryMode = $SummaryPayload.mode
+  $summaryMode = $SummaryPayload["mode"]
   $summaryNotes = ""
-  if ($SummaryPayload.ContainsKey("notes")) { $summaryNotes = $SummaryPayload.notes }
+  if ($SummaryPayload.ContainsKey("notes")) { $summaryNotes = $SummaryPayload["notes"] }
   $summaryLine = "SAFE_PULL_SUMMARY|status=$Status|reason=$Reason|phase=$Phase|next=$Next|run_id=$($script:RunId)|mode=$summaryMode|notes=$summaryNotes|artifacts_dir=$($script:ArtifactsRel)|evidence=$EvidenceArtifact"
   Write-Marker $summaryLine
   Emit-RunEnd -Status $Status -Next $Next
@@ -686,21 +708,10 @@ try {
   }
 
   $script:CurrentPhase = "precheck"
-  $branchResult = Run-Git -GitExe $script:GitExe -RepoRoot $script:RepoRoot -ArtifactsDir $script:ArtifactsDir -MarkerPrefix "SAFE_PULL_BRANCH" rev-parse --abbrev-ref HEAD
+  $branchResult = Run-Git -GitExe $script:GitExe -RepoRoot $script:RepoRoot -ArtifactsDir $script:ArtifactsDir -MarkerPrefix "SAFE_PULL_BRANCH" symbolic-ref -q --short HEAD
   $branchName = if ($branchResult.ExitCode -eq 0) { $branchResult.Combined } else { "" }
   $branchHeadPath = Join-Path $script:ArtifactsDir "safe_pull_precheck_head.txt"
   Write-TextArtifact -Path $branchHeadPath -Content $branchResult.Combined
-  if ($branchName -eq "HEAD" -or [string]::IsNullOrWhiteSpace($branchName)) {
-    $branchFallback = Run-Git -GitExe $script:GitExe -RepoRoot $script:RepoRoot -ArtifactsDir $script:ArtifactsDir -MarkerPrefix "SAFE_PULL_BRANCH_FALLBACK" symbolic-ref -q --short HEAD
-    if ($branchFallback.ExitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($branchFallback.Combined)) {
-      $branchName = $branchFallback.Combined
-    }
-  }
-  if ([string]::IsNullOrWhiteSpace($branchName)) {
-    $summary = [ordered]@{ ts_utc = $ts }
-    $next = Get-ArtifactPointer -FileName "safe_pull_precheck_head.txt"
-    Write-SummaryAndStop -Status "FAIL" -Reason "branch_unknown" -Next $next -SummaryPayload $summary -ExitCode 1 -Phase "precheck" -EvidenceArtifact $next
-  }
   $detached = if ($branchName -eq "HEAD" -or [string]::IsNullOrWhiteSpace($branchName)) { 1 } else { 0 }
 
   if ($detached -eq 1 -and -not $AllowDetached) {
@@ -1131,6 +1142,7 @@ try {
       dry_run = $DryRun
       notes = if ($DryRun) { "fetch/pull_skipped" } else { "" }
       artifacts_dir = $script:ArtifactsRel
+      artifacts_dir_abs = $script:ArtifactsDir
       evidence_artifact = (Get-ArtifactPointer -FileName "safe_pull_exception.txt")
       warnings = @($script:Warnings)
     }
@@ -1144,14 +1156,16 @@ try {
     if (-not [string]::IsNullOrWhiteSpace($summaryJson)) {
       Write-MinimalTextArtifact -Path $summaryPath -Content $summaryJson
     } else {
-      $summaryFallback = @(
-        "status=FAIL",
-        "reason=$exceptionReason",
-        "phase=$exceptionPhase",
-        "run_id=$($script:RunId)",
-        "next=$($summaryPayload["next"])",
-        "evidence=$($summaryPayload["evidence_artifact"])"
-      ) -join "`n"
+    $summaryFallback = @(
+      "status=FAIL",
+      "reason=$exceptionReason",
+      "phase=$exceptionPhase",
+      "run_id=$($script:RunId)",
+      "next=$($summaryPayload["next"])",
+      "artifacts_dir=$($summaryPayload["artifacts_dir"])",
+      "artifacts_dir_abs=$($summaryPayload["artifacts_dir_abs"])",
+      "evidence=$($summaryPayload["evidence_artifact"])"
+    ) -join "`n"
       Write-MinimalTextArtifact -Path (Join-Path $script:ArtifactsDir "safe_pull_summary_fallback.txt") -Content $summaryFallback
     }
     $summaryLine = "SAFE_PULL_SUMMARY|status=FAIL|reason=$exceptionReason|phase=$exceptionPhase|next=$($summaryPayload["next"])|run_id=$($script:RunId)|mode=$($summaryPayload["mode"])|notes=$($summaryPayload["notes"])|artifacts_dir=$($script:ArtifactsRel)|evidence=$($summaryPayload["evidence_artifact"])"
