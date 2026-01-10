@@ -112,6 +112,30 @@ def _validate_summary(payload: dict[str, Any]) -> list[str]:
     return errors
 
 
+def _validate_run_payload(payload: dict[str, Any]) -> list[str]:
+    required_keys = [
+        "run_id",
+        "ts_utc",
+        "repo_root",
+        "cwd",
+        "mode",
+        "git_path",
+        "ps_version",
+        "ps_edition",
+    ]
+    errors: list[str] = []
+    for key in required_keys:
+        if key not in payload:
+            errors.append(f"run_missing_key:{key}")
+    if not payload.get("repo_root"):
+        errors.append("run_repo_root_blank")
+    if not payload.get("ps_version"):
+        errors.append("run_ps_version_blank")
+    if not payload.get("ps_edition"):
+        errors.append("run_ps_edition_blank")
+    return errors
+
+
 def _validate_invariants(
     input_dir: Path, summary: dict[str, Any], markers: dict[str, dict[str, str]]
 ) -> list[str]:
@@ -134,6 +158,18 @@ def _validate_invariants(
             errors.append("exception_missing_txt")
         if "SAFE_PULL_EXCEPTION" not in markers:
             errors.append("missing_marker:SAFE_PULL_EXCEPTION")
+        evidence_artifact = summary.get("evidence_artifact", "")
+        if not evidence_artifact.endswith("safe_pull_exception.txt"):
+            errors.append("exception_evidence_mismatch")
+    if summary.get("status") in {"FAIL", "DEGRADED"}:
+        marker_summary = markers.get("SAFE_PULL_SUMMARY", {})
+        marker_evidence = marker_summary.get("evidence")
+        if not marker_evidence:
+            errors.append("summary_marker_missing_evidence")
+        elif summary.get("evidence_artifact") and marker_evidence != summary.get(
+            "evidence_artifact"
+        ):
+            errors.append("summary_marker_evidence_mismatch")
     if summary.get("dry_run") and precheck:
         if (
             precheck.get("porcelain") == "0"
@@ -141,6 +177,7 @@ def _validate_invariants(
             and precheck.get("diverged") == "0"
             and precheck.get("detached") == "0"
             and summary.get("status") != "PASS"
+            and summary.get("reason") != "internal_exception"
         ):
             errors.append("dry_run_clean_should_pass")
     return errors
@@ -176,7 +213,18 @@ def _check_contract(input_dir: Path) -> tuple[str, list[str]]:
     else:
         summary_payload = {}
 
+    run_path = input_dir / "safe_pull_run.json"
+    run_payload: dict[str, Any] = {}
+    if run_path.exists():
+        try:
+            run_payload = json.loads(run_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            errors.append("run_json_invalid")
+    else:
+        run_payload = {}
+
     errors.extend(_validate_summary(summary_payload))
+    errors.extend(_validate_run_payload(run_payload))
     errors.extend(_validate_invariants(input_dir, summary_payload, marker_payloads))
 
     status = "PASS" if not errors else "FAIL"

@@ -5,6 +5,9 @@
   "cwd": "/repo",
   "mode": "dry_run",
   "git_path": "git",
+  "ps_version": "5.1.26100.7462",
+  "ps_edition": "Desktop",
+  "artifacts_dir": "artifacts/safe_pull",
   "policy_flags": {
     "allow_stash": true,
     "include_untracked": false,
@@ -15,7 +18,7 @@
     "lock_timeout_seconds": 900
   },
   "status": "PASS",
-  "reason": "ok",
+  "reason": "noop_up_to_date",
   "next": "none",
   "phases": [
     {
@@ -35,7 +38,7 @@
     },
     {
       "phase": "fetch",
-      "status": "OK",
+      "status": "SKIP",
       "ts_utc": "2024-01-01T00:00:03Z"
     },
     {

@@ -228,7 +228,36 @@ function Write-TextArtifact {
     [string]$Path,
     [string]$Content
   )
-  Set-Content -LiteralPath $Path -Value $Content -Encoding utf8
+  $pathType = if ($null -eq $Path) { "null" } else { $Path.GetType().FullName }
+  $contentType = if ($null -eq $Content) { "null" } else { $Content.GetType().FullName }
+  $encodingType = ""
+  try {
+    $p = [string]$Path
+    $s = [string]$Content
+    $enc = New-Object System.Text.UTF8Encoding($false)
+    $encodingType = $enc.GetType().FullName
+    if (-not [string]::IsNullOrWhiteSpace($script:ArtifactsDir)) {
+      $allowRoot = [IO.Path]::GetFullPath($script:ArtifactsDir).TrimEnd("\", "/") + [IO.Path]::DirectorySeparatorChar
+      $fullPath = [IO.Path]::GetFullPath($p)
+      if (-not $fullPath.StartsWith($allowRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "artifact_path_outside_allowlist:$fullPath"
+      }
+    }
+    $parent = Split-Path -Parent $p
+    if (-not [string]::IsNullOrWhiteSpace($parent)) {
+      [IO.Directory]::CreateDirectory($parent) | Out-Null
+    }
+    [IO.File]::WriteAllText($p, $s, $enc)
+  } catch {
+    $errType = $_.Exception.GetType().FullName
+    $errMessage = $_.Exception.Message
+    $line = "SAFE_PULL_ARTIFACT_WRITE_FAIL|path=$Path|path_type=$pathType|content_type=$contentType|encoding_type=$encodingType|type=$errType|message=$errMessage"
+    try {
+      Write-Output $line
+    } catch {
+    }
+    throw
+  }
 }
 
 function Resolve-AllowedArtifactsDir {
@@ -405,7 +434,7 @@ function Write-SummaryAndStop {
   $summaryMode = $SummaryPayload.mode
   $summaryNotes = ""
   if ($SummaryPayload.ContainsKey("notes")) { $summaryNotes = $SummaryPayload.notes }
-  $summaryLine = "SAFE_PULL_SUMMARY|status=$Status|reason=$Reason|phase=$Phase|next=$Next|run_id=$($script:RunId)|mode=$summaryMode|notes=$summaryNotes|artifacts_dir=$($script:ArtifactsRel)"
+  $summaryLine = "SAFE_PULL_SUMMARY|status=$Status|reason=$Reason|phase=$Phase|next=$Next|run_id=$($script:RunId)|mode=$summaryMode|notes=$summaryNotes|artifacts_dir=$($script:ArtifactsRel)|evidence=$EvidenceArtifact"
   Write-Marker $summaryLine
   Emit-RunEnd -Status $Status -Next $Next
   Write-Marker "SAFE_PULL_END"
@@ -421,14 +450,25 @@ try {
   $cwdFull = [IO.Path]::GetFullPath((Get-Location).Path)
   $systemDir = [Environment]::SystemDirectory
   $systemFull = [IO.Path]::GetFullPath($systemDir)
+  $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+  $derivedRepoRoot = (Resolve-Path (Join-Path $scriptDir "..")).Path
   $script:RunId = "$ts-$PID"
+  $script:RepoRoot = $derivedRepoRoot
+  $psVersion = ""
+  $psEdition = ""
+  if ($PSVersionTable -and $PSVersionTable.PSVersion) {
+    $psVersion = $PSVersionTable.PSVersion.ToString()
+    $psEdition = $PSVersionTable.PSEdition
+  }
 
   $script:GitExe = Resolve-GitExe
-  $provisionalRoot = if ([string]::IsNullOrWhiteSpace($RepoRoot)) { $cwdFull } else { [IO.Path]::GetFullPath($RepoRoot) }
+  $provisionalRoot = $derivedRepoRoot
+  $artifactsRejected = $false
   try {
     $script:ArtifactsDir = Resolve-AllowedArtifactsDir -RepoRoot $provisionalRoot -ArtifactsDir $ArtifactsDir
   } catch {
     $script:ArtifactsDir = Join-Path $provisionalRoot "artifacts"
+    $artifactsRejected = $true
   }
   $script:ArtifactsDir = [IO.Path]::GetFullPath($script:ArtifactsDir)
   Initialize-Artifacts -ArtifactsDir $script:ArtifactsDir
@@ -442,6 +482,9 @@ try {
     cwd = $cwdFull
     mode = $mode
     git_path = $script:GitExe
+    ps_version = $psVersion
+    ps_edition = $psEdition
+    artifacts_dir = $script:ArtifactsRel
     policy_flags = [ordered]@{
       allow_stash = $AllowStash
       include_untracked = $IncludeUntracked
@@ -458,6 +501,11 @@ try {
   }
   Emit-RunStart -RepoRoot $provisionalRoot -Cwd $cwdFull -Mode $mode -ArtifactsDir $script:ArtifactsRel
   Write-RunArtifact
+  if ($artifactsRejected) {
+    $summary = [ordered]@{ ts_utc = $ts }
+    $next = Get-ArtifactPointer -FileName "safe_pull_run.json"
+    Write-SummaryAndStop -Status "FAIL" -Reason "artifacts_dir_outside_allowlist" -Next $next -SummaryPayload $summary -ExitCode 1 -Phase "init" -EvidenceArtifact $next
+  }
   $script:DecisionTrace.inputs = [ordered]@{
     repo_root = $RepoRoot
     artifacts_dir = $ArtifactsDir
@@ -567,6 +615,11 @@ try {
       $branchName = $branchFallback.Combined
     }
   }
+  if ([string]::IsNullOrWhiteSpace($branchName)) {
+    $summary = [ordered]@{ ts_utc = $ts }
+    $next = Get-ArtifactPointer -FileName "safe_pull_precheck_head.txt"
+    Write-SummaryAndStop -Status "FAIL" -Reason "branch_unknown" -Next $next -SummaryPayload $summary -ExitCode 1 -Phase "precheck" -EvidenceArtifact $next
+  }
   $detached = if ($branchName -eq "HEAD" -or [string]::IsNullOrWhiteSpace($branchName)) { 1 } else { 0 }
 
   if ($detached -eq 1 -and -not $AllowDetached) {
@@ -673,12 +726,12 @@ try {
     if ($DryRun) {
       $summary = [ordered]@{ ts_utc = $ts }
       $next = Get-ArtifactPointer -FileName "git_porcelain_before.txt"
-      Write-SummaryAndStop -Status "FAIL" -Reason "dirty_worktree_dry_run" -Next $next -SummaryPayload $summary -ExitCode 1 -Phase "precheck" -EvidenceArtifact $next
+      Write-SummaryAndStop -Status "FAIL" -Reason "dirty_worktree" -Next $next -SummaryPayload $summary -ExitCode 1 -Phase "precheck" -EvidenceArtifact $next
     }
     if (-not $AllowStash) {
       $summary = [ordered]@{ ts_utc = $ts }
       $next = Get-ArtifactPointer -FileName "git_porcelain_before.txt"
-      Write-SummaryAndStop -Status "FAIL" -Reason "dirty_worktree_no_stash" -Next $next -SummaryPayload $summary -ExitCode 1 -Phase "precheck" -EvidenceArtifact $next
+      Write-SummaryAndStop -Status "FAIL" -Reason "dirty_worktree" -Next $next -SummaryPayload $summary -ExitCode 1 -Phase "precheck" -EvidenceArtifact $next
     }
   }
 
@@ -806,10 +859,8 @@ try {
   $remoteName = $ExpectedUpstream.Split("/")[0]
   $script:CurrentPhase = "fetch"
   if ($DryRun) {
-    $fetchResult = Run-Git -GitExe $script:GitExe -RepoRoot $script:RepoRoot -ArtifactsDir $script:ArtifactsDir -MarkerPrefix "SAFE_PULL_FETCH" fetch --prune --dry-run $remoteName
-    $fetchStatus = if ($fetchResult.ExitCode -eq 0) { "OK" } else { "FAIL" }
-    Emit-FetchMarker -Status $fetchStatus -ExitCode $fetchResult.ExitCode -StdoutPath $fetchResult.StdoutPath -StderrPath $fetchResult.StderrPath
-    Add-RunPhase -Phase "fetch" -Status $fetchStatus
+    Emit-FetchMarker -Status "SKIP" -ExitCode 0 -StdoutPath "" -StderrPath ""
+    Add-RunPhase -Phase "fetch" -Status "SKIP"
   } else {
     $fetchResult = Run-Git -GitExe $script:GitExe -RepoRoot $script:RepoRoot -ArtifactsDir $script:ArtifactsDir -MarkerPrefix "SAFE_PULL_FETCH" fetch --prune $remoteName
     $fetchStatus = if ($fetchResult.ExitCode -eq 0) { "OK" } else { "FAIL" }
@@ -893,8 +944,14 @@ try {
   $summaryStatus = "PASS"
   $summaryNext = "none"
   $summaryNotes = ""
+  $summaryReason = "ok"
   if ($DryRun) {
     $summaryNotes = "fetch/pull_skipped"
+    if ($postBehind -gt 0) {
+      $summaryReason = "dry_run_ready_to_apply"
+    } else {
+      $summaryReason = "noop_up_to_date"
+    }
   }
 
   $pythonCmd = Get-Command python -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -913,7 +970,7 @@ try {
   $summaryPayload = [ordered]@{
     ts_utc = $ts
     status = $summaryStatus
-    reason = "ok"
+    reason = $summaryReason
     next = $summaryNext
     mode = $mode
     dry_run = $DryRun
@@ -934,10 +991,14 @@ try {
     diverged = $postDiverged
   }
 
-  Write-SummaryAndStop -Status $summaryStatus -Reason "ok" -Next $summaryNext -SummaryPayload $summaryPayload -ExitCode 0 -Phase "summary" -EvidenceArtifact (Get-ArtifactPointer -FileName "safe_pull_summary.json")
+  Write-SummaryAndStop -Status $summaryStatus -Reason $summaryReason -Next $summaryNext -SummaryPayload $summaryPayload -ExitCode 0 -Phase "summary" -EvidenceArtifact (Get-ArtifactPointer -FileName "safe_pull_summary.json")
 } catch {
   if ($_.Exception.Message -ne $script:StopSignal) {
     $exceptionPhase = $script:CurrentPhase
+    $exceptionReason = "internal_exception"
+    if ($_.Exception.Message -like "artifact_path_outside_allowlist*") {
+      $exceptionReason = "artifact_path_outside_allowlist"
+    }
     $exceptionPath = Join-Path $script:ArtifactsDir "safe_pull_exception.json"
     $exceptionTextPath = Join-Path $script:ArtifactsDir "safe_pull_exception.txt"
     $exceptionPayload = [ordered]@{
@@ -959,7 +1020,7 @@ try {
     Write-Marker ("SAFE_PULL_EXCEPTION|run_id=" + $script:RunId + "|phase=" + $exceptionPhase + "|type=" + $exceptionPayload.type + "|message=" + $exceptionPayload.message + "|artifact=" + $exceptionRel)
     $summary = [ordered]@{ ts_utc = (Get-UtcTimestamp) }
     $next = Get-ArtifactPointer -FileName "safe_pull_exception.txt"
-    Write-SummaryAndStop -Status "FAIL" -Reason "internal_exception" -Next $next -SummaryPayload $summary -ExitCode 1 -Phase $exceptionPhase -EvidenceArtifact $next
+    Write-SummaryAndStop -Status "FAIL" -Reason $exceptionReason -Next $next -SummaryPayload $summary -ExitCode 1 -Phase $exceptionPhase -EvidenceArtifact $next
   }
 } finally {
   if ($script:LockAcquired -and (Test-Path -LiteralPath $script:LockPath)) {
