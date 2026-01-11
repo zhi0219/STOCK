@@ -28,7 +28,7 @@ REQUIRED_COMMAND_PATTERNS = [
     r"pull\.rebase=false",
     r"pull --ff-only",
     r"stash\",\s*\"push",
-    r"git status --porcelain",
+    r"status --porcelain",
     r"ls-files -u",
     r"rev-list --left-right --count",
     r"symbolic-ref -q --short HEAD",
@@ -47,6 +47,7 @@ UNSAFE_STDIO_TRIM_PATTERN = r"\(\s*\$stdoutText\s*\+\s*\$stderrText\s*\)\.Trim\(
 SAFE_STDIO_CONCAT_PATTERN = r"\[string\]::Concat\(\s*\$stdoutText\s*,\s*\$stderrText\s*\)\.Trim\(\)"
 STDOUT_NULL_GUARD_PATTERN = r"if\s*\(\s*\$null\s*-eq\s*\$stdoutText\s*\)\s*\{\s*\$stdoutText\s*=\s*\"\"\s*\}"
 STDERR_NULL_GUARD_PATTERN = r"if\s*\(\s*\$null\s*-eq\s*\$stderrText\s*\)\s*\{\s*\$stderrText\s*=\s*\"\"\s*\}"
+RUNPAYLOAD_DOT_ASSIGN_PATTERN = r"\$script:RunPayload\."
 
 
 def _ts_utc() -> str:
@@ -106,6 +107,9 @@ def _check_contract(script_path: Path) -> tuple[str, list[str]]:
 
     if not re.search(STDERR_NULL_GUARD_PATTERN, content):
         errors.append("missing_stderr_null_guard")
+
+    if re.search(RUNPAYLOAD_DOT_ASSIGN_PATTERN, content):
+        errors.append("ordered_payload_dot_assign:runpayload")
 
     status = "PASS" if not errors else "FAIL"
     return status, errors

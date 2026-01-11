@@ -37,6 +37,8 @@ REQUIRED_ARTIFACTS = [
     "safe_pull_precheck_ahead_behind.txt",
 ]
 
+CURRENT_CONTRACT_VERSION = "2026-01-11"
+SUPPORTED_CONTRACT_VERSIONS = {CURRENT_CONTRACT_VERSION, "2026-01-10"}
 
 def _ts_utc() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -102,6 +104,7 @@ def _validate_summary(payload: dict[str, Any]) -> list[str]:
         "phase",
         "run_id",
         "evidence_artifact",
+        "contract_version",
     ]
     errors: list[str] = []
     for key in required_keys:
@@ -109,6 +112,17 @@ def _validate_summary(payload: dict[str, Any]) -> list[str]:
             errors.append(f"summary_missing_key:{key}")
     if payload.get("status") not in {"PASS", "FAIL", "DEGRADED"}:
         errors.append("summary_invalid_status")
+    if payload.get("contract_version") not in SUPPORTED_CONTRACT_VERSIONS:
+        errors.append("summary_invalid_contract_version")
+    return errors
+
+
+def _validate_run(payload: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    if "contract_version" not in payload:
+        errors.append("run_missing_key:contract_version")
+    if payload.get("contract_version") not in SUPPORTED_CONTRACT_VERSIONS:
+        errors.append("run_invalid_contract_version")
     return errors
 
 
@@ -177,6 +191,18 @@ def _check_contract(input_dir: Path) -> tuple[str, list[str]]:
         summary_payload = {}
 
     errors.extend(_validate_summary(summary_payload))
+
+    run_path = input_dir / "safe_pull_run.json"
+    run_payload: dict[str, Any] = {}
+    if run_path.exists():
+        try:
+            run_payload = json.loads(run_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            errors.append("run_json_invalid")
+    else:
+        run_payload = {}
+
+    errors.extend(_validate_run(run_payload))
     errors.extend(_validate_invariants(input_dir, summary_payload, marker_payloads))
 
     status = "PASS" if not errors else "FAIL"

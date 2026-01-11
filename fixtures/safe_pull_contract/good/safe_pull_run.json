@@ -53,5 +53,6 @@
       "status": "PASS",
       "ts_utc": "2024-01-01T00:00:06Z"
     }
-  ]
+  ],
+  "contract_version": "2026-01-11"
 }
