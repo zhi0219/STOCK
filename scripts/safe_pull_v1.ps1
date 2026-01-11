@@ -34,7 +34,7 @@ $script:DecisionTrace = [ordered]@{
 }
 $script:RunId = ""
 $script:RunPayload = [ordered]@{}
-$script:RunPhases = New-Object System.Collections.Generic.List[object]
+$script:RunPhases = New-Object System.Collections.ArrayList
 $script:PhaseSeen = @{}
 $script:CurrentPhase = "init"
 $script:StepEmitted = [ordered]@{
@@ -300,9 +300,9 @@ function Write-AppendTextArtifact {
       [IO.Directory]::CreateDirectory($parent) | Out-Null
     }
     $enc = New-Object System.Text.UTF8Encoding($false)
-    $writer = New-Object System.IO.StreamWriter($p, $true, $enc)
-    $writer.AutoFlush = $true
-    $writer.WriteLine($s)
+  $writer = New-Object System.IO.StreamWriter($p, $true, $enc)
+  $writer.AutoFlush = $true
+  $writer.Write($s + "`n")
     $writer.Dispose()
   } catch {
     throw
@@ -335,7 +335,7 @@ function Write-MinimalMarker {
   try {
     if (-not [string]::IsNullOrWhiteSpace($script:MarkersPath)) {
       $enc = New-Object System.Text.UTF8Encoding($false)
-      [IO.File]::AppendAllText($script:MarkersPath, $lineText + [Environment]::NewLine, $enc)
+      [IO.File]::AppendAllText($script:MarkersPath, $lineText + "`n", $enc)
     }
   } catch {
   }

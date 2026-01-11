@@ -72,6 +72,8 @@ def _parse_markers(lines: list[str]) -> tuple[list[str], dict[str, dict[str, str
     errors: list[str] = []
     parsed: dict[str, dict[str, str]] = {}
     for line in lines:
+        if line.startswith("\ufeff"):
+            line = line.lstrip("\ufeff")
         if "|" not in line:
             if line in {"SAFE_PULL_END"}:
                 continue
@@ -170,6 +172,13 @@ def _validate_invariants(
             "evidence_artifact"
         ):
             errors.append("summary_marker_evidence_mismatch")
+    if summary.get("artifacts_dir"):
+        input_posix = input_dir.as_posix()
+        if input_posix.startswith("artifacts") and summary.get("artifacts_dir") != input_posix:
+            errors.append(
+                "artifacts_dir_mismatch:"
+                f"expected={input_posix};found={summary.get('artifacts_dir')}"
+            )
     if summary.get("dry_run") and precheck:
         if (
             precheck.get("porcelain") == "0"
