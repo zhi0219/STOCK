@@ -168,7 +168,6 @@ $safePullArgs = @(
   $safePullScript,
   "-ArtifactsDir",
   $safePullDir,
-  "-DryRun:$false",
   "-AllowStash:$allowStash",
   "-IncludeUntracked:$false",
   "-RequireClean:$requireClean"

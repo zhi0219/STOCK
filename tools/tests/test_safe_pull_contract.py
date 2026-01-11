@@ -42,8 +42,8 @@ class SafePullContractTests(unittest.TestCase):
         content = (Path("scripts") / "safe_pull_v1.ps1").read_text(
             encoding="utf-8", errors="replace"
         )
-        self.assertIn("[bool]$DryRun = $true", content)
-        self.assertIn("dirty_worktree_dry_run", content)
+        self.assertIn("[switch]$DryRun", content)
+        self.assertIn("dirty_worktree", content)
 
     def test_safe_pull_run_git_null_safe(self) -> None:
         content = (Path("scripts") / "safe_pull_v1.ps1").read_text(

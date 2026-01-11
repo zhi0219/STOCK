@@ -33,14 +33,14 @@ jobs:
         shell: pwsh
         run: |
           New-Item -Force -ItemType Directory artifacts\\ps51 | Out-Null
-          powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\\safe_pull_v1.ps1 -ArtifactsDir artifacts\\ps51 -DryRun:$true
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\\safe_pull_v1.ps1 -ArtifactsDir artifacts\\ps51 -DryRun
           python -m tools.verify_safe_pull_contract --artifacts-dir artifacts\\ps51
 
       - name: Run safe pull (PowerShell 7)
         shell: pwsh
         run: |
           New-Item -Force -ItemType Directory artifacts\\ps7 | Out-Null
-          pwsh -NoProfile -File scripts\\safe_pull_v1.ps1 -ArtifactsDir artifacts\\ps7 -DryRun:$true
+          pwsh -NoProfile -File scripts\\safe_pull_v1.ps1 -ArtifactsDir artifacts\\ps7 -DryRun
           python -m tools.verify_safe_pull_contract --artifacts-dir artifacts\\ps7
 
       - name: Upload artifacts

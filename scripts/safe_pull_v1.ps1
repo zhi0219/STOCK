@@ -1,7 +1,7 @@
 param(
   [string]$RepoRoot = "",
   [string]$ArtifactsDir = "",
-  [bool]$DryRun = $true,
+  [switch]$DryRun,
   [bool]$AllowStash = $true,
   [bool]$IncludeUntracked = $false,
   [bool]$RequireClean = $false,
@@ -517,8 +517,8 @@ function Write-SummaryAndStop {
   $SummaryPayload["artifacts_dir"] = $script:ArtifactsRel
   $SummaryPayload["artifacts_dir_abs"] = $script:ArtifactsDir
   $SummaryPayload["ts_utc"] = $SummaryPayload["ts_utc"]
-  if (-not $SummaryPayload.ContainsKey("mode")) { $SummaryPayload["mode"] = if ($DryRun) { "dry_run" } else { "apply" } }
-  if (-not $SummaryPayload.ContainsKey("dry_run")) { $SummaryPayload["dry_run"] = $DryRun }
+  if (-not $SummaryPayload.ContainsKey("mode")) { $SummaryPayload["mode"] = if ($isDryRun) { "dry_run" } else { "apply" } }
+  if (-not $SummaryPayload.ContainsKey("dry_run")) { $SummaryPayload["dry_run"] = $isDryRun }
 
   $summaryPath = Join-Path $script:ArtifactsDir "safe_pull_summary.json"
   $summaryJson = $SummaryPayload | ConvertTo-Json -Depth 8
@@ -556,6 +556,7 @@ try {
   $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
   $derivedRepoRoot = (Resolve-Path (Join-Path $scriptDir "..")).Path
   $script:RunId = "$ts-$PID"
+  $isDryRun = $DryRun.IsPresent
   $script:RepoRoot = $derivedRepoRoot
   $psVersion = ""
   $psEdition = ""
@@ -577,7 +578,7 @@ try {
   Initialize-Artifacts -ArtifactsDir $script:ArtifactsDir
   $script:ArtifactsRel = Get-RepoRelativePath -RepoRoot $provisionalRoot -FullPath $script:ArtifactsDir
 
-  $mode = if ($DryRun) { "dry_run" } else { "apply" }
+  $mode = if ($isDryRun) { "dry_run" } else { "apply" }
   $script:RunPayload = [ordered]@{
     run_id = $script:RunId
     ts_utc = $ts
@@ -612,7 +613,7 @@ try {
   $script:DecisionTrace["inputs"] = [ordered]@{
     repo_root = $RepoRoot
     artifacts_dir = $ArtifactsDir
-    dry_run = $DryRun
+    dry_run = $isDryRun
     allow_stash = $AllowStash
     include_untracked = $IncludeUntracked
     require_clean = $RequireClean
@@ -1065,7 +1066,7 @@ try {
     reason = $summaryReason
     next = $summaryNext
     mode = $mode
-    dry_run = $DryRun
+    dry_run = $isDryRun
     notes = $summaryNotes
     allow_stash = $AllowStash
     include_untracked = $IncludeUntracked
@@ -1108,7 +1109,7 @@ try {
       stack = $_.ScriptStackTrace
       repo_root = $script:RepoRoot
       cwd = (Get-Location).Path
-      mode = if ($DryRun) { "dry_run" } else { "apply" }
+      mode = if ($isDryRun) { "dry_run" } else { "apply" }
       git_path = $script:GitExe
     }
     $exceptionText = @(
@@ -1137,10 +1138,10 @@ try {
       reason = $exceptionReason
       phase = $exceptionPhase
       run_id = $script:RunId
-      mode = if ($DryRun) { "dry_run" } else { "apply" }
+      mode = if ($isDryRun) { "dry_run" } else { "apply" }
       next = Get-ArtifactPointer -FileName "safe_pull_exception.txt"
-      dry_run = $DryRun
-      notes = if ($DryRun) { "fetch/pull_skipped" } else { "" }
+      dry_run = $isDryRun
+      notes = if ($isDryRun) { "fetch/pull_skipped" } else { "" }
       artifacts_dir = $script:ArtifactsRel
       artifacts_dir_abs = $script:ArtifactsDir
       evidence_artifact = (Get-ArtifactPointer -FileName "safe_pull_exception.txt")
