@@ -20,7 +20,6 @@ REQUIRED_COMMAND_PATTERNS = [
     r"-WriteDocs",
     r"-WriteDocs[\s\S]*?\"NO\"",
     r"-AllowStash",
-    r"-DryRun",
     r"-RequireClean",
     r"git status --porcelain",
     r"Start-Process",
@@ -35,6 +34,11 @@ REQUIRED_COMMAND_PATTERNS = [
 DISALLOWED_COMMAND_PATTERNS = [
     r"Out-Host",
     r"Write-Error",
+]
+
+DRY_RUN_COMPAT_PATTERNS = [
+    r"-DryRun",
+    r"-Mode\s+dry_run",
 ]
 
 SUMMARY_MARKER = "WIN_DAILY_GREEN_CONTRACT_SUMMARY"
@@ -81,6 +85,9 @@ def _check_contract(script_path: Path) -> tuple[str, list[str]]:
     for pattern in REQUIRED_COMMAND_PATTERNS:
         if not re.search(pattern, content):
             errors.append(f"missing_command_pattern:{pattern}")
+
+    if not any(re.search(pattern, content) for pattern in DRY_RUN_COMPAT_PATTERNS):
+        errors.append("missing_command_pattern:dry_run_compat")
 
     for pattern in DISALLOWED_COMMAND_PATTERNS:
         if re.search(pattern, content):

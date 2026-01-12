@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  windows-foundation:
+  windows-foundation-ps51:
     runs-on: windows-latest
     steps:
       - name: Checkout
@@ -23,15 +23,68 @@ jobs:
           if (Test-Path "requirements.txt") { python -m pip install -r requirements.txt }
           if (Test-Path "requirements-dev.txt") { python -m pip install -r requirements-dev.txt }
 
-      - name: Run Foundation Gate
+      - name: Run safe_pull (PS5.1)
         shell: pwsh
         run: |
           New-Item -Force -ItemType Directory artifacts | Out-Null
-          python -m tools.verify_foundation --artifacts-dir artifacts
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\safe_pull_v1.ps1 -Mode dry_run -ArtifactsDir artifacts/ps51
 
-      - name: Upload artifacts
+      - name: Verify safe_pull contract (PS5.1)
+        shell: pwsh
+        run: |
+          $latestPath = Get-Content -Raw -LiteralPath artifacts/ps51/safe_pull/_latest.txt
+          python -m tools.verify_safe_pull_contract --artifacts-dir artifacts/ps51/contract --input-dir $latestPath
+
+      - name: Run foundation gate (PS5.1)
+        shell: pwsh
+        run: |
+          python -m tools.verify_foundation --artifacts-dir artifacts/ps51
+
+      - name: Upload artifacts (PS5.1)
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: windows-foundation-artifacts
+          name: windows-foundation-ps51-artifacts
+          path: artifacts/**
+
+  windows-foundation-ps7:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          if (Test-Path "requirements.txt") { python -m pip install -r requirements.txt }
+          if (Test-Path "requirements-dev.txt") { python -m pip install -r requirements-dev.txt }
+
+      - name: Run safe_pull (PS7)
+        shell: pwsh
+        run: |
+          New-Item -Force -ItemType Directory artifacts | Out-Null
+          pwsh -NoProfile -File scripts\safe_pull_v1.ps1 -Mode dry_run -ArtifactsDir artifacts/ps7
+
+      - name: Verify safe_pull contract (PS7)
+        shell: pwsh
+        run: |
+          $latestPath = Get-Content -Raw -LiteralPath artifacts/ps7/safe_pull/_latest.txt
+          python -m tools.verify_safe_pull_contract --artifacts-dir artifacts/ps7/contract --input-dir $latestPath
+
+      - name: Run foundation gate (PS7)
+        shell: pwsh
+        run: |
+          python -m tools.verify_foundation --artifacts-dir artifacts/ps7
+
+      - name: Upload artifacts (PS7)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-foundation-ps7-artifacts
           path: artifacts/**

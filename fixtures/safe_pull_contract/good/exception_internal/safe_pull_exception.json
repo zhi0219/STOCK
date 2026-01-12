@@ -1,0 +1,12 @@
+{
+  "run_id": "2024-01-01T00:00:00Z-1234",
+  "ts_utc": "2024-01-01T00:00:00Z",
+  "phase": "init",
+  "type": "System.Exception",
+  "message": "Argument types do not match",
+  "stack": "at init",
+  "repo_root": "/repo",
+  "cwd": "/repo",
+  "mode": "apply",
+  "git_path": "git"
+}
