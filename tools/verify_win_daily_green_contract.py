@@ -20,7 +20,6 @@ REQUIRED_COMMAND_PATTERNS = [
     r"-WriteDocs",
     r"-WriteDocs[\s\S]*?\"NO\"",
     r"-AllowStash",
-    r"-DryRun",
     r"-RequireClean",
     r"git status --porcelain",
     r"Start-Process",
@@ -38,6 +37,7 @@ DISALLOWED_COMMAND_PATTERNS = [
 ]
 
 SUMMARY_MARKER = "WIN_DAILY_GREEN_CONTRACT_SUMMARY"
+CURRENT_CONTRACT_VERSION = 2
 
 
 def _ts_utc() -> str:
@@ -66,6 +66,22 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def _extract_contract_version(content: str) -> int | None:
+    match = re.search(r"contractVersion\s*=\s*(\d+)", content)
+    if not match:
+        return None
+    return int(match.group(1))
+
+
+def _detect_safe_pull_pattern(content: str) -> str:
+    mode_match = re.search(r"-Mode\"?[\s,]+\"?([a-z_]+)\"?", content)
+    if mode_match:
+        return f"mode:{mode_match.group(1)}"
+    if re.search(r"-DryRun", content):
+        return "dryrun"
+    return "missing"
+
+
 def _check_contract(script_path: Path) -> tuple[str, list[str]]:
     errors: list[str] = []
     if not script_path.exists():
@@ -73,6 +89,16 @@ def _check_contract(script_path: Path) -> tuple[str, list[str]]:
         return "FAIL", errors
 
     content = script_path.read_text(encoding="utf-8", errors="replace")
+    contract_version = _extract_contract_version(content)
+    supported_versions = {CURRENT_CONTRACT_VERSION, CURRENT_CONTRACT_VERSION - 1}
+    if contract_version is None:
+        errors.append("missing_contract_version")
+    elif contract_version not in supported_versions:
+        errors.append("unsupported_contract_version")
+
+    safe_pull_pattern = _detect_safe_pull_pattern(content)
+    if safe_pull_pattern == "missing":
+        errors.append("missing_safe_pull_mode_pattern")
 
     for marker in REQUIRED_MARKERS:
         if marker not in content:
@@ -111,7 +137,7 @@ def validate_marker_output(output: str | Iterable[str]) -> tuple[bool, list[str]
     summary_lines = [line for line in lines if line.startswith("DAILY_GREEN_SUMMARY")]
     if summary_lines:
         summary_line = summary_lines[-1]
-        for token in ("status=", "failed_step=", "next=", "run_dir="):
+        for token in ("status=", "failed_step=", "next=", "run_dir=", "contract_version="):
             if token not in summary_line:
                 errors.append(f"summary_missing_token:{token}")
     else:
@@ -123,10 +149,15 @@ def validate_marker_output(output: str | Iterable[str]) -> tuple[bool, list[str]
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv or [])
     status, errors = _check_contract(args.script)
+    content = args.script.read_text(encoding="utf-8", errors="replace")
+    contract_version = _extract_contract_version(content)
+    safe_pull_pattern = _detect_safe_pull_pattern(content)
     payload = {
         "status": status,
         "errors": errors,
         "script": args.script.as_posix(),
+        "contract_version": contract_version,
+        "safe_pull_pattern": safe_pull_pattern,
         "ts_utc": _ts_utc(),
     }
 
@@ -138,7 +169,10 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     print("WIN_DAILY_GREEN_CONTRACT_START")
-    print(f"{SUMMARY_MARKER}|status={status}|errors={len(errors)}")
+    print(
+        f"{SUMMARY_MARKER}|status={status}|errors={len(errors)}"
+        f"|contract_version={contract_version}|safe_pull_pattern={safe_pull_pattern}"
+    )
     print("WIN_DAILY_GREEN_CONTRACT_END")
 
     return 0 if status == "PASS" else 1

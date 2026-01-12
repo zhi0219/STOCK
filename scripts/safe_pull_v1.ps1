@@ -135,7 +135,7 @@ function Emit-RunStart {
     [string]$Mode,
     [string]$ArtifactsDir
   )
-  $line = "SAFE_PULL_RUN_START|run_id=$($script:RunId)|ts_utc=$($script:RunPayload.ts_utc)|repo_root=$RepoRoot|cwd=$Cwd|mode=$Mode|artifacts_dir=$ArtifactsDir"
+  $line = "SAFE_PULL_RUN_START|run_id=$($script:RunId)|ts_utc=$($script:RunPayload["ts_utc"])|repo_root=$RepoRoot|cwd=$Cwd|mode=$Mode|artifacts_dir=$ArtifactsDir"
   Write-Marker $line
 }
 
@@ -433,7 +433,7 @@ function Write-SummaryAndStop {
   Set-OrderedValue -Target $SummaryPayload -Key "warnings" -Value @($script:Warnings)
   Set-OrderedValue -Target $SummaryPayload -Key "artifacts_dir" -Value $script:ArtifactsRel
   Set-OrderedValue -Target $SummaryPayload -Key "artifacts_dir_abs" -Value $script:ArtifactsDir
-  Set-OrderedValue -Target $SummaryPayload -Key "ts_utc" -Value $SummaryPayload.ts_utc
+  Set-OrderedValue -Target $SummaryPayload -Key "ts_utc" -Value $SummaryPayload["ts_utc"]
   if (-not $SummaryPayload.ContainsKey("contract_version")) { Set-OrderedValue -Target $SummaryPayload -Key "contract_version" -Value $script:ContractVersion }
   if (-not $SummaryPayload.ContainsKey("mode")) { Set-OrderedValue -Target $SummaryPayload -Key "mode" -Value $script:Mode }
   if (-not $SummaryPayload.ContainsKey("dry_run")) { Set-OrderedValue -Target $SummaryPayload -Key "dry_run" -Value $script:DryRun }
@@ -452,9 +452,9 @@ function Write-SummaryAndStop {
   Add-RunPhase -Phase $Phase -Status $Status
   Write-RunArtifact
   Emit-MissingMarkers
-  $summaryMode = $SummaryPayload.mode
+  $summaryMode = $SummaryPayload["mode"]
   $summaryNotes = ""
-  if ($SummaryPayload.ContainsKey("notes")) { $summaryNotes = $SummaryPayload.notes }
+  if ($SummaryPayload.ContainsKey("notes")) { $summaryNotes = $SummaryPayload["notes"] }
   $summaryLine = "SAFE_PULL_SUMMARY|status=$Status|reason=$Reason|phase=$Phase|next=$Next|run_id=$($script:RunId)|mode=$summaryMode|notes=$summaryNotes|artifacts_dir=$($script:ArtifactsRel)"
   Write-Marker $summaryLine
   Emit-RunEnd -Status $Status -Next $Next
@@ -752,7 +752,7 @@ try {
     }
   }
 
-  $script:DecisionTrace.decisions += [ordered]@{
+  $script:DecisionTrace["decisions"] += [ordered]@{
     step = "precheck"
     branch = $branchName
     detached = $detached
@@ -1083,7 +1083,7 @@ try {
         contract_version = $script:ContractVersion
         status = "FAIL"
         reason = "internal_exception"
-        next = $summaryPayload.next
+        next = $summaryPayload["next"]
         phases = @()
       } }
     $runPath = Join-Path $exceptionDir "safe_pull_run.json"
