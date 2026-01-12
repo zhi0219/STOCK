@@ -20,7 +20,6 @@ REQUIRED_COMMAND_PATTERNS = [
     r"-WriteDocs",
     r"-WriteDocs[\s\S]*?\"NO\"",
     r"-AllowStash",
-    r"-DryRun",
     r"-RequireClean",
     r"git status --porcelain",
     r"Start-Process",
@@ -81,6 +80,13 @@ def _check_contract(script_path: Path) -> tuple[str, list[str]]:
     for pattern in REQUIRED_COMMAND_PATTERNS:
         if not re.search(pattern, content):
             errors.append(f"missing_command_pattern:{pattern}")
+
+    dry_run_patterns = [
+        r"-DryRun",
+        r"-Mode[\s\S]*?dry_run",
+    ]
+    if not any(re.search(pattern, content) for pattern in dry_run_patterns):
+        errors.append("missing_command_pattern:dry_run_flag")
 
     for pattern in DISALLOWED_COMMAND_PATTERNS:
         if re.search(pattern, content):

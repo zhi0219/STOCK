@@ -4,9 +4,16 @@ on:
   pull_request:
   workflow_dispatch:
 
+concurrency:
+  group: windows-foundation-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  windows-foundation:
+  windows-foundation-ps51:
     runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -17,21 +24,71 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        shell: pwsh
         run: |
           python -m pip install --upgrade pip
           if (Test-Path "requirements.txt") { python -m pip install -r requirements.txt }
           if (Test-Path "requirements-dev.txt") { python -m pip install -r requirements-dev.txt }
 
-      - name: Run Foundation Gate
-        shell: pwsh
+      - name: Run Foundation Gate (PS5.1)
         run: |
-          New-Item -Force -ItemType Directory artifacts | Out-Null
-          python -m tools.verify_foundation --artifacts-dir artifacts
+          New-Item -Force -ItemType Directory artifacts/ps51 | Out-Null
+          python -m tools.verify_foundation --artifacts-dir artifacts/ps51
 
-      - name: Upload artifacts
+      - name: Run safe_pull (PS5.1 dry_run)
+        run: |
+          $safePullDir = "artifacts/ps51/safe_pull"
+          New-Item -Force -ItemType Directory $safePullDir | Out-Null
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/safe_pull_v1.ps1 -ArtifactsDir $safePullDir -Mode dry_run -DryRun 1
+
+      - name: Verify safe_pull contract (PS5.1)
+        run: |
+          python -m tools.verify_safe_pull_contract --input-dir artifacts/ps51/safe_pull --artifacts-dir artifacts/ps51
+
+      - name: Upload artifacts (PS5.1)
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: windows-foundation-artifacts
+          name: windows-foundation-ps51-artifacts
+          path: artifacts/**
+
+  windows-foundation-ps7:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if (Test-Path "requirements.txt") { python -m pip install -r requirements.txt }
+          if (Test-Path "requirements-dev.txt") { python -m pip install -r requirements-dev.txt }
+
+      - name: Run Foundation Gate (PS7)
+        run: |
+          New-Item -Force -ItemType Directory artifacts/ps7 | Out-Null
+          python -m tools.verify_foundation --artifacts-dir artifacts/ps7
+
+      - name: Run safe_pull (PS7 dry_run)
+        run: |
+          $safePullDir = "artifacts/ps7/safe_pull"
+          New-Item -Force -ItemType Directory $safePullDir | Out-Null
+          pwsh -NoProfile -File scripts/safe_pull_v1.ps1 -ArtifactsDir $safePullDir -Mode dry_run -DryRun 1
+
+      - name: Verify safe_pull contract (PS7)
+        run: |
+          python -m tools.verify_safe_pull_contract --input-dir artifacts/ps7/safe_pull --artifacts-dir artifacts/ps7
+
+      - name: Upload artifacts (PS7)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-foundation-ps7-artifacts
           path: artifacts/**
