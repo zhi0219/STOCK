@@ -54,6 +54,27 @@ class SafePullContractTests(unittest.TestCase):
         self.assertIn('if ($null -eq $stdoutText) { $stdoutText = "" }', content)
         self.assertIn('if ($null -eq $stderrText) { $stderrText = "" }', content)
 
+    def test_safe_pull_fs_run_id_sanitization(self) -> None:
+        content = (Path("scripts") / "safe_pull_v1.ps1").read_text(
+            encoding="utf-8", errors="replace"
+        )
+        self.assertIn("$script:FsRunId", content)
+        self.assertIn("GetInvalidFileNameChars()", content)
+
+    def test_safe_pull_no_bom_writer(self) -> None:
+        content = (Path("scripts") / "safe_pull_v1.ps1").read_text(
+            encoding="utf-8", errors="replace"
+        )
+        self.assertIn("Write-TextNoBom", content)
+        self.assertIn("UTF8Encoding $false", content)
+
+    def test_safe_pull_allowlist_fallback_marker(self) -> None:
+        content = (Path("scripts") / "safe_pull_v1.ps1").read_text(
+            encoding="utf-8", errors="replace"
+        )
+        self.assertIn("artifacts_dir_outside_allowlist", content)
+        self.assertIn("SAFE_PULL_ARTIFACTS_FALLBACK", content)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -45,6 +45,25 @@ class VerifySafePullContractTests(unittest.TestCase):
                 )
                 self.assertNotEqual(rc, 0, msg=f"fixture passed: {fixture_dir}")
 
+    def test_latest_pointer_resolves(self) -> None:
+        fixture_dir = Path("fixtures") / "safe_pull_contract" / "good"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            artifacts_dir = Path(tmpdir)
+            pointer_dir = artifacts_dir / "safe_pull_root"
+            pointer_dir.mkdir(parents=True, exist_ok=True)
+            (pointer_dir / "_latest.txt").write_text(
+                fixture_dir.as_posix(), encoding="utf-8"
+            )
+            rc = verify_safe_pull_contract.main(
+                [
+                    "--artifacts-dir",
+                    str(artifacts_dir),
+                    "--input-dir",
+                    str(pointer_dir),
+                ]
+            )
+            self.assertEqual(rc, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

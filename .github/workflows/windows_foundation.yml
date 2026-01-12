@@ -7,6 +7,14 @@ on:
 jobs:
   windows-foundation:
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: ps51
+            exec: powershell.exe
+          - name: ps7
+            exec: pwsh
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -22,6 +30,25 @@ jobs:
           python -m pip install --upgrade pip
           if (Test-Path "requirements.txt") { python -m pip install -r requirements.txt }
           if (Test-Path "requirements-dev.txt") { python -m pip install -r requirements-dev.txt }
+
+      - name: Safe pull (${{ matrix.name }})
+        shell: pwsh
+        run: |
+          $artifactsRoot = "artifacts/${{ matrix.name }}/safe_pull"
+          New-Item -Force -ItemType Directory $artifactsRoot | Out-Null
+          & ${{ matrix.exec }} -NoProfile -ExecutionPolicy Bypass -File scripts/safe_pull_v1.ps1 -ArtifactsDir $artifactsRoot -DryRun:$true -AllowStash:$true -IncludeUntracked:$false -RequireClean:$false
+
+      - name: Verify safe pull contract (${{ matrix.name }})
+        shell: pwsh
+        run: |
+          $artifactsRoot = "artifacts/${{ matrix.name }}/safe_pull"
+          $latestPointer = Join-Path $artifactsRoot "_latest.txt"
+          if (-not (Test-Path -LiteralPath $latestPointer)) { throw "missing_latest_pointer" }
+          $latestDir = (Get-Content -Raw -LiteralPath $latestPointer).Trim()
+          if (-not (Test-Path -LiteralPath $latestDir)) { throw "latest_dir_missing" }
+          $contractDir = "artifacts/${{ matrix.name }}/safe_pull_contract"
+          New-Item -Force -ItemType Directory $contractDir | Out-Null
+          python -m tools.verify_safe_pull_contract --artifacts-dir $contractDir --input-dir $latestDir
 
       - name: Run Foundation Gate
         shell: pwsh

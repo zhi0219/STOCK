@@ -7,9 +7,12 @@ from tools import verify_win_daily_green_contract
 class VerifyWinDailyGreenContractTests(unittest.TestCase):
     def test_daily_green_script_contract(self) -> None:
         script_path = Path("scripts") / "win_daily_green_v1.ps1"
-        status, errors = verify_win_daily_green_contract._check_contract(script_path)
+        status, errors, warnings = verify_win_daily_green_contract._check_contract(
+            script_path
+        )
         self.assertEqual(status, "PASS")
         self.assertEqual(errors, [])
+        self.assertEqual(warnings, [])
 
     def test_marker_output_contract(self) -> None:
         mocked_output = [
