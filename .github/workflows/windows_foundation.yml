@@ -23,10 +23,22 @@ jobs:
           if (Test-Path "requirements.txt") { python -m pip install -r requirements.txt }
           if (Test-Path "requirements-dev.txt") { python -m pip install -r requirements-dev.txt }
 
-      - name: Run Foundation Gate
+      - name: Run safe_pull (Windows PowerShell 5.1)
         shell: pwsh
         run: |
           New-Item -Force -ItemType Directory artifacts | Out-Null
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/safe_pull_v1.ps1 -ArtifactsDir artifacts/ps51 -Mode dry_run
+          python -m tools.verify_safe_pull_contract --artifacts-dir artifacts/ps51 --input-dir artifacts/ps51
+
+      - name: Run safe_pull (PowerShell 7)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/safe_pull_v1.ps1 -ArtifactsDir artifacts/ps7 -Mode dry_run
+          python -m tools.verify_safe_pull_contract --artifacts-dir artifacts/ps7 --input-dir artifacts/ps7
+
+      - name: Run Foundation Gate
+        shell: pwsh
+        run: |
           python -m tools.verify_foundation --artifacts-dir artifacts
 
       - name: Upload artifacts
