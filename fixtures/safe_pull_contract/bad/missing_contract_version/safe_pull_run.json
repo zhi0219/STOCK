@@ -1,0 +1,57 @@
+{
+  "run_id": "2024-01-01T00:00:00Z-1234",
+  "ts_utc": "2024-01-01T00:00:00Z",
+  "repo_root": "/repo",
+  "cwd": "/repo",
+  "mode": "dry_run",
+  "git_path": "git",
+  "policy_flags": {
+    "allow_stash": true,
+    "include_untracked": false,
+    "require_clean": false,
+    "auto_switch_to_main": true,
+    "expected_upstream": "origin/main",
+    "allow_detached": false,
+    "lock_timeout_seconds": 900
+  },
+  "status": "PASS",
+  "reason": "ok",
+  "next": "none",
+  "phases": [
+    {
+      "phase": "precheck",
+      "status": "OK",
+      "ts_utc": "2024-01-01T00:00:00Z"
+    },
+    {
+      "phase": "lock",
+      "status": "OK",
+      "ts_utc": "2024-01-01T00:00:01Z"
+    },
+    {
+      "phase": "stash",
+      "status": "SKIP",
+      "ts_utc": "2024-01-01T00:00:02Z"
+    },
+    {
+      "phase": "fetch",
+      "status": "OK",
+      "ts_utc": "2024-01-01T00:00:03Z"
+    },
+    {
+      "phase": "pull",
+      "status": "SKIP",
+      "ts_utc": "2024-01-01T00:00:04Z"
+    },
+    {
+      "phase": "postcheck",
+      "status": "OK",
+      "ts_utc": "2024-01-01T00:00:05Z"
+    },
+    {
+      "phase": "summary",
+      "status": "PASS",
+      "ts_utc": "2024-01-01T00:00:06Z"
+    }
+  ]
+}

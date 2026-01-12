@@ -10,5 +10,6 @@
   "artifacts_dir": "artifacts/safe_pull",
   "evidence_artifact": "artifacts/safe_pull/safe_pull_exception.txt",
   "warnings": [],
-  "ts_utc": "2024-01-01T00:00:00Z"
+  "ts_utc": "2024-01-01T00:00:00Z",
+  "contract_version": 2
 }
