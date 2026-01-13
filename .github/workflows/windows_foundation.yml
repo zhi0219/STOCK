@@ -75,7 +75,23 @@ jobs:
             stderr_path = $stderrPath
           }
           $invocation | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $safePullDir "safe_pull_invocation.json") -Encoding utf8
-          if ($exitCode -ne 0) { throw "safe_pull_ps5_exit_code:$exitCode" }
+
+      - name: Safe pull smoke judge (Windows PowerShell 5.1)
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $safePullDir = Join-Path $PWD "artifacts\safe_pull_ps5"
+          $summaryPath = Join-Path $safePullDir "safe_pull_summary.json"
+          $markersPath = Join-Path $safePullDir "safe_pull_markers.txt"
+          $exceptionPath = Join-Path $safePullDir "safe_pull_exception.json"
+          if (-not (Test-Path -LiteralPath $summaryPath)) { throw "safe_pull_summary_missing" }
+          if (-not (Test-Path -LiteralPath $markersPath)) { throw "safe_pull_markers_missing" }
+          if (Test-Path -LiteralPath $exceptionPath) { throw "safe_pull_exception_present" }
+          $summary = Get-Content -Raw -LiteralPath $summaryPath | ConvertFrom-Json
+          if (@("PASS", "FAIL") -notcontains $summary.status) { throw "safe_pull_summary_status_invalid" }
+          if ($summary.reason -eq "internal_exception") { throw "safe_pull_internal_exception" }
+          $summaryLine = "SAFE_PULL_SMOKE_JUDGE|PASS|status=$($summary.status)|reason=$($summary.reason)|phase=$($summary.phase)|next=$($summary.next)|mode=$($summary.mode)|artifacts_dir=$($summary.artifacts_dir)"
+          Write-Host $summaryLine
 
       - name: Safe pull dry run (PowerShell 7)
         shell: pwsh
@@ -119,7 +135,23 @@ jobs:
             stderr_path = $stderrPath
           }
           $invocation | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $safePullDir "safe_pull_invocation.json") -Encoding utf8
-          if ($exitCode -ne 0) { throw "safe_pull_ps7_exit_code:$exitCode" }
+
+      - name: Safe pull smoke judge (PowerShell 7)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $safePullDir = Join-Path $PWD "artifacts\safe_pull_ps7"
+          $summaryPath = Join-Path $safePullDir "safe_pull_summary.json"
+          $markersPath = Join-Path $safePullDir "safe_pull_markers.txt"
+          $exceptionPath = Join-Path $safePullDir "safe_pull_exception.json"
+          if (-not (Test-Path -LiteralPath $summaryPath)) { throw "safe_pull_summary_missing" }
+          if (-not (Test-Path -LiteralPath $markersPath)) { throw "safe_pull_markers_missing" }
+          if (Test-Path -LiteralPath $exceptionPath) { throw "safe_pull_exception_present" }
+          $summary = Get-Content -Raw -LiteralPath $summaryPath | ConvertFrom-Json
+          if (@("PASS", "FAIL") -notcontains $summary.status) { throw "safe_pull_summary_status_invalid" }
+          if ($summary.reason -eq "internal_exception") { throw "safe_pull_internal_exception" }
+          $summaryLine = "SAFE_PULL_SMOKE_JUDGE|PASS|status=$($summary.status)|reason=$($summary.reason)|phase=$($summary.phase)|next=$($summary.next)|mode=$($summary.mode)|artifacts_dir=$($summary.artifacts_dir)"
+          Write-Host $summaryLine
 
       - name: Run Foundation Gate
         shell: pwsh
