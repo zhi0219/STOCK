@@ -29,11 +29,21 @@ jobs:
           New-Item -Force -ItemType Directory artifacts | Out-Null
           python -m tools.verify_foundation --artifacts-dir artifacts
 
+      - name: Report PowerShell Version (PS5.1)
+        shell: powershell
+        run: |
+          $PSVersionTable.PSVersion
+
+      - name: Report PowerShell Version (PS7)
+        shell: pwsh
+        run: |
+          $PSVersionTable.PSVersion
+
       - name: PowerShell Parse Guard (safe_pull)
         shell: powershell
         run: |
           if (-not (Test-Path "artifacts")) { New-Item -Force -ItemType Directory artifacts | Out-Null }
-          .\scripts\ps_parse_guard_safe_pull.ps1 -ArtifactsDir artifacts -ScriptPath scripts\safe_pull_v1.ps1
+          .\scripts\ps_parse_guard_safe_pull.ps1 -ArtifactsDir artifacts -ScriptPath scripts\safe_pull_v1.ps1 2>&1 | Tee-Object -FilePath artifacts\ps_parse_guard_safe_pull.log
 
       - name: Safe Pull ArtifactsDir Contract
         shell: pwsh

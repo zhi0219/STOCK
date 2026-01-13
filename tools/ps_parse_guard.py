@@ -32,7 +32,7 @@ def _run_pwsh_parse(script_path: Path) -> tuple[int, str, str]:
             "status = if ($errors -and $errors.Count -gt 0) { 'FAIL' } else { 'PASS' }; "
             "errors = @($errors | ForEach-Object { $_.ToString() }); "
             f"script = '{script_path.as_posix()}'; "
-            "ts_utc = (Get-Date -AsUTC).ToString('yyyy-MM-ddTHH:mm:ssZ'); "
+            "ts_utc = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ'); "
             "}; "
             "$result | ConvertTo-Json -Depth 4"
         ),

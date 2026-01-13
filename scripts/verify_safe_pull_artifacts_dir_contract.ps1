@@ -7,6 +7,10 @@ param(
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
+function Get-UtcTimestamp {
+  return [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+}
+
 function Get-RepoRelativePath {
   param(
     [string]$Root,
@@ -191,7 +195,7 @@ if ($failure) { $status = "FAIL" }
 $summary = [ordered]@{
   status = $status
   results = $results
-  ts_utc = (Get-Date -AsUTC).ToString("yyyy-MM-ddTHH:mm:ssZ")
+  ts_utc = Get-UtcTimestamp
 }
 
 $summaryPath = Join-Path $artifactsRoot "safe_pull_artifacts_dir_contract.json"
