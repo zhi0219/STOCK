@@ -231,6 +231,27 @@ function Write-TextArtifact {
   Set-Content -LiteralPath $Path -Value $Content -Encoding utf8
 }
 
+function Get-ParamTypeName {
+  param(
+    [object]$Value
+  )
+  if ($null -eq $Value) { return "null" }
+  return $Value.GetType().FullName
+}
+
+function Resolve-BoolParam {
+  param(
+    [object]$Value
+  )
+  if ($Value -is [System.Management.Automation.SwitchParameter]) {
+    return [bool]$Value
+  }
+  if ($Value -is [bool]) {
+    return $Value
+  }
+  return $null
+}
+
 function Resolve-AllowedArtifactsDir {
   param(
     [string]$RepoRoot,
@@ -433,6 +454,54 @@ try {
   $script:ArtifactsDir = [IO.Path]::GetFullPath($script:ArtifactsDir)
   Initialize-Artifacts -ArtifactsDir $script:ArtifactsDir
   $script:ArtifactsRel = Get-RepoRelativePath -RepoRoot $provisionalRoot -FullPath $script:ArtifactsDir
+
+  $paramTypes = [ordered]@{
+    dry_run = Get-ParamTypeName -Value $DryRun
+    allow_stash = Get-ParamTypeName -Value $AllowStash
+    include_untracked = Get-ParamTypeName -Value $IncludeUntracked
+    require_clean = Get-ParamTypeName -Value $RequireClean
+    auto_switch_to_main = Get-ParamTypeName -Value $AutoSwitchToMain
+    allow_detached = Get-ParamTypeName -Value $AllowDetached
+  }
+  $paramTypeLine = "SAFE_PULL_PARAM_TYPES|dry_run=$($paramTypes.dry_run)|allow_stash=$($paramTypes.allow_stash)|include_untracked=$($paramTypes.include_untracked)|require_clean=$($paramTypes.require_clean)|auto_switch_to_main=$($paramTypes.auto_switch_to_main)|allow_detached=$($paramTypes.allow_detached)"
+  Write-Marker $paramTypeLine
+
+  $invalidParams = New-Object System.Collections.Generic.List[string]
+  $resolvedDryRun = Resolve-BoolParam -Value $DryRun
+  if ($null -eq $resolvedDryRun) { $invalidParams.Add("DryRun") } else { $DryRun = $resolvedDryRun }
+  $resolvedAllowStash = Resolve-BoolParam -Value $AllowStash
+  if ($null -eq $resolvedAllowStash) { $invalidParams.Add("AllowStash") } else { $AllowStash = $resolvedAllowStash }
+  $resolvedIncludeUntracked = Resolve-BoolParam -Value $IncludeUntracked
+  if ($null -eq $resolvedIncludeUntracked) { $invalidParams.Add("IncludeUntracked") } else { $IncludeUntracked = $resolvedIncludeUntracked }
+  $resolvedRequireClean = Resolve-BoolParam -Value $RequireClean
+  if ($null -eq $resolvedRequireClean) { $invalidParams.Add("RequireClean") } else { $RequireClean = $resolvedRequireClean }
+  $resolvedAutoSwitch = Resolve-BoolParam -Value $AutoSwitchToMain
+  if ($null -eq $resolvedAutoSwitch) { $invalidParams.Add("AutoSwitchToMain") } else { $AutoSwitchToMain = $resolvedAutoSwitch }
+  $resolvedAllowDetached = Resolve-BoolParam -Value $AllowDetached
+  if ($null -eq $resolvedAllowDetached) { $invalidParams.Add("AllowDetached") } else { $AllowDetached = $resolvedAllowDetached }
+
+  if ($invalidParams.Count -gt 0) {
+    $invalidText = ($invalidParams | Sort-Object) -join ","
+    $exceptionPayload = [ordered]@{
+      run_id = $script:RunId
+      ts_utc = Get-UtcTimestamp
+      phase = "init"
+      type = "invalid_param_type"
+      message = "invalid_param_type:" + $invalidText
+      param_types = $paramTypes
+      repo_root = $provisionalRoot
+      cwd = $cwdFull
+    }
+    $exceptionPath = Join-Path $script:ArtifactsDir "safe_pull_exception.json"
+    $exceptionTextPath = Join-Path $script:ArtifactsDir "safe_pull_exception.txt"
+    Write-TextArtifact -Path $exceptionPath -Content ($exceptionPayload | ConvertTo-Json -Depth 6)
+    Write-TextArtifact -Path $exceptionTextPath -Content ($exceptionPayload | ConvertTo-Json -Depth 6)
+    $exceptionRel = Get-ArtifactPointer -FileName "safe_pull_exception.json"
+    Write-Marker ("SAFE_PULL_EXCEPTION|run_id=" + $script:RunId + "|phase=init|type=" + $exceptionPayload.type + "|message=" + $exceptionPayload.message + "|artifact=" + $exceptionRel)
+    $summary = [ordered]@{ ts_utc = $ts }
+    $next = Get-ArtifactPointer -FileName "safe_pull_exception.txt"
+    Write-SummaryAndStop -Status "FAIL" -Reason "invalid_param_type" -Next $next -SummaryPayload $summary -ExitCode 1 -Phase "init" -EvidenceArtifact $next
+  }
 
   $mode = if ($DryRun) { "dry_run" } else { "apply" }
   $script:RunPayload = [ordered]@{
