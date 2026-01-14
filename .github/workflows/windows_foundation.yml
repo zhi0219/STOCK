@@ -23,6 +23,161 @@ jobs:
           if (Test-Path "requirements.txt") { python -m pip install -r requirements.txt }
           if (Test-Path "requirements-dev.txt") { python -m pip install -r requirements-dev.txt }
 
+      - name: Prepare artifacts
+        shell: pwsh
+        run: |
+          New-Item -Force -ItemType Directory artifacts | Out-Null
+          New-Item -Force -ItemType Directory artifacts/ps51 | Out-Null
+          New-Item -Force -ItemType Directory artifacts/ps7 | Out-Null
+
+      - name: PS5.1 reference scan gate
+        shell: powershell
+        run: |
+          $repoRoot = (Get-Location).Path
+          $artifactsDir = Join-Path $repoRoot "artifacts"
+          & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repoRoot "scripts/ps51_ref_scan_gate.ps1") -RepoRoot $repoRoot -ArtifactsDir $artifactsDir
+
+      - name: PS5.1 parse-all gate
+        shell: powershell
+        run: |
+          $repoRoot = (Get-Location).Path
+          $artifactsDir = Join-Path $repoRoot "artifacts"
+          & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repoRoot "scripts/ps51_parse_all_gate.ps1") -RepoRoot $repoRoot -ArtifactsDir $artifactsDir
+
+      - name: PS5.1 safe_pull dry run
+        shell: powershell
+        continue-on-error: true
+        run: |
+          $repoRoot = (Get-Location).Path
+          $artifactsDir = Join-Path $repoRoot "artifacts/ps51/safe_pull"
+          New-Item -Force -ItemType Directory $artifactsDir | Out-Null
+          $dryRun = $true
+          $allowStash = $true
+          $includeUntracked = $false
+          $requireClean = $false
+          $autoSwitchToMain = $false
+          $allowDetached = $false
+          Write-Host ("WF_PARAM|name=DryRun|type={0}|value={1}" -f $dryRun.GetType().FullName, $dryRun)
+          Write-Host ("WF_PARAM|name=AllowStash|type={0}|value={1}" -f $allowStash.GetType().FullName, $allowStash)
+          Write-Host ("WF_PARAM|name=IncludeUntracked|type={0}|value={1}" -f $includeUntracked.GetType().FullName, $includeUntracked)
+          Write-Host ("WF_PARAM|name=RequireClean|type={0}|value={1}" -f $requireClean.GetType().FullName, $requireClean)
+          Write-Host ("WF_PARAM|name=AutoSwitchToMain|type={0}|value={1}" -f $autoSwitchToMain.GetType().FullName, $autoSwitchToMain)
+          Write-Host ("WF_PARAM|name=AllowDetached|type={0}|value={1}" -f $allowDetached.GetType().FullName, $allowDetached)
+          $logPath = Join-Path $repoRoot "artifacts/wf_ps51_run.log"
+          $args = @(
+            "-NoProfile",
+            "-ExecutionPolicy", "Bypass",
+            "-File", (Join-Path $repoRoot "scripts/safe_pull_v1.ps1"),
+            "-RepoRoot", $repoRoot,
+            "-ArtifactsDir", $artifactsDir,
+            "-DryRun:$dryRun",
+            "-AllowStash:$allowStash",
+            "-IncludeUntracked:$includeUntracked",
+            "-RequireClean:$requireClean",
+            "-AutoSwitchToMain:$autoSwitchToMain",
+            "-AllowDetached:$allowDetached"
+          )
+          & powershell @args 2>&1 | Tee-Object -FilePath $logPath
+          $exitCode = $LASTEXITCODE
+          Set-Content -LiteralPath (Join-Path $repoRoot "artifacts/wf_ps51_exit_code.txt") -Value $exitCode -Encoding utf8
+          exit $exitCode
+
+      - name: Validate PS5.1 safe_pull artifacts
+        shell: powershell
+        run: |
+          $repoRoot = (Get-Location).Path
+          $artifactsDir = Join-Path $repoRoot "artifacts/ps51/safe_pull"
+          $summaryPath = Join-Path $artifactsDir "safe_pull_summary.json"
+          $wfDir = Join-Path $repoRoot "artifacts/wf_ps51"
+          $exitPath = Join-Path $repoRoot "artifacts/wf_ps51_exit_code.txt"
+          $exitCode = 0
+          if (Test-Path -LiteralPath $exitPath) {
+            $exitCode = [int](Get-Content -Raw -LiteralPath $exitPath)
+          }
+          if (-not (Test-Path -LiteralPath $summaryPath)) {
+            New-Item -Force -ItemType Directory $wfDir | Out-Null
+            Get-ChildItem -Recurse -Force $artifactsDir | Out-File -FilePath (Join-Path $wfDir "missing_summary_dir.txt")
+            Get-ChildItem -Recurse -Force $repoRoot | Select-Object -First 200 | Out-File -FilePath (Join-Path $wfDir "repo_listing.txt")
+            Write-Host ("WF_SAFE_PULL_SUMMARY_MISSING|path={0}" -f $summaryPath)
+            exit 1
+          }
+          $summary = Get-Content -Raw -LiteralPath $summaryPath
+          Write-Host ("WF_SAFE_PULL_SUMMARY|path={0}" -f $summaryPath)
+          Write-Host $summary
+          if ($exitCode -ne 0) {
+            New-Item -Force -ItemType Directory $wfDir | Out-Null
+            Set-Content -LiteralPath (Join-Path $wfDir "exit_code.txt") -Value $exitCode -Encoding utf8
+            Write-Host ("WF_SAFE_PULL_EXIT_NONZERO|exit_code={0}" -f $exitCode)
+            exit 1
+          }
+
+      - name: PS7 safe_pull dry run
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $repoRoot = (Get-Location).Path
+          $artifactsDir = Join-Path $repoRoot "artifacts/ps7/safe_pull"
+          New-Item -Force -ItemType Directory $artifactsDir | Out-Null
+          $dryRun = $true
+          $allowStash = $true
+          $includeUntracked = $false
+          $requireClean = $false
+          $autoSwitchToMain = $false
+          $allowDetached = $false
+          Write-Host ("WF_PARAM|name=DryRun|type={0}|value={1}" -f $dryRun.GetType().FullName, $dryRun)
+          Write-Host ("WF_PARAM|name=AllowStash|type={0}|value={1}" -f $allowStash.GetType().FullName, $allowStash)
+          Write-Host ("WF_PARAM|name=IncludeUntracked|type={0}|value={1}" -f $includeUntracked.GetType().FullName, $includeUntracked)
+          Write-Host ("WF_PARAM|name=RequireClean|type={0}|value={1}" -f $requireClean.GetType().FullName, $requireClean)
+          Write-Host ("WF_PARAM|name=AutoSwitchToMain|type={0}|value={1}" -f $autoSwitchToMain.GetType().FullName, $autoSwitchToMain)
+          Write-Host ("WF_PARAM|name=AllowDetached|type={0}|value={1}" -f $allowDetached.GetType().FullName, $allowDetached)
+          $logPath = Join-Path $repoRoot "artifacts/wf_ps7_run.log"
+          $args = @(
+            "-NoProfile",
+            "-ExecutionPolicy", "Bypass",
+            "-File", (Join-Path $repoRoot "scripts/safe_pull_v1.ps1"),
+            "-RepoRoot", $repoRoot,
+            "-ArtifactsDir", $artifactsDir,
+            "-DryRun:$dryRun",
+            "-AllowStash:$allowStash",
+            "-IncludeUntracked:$includeUntracked",
+            "-RequireClean:$requireClean",
+            "-AutoSwitchToMain:$autoSwitchToMain",
+            "-AllowDetached:$allowDetached"
+          )
+          & pwsh @args 2>&1 | Tee-Object -FilePath $logPath
+          $exitCode = $LASTEXITCODE
+          Set-Content -LiteralPath (Join-Path $repoRoot "artifacts/wf_ps7_exit_code.txt") -Value $exitCode -Encoding utf8
+          exit $exitCode
+
+      - name: Validate PS7 safe_pull artifacts
+        shell: pwsh
+        run: |
+          $repoRoot = (Get-Location).Path
+          $artifactsDir = Join-Path $repoRoot "artifacts/ps7/safe_pull"
+          $summaryPath = Join-Path $artifactsDir "safe_pull_summary.json"
+          $wfDir = Join-Path $repoRoot "artifacts/wf_ps7"
+          $exitPath = Join-Path $repoRoot "artifacts/wf_ps7_exit_code.txt"
+          $exitCode = 0
+          if (Test-Path -LiteralPath $exitPath) {
+            $exitCode = [int](Get-Content -Raw -LiteralPath $exitPath)
+          }
+          if (-not (Test-Path -LiteralPath $summaryPath)) {
+            New-Item -Force -ItemType Directory $wfDir | Out-Null
+            Get-ChildItem -Recurse -Force $artifactsDir | Out-File -FilePath (Join-Path $wfDir "missing_summary_dir.txt")
+            Get-ChildItem -Recurse -Force $repoRoot | Select-Object -First 200 | Out-File -FilePath (Join-Path $wfDir "repo_listing.txt")
+            Write-Host ("WF_SAFE_PULL_SUMMARY_MISSING|path={0}" -f $summaryPath)
+            exit 1
+          }
+          $summary = Get-Content -Raw -LiteralPath $summaryPath
+          Write-Host ("WF_SAFE_PULL_SUMMARY|path={0}" -f $summaryPath)
+          Write-Host $summary
+          if ($exitCode -ne 0) {
+            New-Item -Force -ItemType Directory $wfDir | Out-Null
+            Set-Content -LiteralPath (Join-Path $wfDir "exit_code.txt") -Value $exitCode -Encoding utf8
+            Write-Host ("WF_SAFE_PULL_EXIT_NONZERO|exit_code={0}" -f $exitCode)
+            exit 1
+          }
+
       - name: Run Foundation Gate
         shell: pwsh
         run: |
