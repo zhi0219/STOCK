@@ -37,14 +37,15 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = "Stop"
-          $safePullDir = Join-Path $PWD "artifacts\safe_pull_ps5"
+          $safePullDir = Join-Path $PWD "artifacts\ps51"
           New-Item -Force -ItemType Directory $safePullDir | Out-Null
+          Write-Host ("SAFE_PULL_ARTIFACTS_DIR|ps=5.1|dir=" + $safePullDir)
           $dry = $true
           $dryLine = "WF_DRYRUN_TYPE|$($dry.GetType().FullName)|value=$dry"
           Write-Host $dryLine
           Set-Content -LiteralPath (Join-Path $safePullDir "wf_dryrun_type.txt") -Value $dryLine -Encoding utf8
-          $stdoutPath = Join-Path $safePullDir "safe_pull_invocation_out.txt"
-          $stderrPath = Join-Path $safePullDir "safe_pull_invocation_err.txt"
+          $stdoutPath = Join-Path $safePullDir "safe_pull_invocation_stdout.txt"
+          $stderrPath = Join-Path $safePullDir "safe_pull_invocation_stderr.txt"
           Set-Content -LiteralPath $stdoutPath -Value "" -Encoding utf8
           Set-Content -LiteralPath $stderrPath -Value "" -Encoding utf8
           $safePullScript = Join-Path $PWD "scripts\safe_pull_v1.ps1"
@@ -80,31 +81,23 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = "Stop"
-          $safePullDir = Join-Path $PWD "artifacts\safe_pull_ps5"
-          $summaryPath = Join-Path $safePullDir "safe_pull_summary.json"
-          $markersPath = Join-Path $safePullDir "safe_pull_markers.txt"
-          $exceptionPath = Join-Path $safePullDir "safe_pull_exception.json"
-          if (-not (Test-Path -LiteralPath $summaryPath)) { throw "safe_pull_summary_missing" }
-          if (-not (Test-Path -LiteralPath $markersPath)) { throw "safe_pull_markers_missing" }
-          if (Test-Path -LiteralPath $exceptionPath) { throw "safe_pull_exception_present" }
-          $summary = Get-Content -Raw -LiteralPath $summaryPath | ConvertFrom-Json
-          if (@("PASS", "FAIL") -notcontains $summary.status) { throw "safe_pull_summary_status_invalid" }
-          if ($summary.reason -eq "internal_exception") { throw "safe_pull_internal_exception" }
-          $summaryLine = "SAFE_PULL_SMOKE_JUDGE|PASS|status=$($summary.status)|reason=$($summary.reason)|phase=$($summary.phase)|next=$($summary.next)|mode=$($summary.mode)|artifacts_dir=$($summary.artifacts_dir)"
-          Write-Host $summaryLine
+          $safePullDir = Join-Path $PWD "artifacts\ps51"
+          $judgeScript = Join-Path $PWD "scripts\safe_pull_smoke_judge.ps1"
+          & $judgeScript -RepoRoot $PWD -ArtifactsDir $safePullDir
 
       - name: Safe pull dry run (PowerShell 7)
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $safePullDir = Join-Path $PWD "artifacts\safe_pull_ps7"
+          $safePullDir = Join-Path $PWD "artifacts\ps7"
           New-Item -Force -ItemType Directory $safePullDir | Out-Null
+          Write-Host ("SAFE_PULL_ARTIFACTS_DIR|ps=7|dir=" + $safePullDir)
           $dry = $true
           $dryLine = "WF_DRYRUN_TYPE|$($dry.GetType().FullName)|value=$dry"
           Write-Host $dryLine
           Set-Content -LiteralPath (Join-Path $safePullDir "wf_dryrun_type.txt") -Value $dryLine -Encoding utf8
-          $stdoutPath = Join-Path $safePullDir "safe_pull_invocation_out.txt"
-          $stderrPath = Join-Path $safePullDir "safe_pull_invocation_err.txt"
+          $stdoutPath = Join-Path $safePullDir "safe_pull_invocation_stdout.txt"
+          $stderrPath = Join-Path $safePullDir "safe_pull_invocation_stderr.txt"
           Set-Content -LiteralPath $stdoutPath -Value "" -Encoding utf8
           Set-Content -LiteralPath $stderrPath -Value "" -Encoding utf8
           $safePullScript = Join-Path $PWD "scripts\safe_pull_v1.ps1"
@@ -140,18 +133,9 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $safePullDir = Join-Path $PWD "artifacts\safe_pull_ps7"
-          $summaryPath = Join-Path $safePullDir "safe_pull_summary.json"
-          $markersPath = Join-Path $safePullDir "safe_pull_markers.txt"
-          $exceptionPath = Join-Path $safePullDir "safe_pull_exception.json"
-          if (-not (Test-Path -LiteralPath $summaryPath)) { throw "safe_pull_summary_missing" }
-          if (-not (Test-Path -LiteralPath $markersPath)) { throw "safe_pull_markers_missing" }
-          if (Test-Path -LiteralPath $exceptionPath) { throw "safe_pull_exception_present" }
-          $summary = Get-Content -Raw -LiteralPath $summaryPath | ConvertFrom-Json
-          if (@("PASS", "FAIL") -notcontains $summary.status) { throw "safe_pull_summary_status_invalid" }
-          if ($summary.reason -eq "internal_exception") { throw "safe_pull_internal_exception" }
-          $summaryLine = "SAFE_PULL_SMOKE_JUDGE|PASS|status=$($summary.status)|reason=$($summary.reason)|phase=$($summary.phase)|next=$($summary.next)|mode=$($summary.mode)|artifacts_dir=$($summary.artifacts_dir)"
-          Write-Host $summaryLine
+          $safePullDir = Join-Path $PWD "artifacts\ps7"
+          $judgeScript = Join-Path $PWD "scripts\safe_pull_smoke_judge.ps1"
+          & $judgeScript -RepoRoot $PWD -ArtifactsDir $safePullDir
 
       - name: Run Foundation Gate
         shell: pwsh
