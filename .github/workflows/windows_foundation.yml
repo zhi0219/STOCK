@@ -33,6 +33,16 @@ jobs:
             throw "safe_pull_ps51_parse_failed"
           }
 
+      - name: PS5.1 parse check (safe_pull smoke judge)
+        shell: powershell
+        run: |
+          $parseErrors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD "scripts\safe_pull_smoke_judge.ps1"), [ref]$null, [ref]$parseErrors) | Out-Null
+          if ($parseErrors.Count -gt 0) {
+            $parseErrors | ForEach-Object { Write-Host $_.Message }
+            throw "safe_pull_smoke_judge_ps51_parse_failed"
+          }
+
       - name: Safe pull dry run (Windows PowerShell 5.1)
         shell: powershell
         run: |

@@ -17,6 +17,13 @@ function Get-JsonSafe {
   }
 }
 
+function As-List {
+  param(
+    [object]$Value
+  )
+  return @($Value)
+}
+
 function Get-ArtifactPaths {
   param(
     [string]$ArtifactsDir
@@ -82,10 +89,12 @@ $exceptionExists = Test-Path -LiteralPath $exceptionPath
 if (-not $summaryExists) {
   $artifactRoot = Join-Path $RepoRoot "artifacts"
   $foundSummaries = Find-Artifacts -RootDir $artifactRoot -FileName "safe_pull_summary.json"
-  $foundSummaryText = if ($foundSummaries.Count -gt 0) { ($foundSummaries -join ";") } else { "none" }
+  $foundSummariesList = As-List $foundSummaries
+  $foundSummaryText = if ($foundSummariesList.Count -gt 0) { ($foundSummariesList -join ";") } else { "none" }
   $foundExceptions = Find-Artifacts -RootDir $artifactRoot -FileName "safe_pull_exception.json"
-  if ($foundExceptions.Count -gt 0) {
-    foreach ($path in $foundExceptions) {
+  $foundExceptionsList = As-List $foundExceptions
+  if ($foundExceptionsList.Count -gt 0) {
+    foreach ($path in $foundExceptionsList) {
       $payload = Get-JsonSafe -Path $path
       if ($payload) {
         Write-Host ("SAFE_PULL_SMOKE_EXCEPTION|path=" + $path + "|type=" + $payload.type + "|message=" + $payload.message + "|phase=" + $payload.phase)
@@ -95,7 +104,8 @@ if (-not $summaryExists) {
     }
   }
   $dirListing = List-Directory -Path $artifactsFull
-  $dirText = if ($dirListing.Count -gt 0) { ($dirListing -join ";") } else { "empty" }
+  $dirListingList = As-List $dirListing
+  $dirText = if ($dirListingList.Count -gt 0) { ($dirListingList -join ";") } else { "empty" }
   Write-Host ("SAFE_PULL_SMOKE_DIR_LIST|artifacts_dir=" + $artifactsFull + "|entries=" + $dirText)
   throw ("safe_pull_summary_missing|artifacts_dir=" + $artifactsFull + "|found=" + $foundSummaryText)
 }
