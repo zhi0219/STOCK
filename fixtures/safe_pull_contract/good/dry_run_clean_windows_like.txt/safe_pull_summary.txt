@@ -1,0 +1,1 @@
+SAFE_PULL_SUMMARY|status=PASS|reason=ok|phase=summary|next=none|run_id=2024-01-01T00:00:00Z-456|mode=dry_run|notes=fetch/pull_skipped|repo=/workspace/STOCK|evidence_dir=/workspace/STOCK/artifacts|head=abc123|origin_main=def456|ts_utc=2024-01-01T00:00:00Z

@@ -15,7 +15,7 @@ class SafePullContractTests(unittest.TestCase):
         content = (Path("scripts") / "safe_pull_v1.ps1").read_text(
             encoding="utf-8", errors="replace"
         )
-        self.assertIn("git status --porcelain", content)
+        self.assertIn("status --porcelain", content)
         self.assertIn("ls-files -u", content)
         for state_marker in [
             "MERGE_HEAD",
@@ -53,6 +53,19 @@ class SafePullContractTests(unittest.TestCase):
         self.assertIn("[string]::Concat($stdoutText, $stderrText).Trim()", content)
         self.assertIn('if ($null -eq $stdoutText) { $stdoutText = "" }', content)
         self.assertIn('if ($null -eq $stderrText) { $stderrText = "" }', content)
+
+    def test_safe_pull_stderr_artifacts_present(self) -> None:
+        fixture_dir = Path("fixtures") / "safe_pull_contract" / "good"
+        summary_txt = fixture_dir / "safe_pull_summary.txt"
+        self.assertTrue(summary_txt.exists())
+        err_files = sorted(fixture_dir.glob("git_*.err.txt"))
+        out_files = sorted(fixture_dir.glob("git_*.out.txt"))
+        self.assertTrue(err_files)
+        self.assertTrue(out_files)
+        err_payload = "\n".join(
+            path.read_text(encoding="utf-8", errors="replace") for path in err_files
+        )
+        self.assertIn("From https://", err_payload)
 
 
 if __name__ == "__main__":

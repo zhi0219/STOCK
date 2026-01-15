@@ -1,0 +1,3 @@
+From https://example.com/stock.git
+ * [new branch]      main       -> origin/main
+
