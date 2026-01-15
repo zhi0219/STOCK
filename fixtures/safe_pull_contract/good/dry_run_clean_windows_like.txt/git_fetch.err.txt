@@ -1,0 +1,2 @@
+From https://example.com/stock.git
+

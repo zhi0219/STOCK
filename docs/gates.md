@@ -34,6 +34,10 @@ Each gate must emit PASS/FAIL semantics and fail-closed by default.
 7) **verify_safe_pull_contract** (`python -m tools.verify_safe_pull_contract --artifacts-dir artifacts --input-dir fixtures/safe_pull_contract/good`)
    - PASS: safe pull artifacts contract parsed successfully.
    - FAIL: required markers or artifacts missing, or invariant checks failed.
+   - safe_pull stderr-proof contract:
+     - `safe_pull_summary.txt` first line uses `SAFE_PULL_SUMMARY|...` and includes `repo=`, `evidence_dir=`, `head=`, `origin_main=`, `ts_utc=`.
+     - `git_{step}.out.txt` and `git_{step}.err.txt` always exist for `status_porcelain`, `fetch`, `checkout_main`, `pull_ff_only`, `rev_parse_head`, `rev_parse_origin_main`.
+     - stderr is evidence only; example artifacts: `artifacts/example_safe_pull/safe_pull_summary.txt` and `artifacts/example_safe_pull/git_fetch.err.txt` (contains `From https://` while the run remains PASS).
 8) **verify_write_allowlist_contract** (`python -m tools.verify_write_allowlist_contract --artifacts-dir artifacts`)
    - PASS: daily scripts only write under artifacts.
    - FAIL: detected write outside allowlist.
