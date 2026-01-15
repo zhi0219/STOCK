@@ -15,7 +15,7 @@ class SafePullContractTests(unittest.TestCase):
         content = (Path("scripts") / "safe_pull_v1.ps1").read_text(
             encoding="utf-8", errors="replace"
         )
-        self.assertIn("git status --porcelain", content)
+        self.assertIn("status --porcelain", content)
         self.assertIn("ls-files -u", content)
         for state_marker in [
             "MERGE_HEAD",
@@ -42,7 +42,7 @@ class SafePullContractTests(unittest.TestCase):
         content = (Path("scripts") / "safe_pull_v1.ps1").read_text(
             encoding="utf-8", errors="replace"
         )
-        self.assertIn("[bool]$DryRun = $true", content)
+        self.assertIn("[ValidateSet('dry_run','apply')] [string]$Mode = \"dry_run\"", content)
         self.assertIn("dirty_worktree_dry_run", content)
 
     def test_safe_pull_run_git_null_safe(self) -> None:
@@ -53,6 +53,15 @@ class SafePullContractTests(unittest.TestCase):
         self.assertIn("[string]::Concat($stdoutText, $stderrText).Trim()", content)
         self.assertIn('if ($null -eq $stdoutText) { $stdoutText = "" }', content)
         self.assertIn('if ($null -eq $stderrText) { $stderrText = "" }', content)
+
+    def test_safe_pull_ordered_payload_mutations(self) -> None:
+        content = (Path("scripts") / "safe_pull_v1.ps1").read_text(
+            encoding="utf-8", errors="replace"
+        )
+        self.assertNotIn("$script:RunPayload.", content)
+        self.assertIn('$script:RunPayload["phases"]', content)
+        self.assertIn('$SummaryPayload["status"]', content)
+        self.assertIn('$SummaryPayload["reason"]', content)
 
 
 if __name__ == "__main__":

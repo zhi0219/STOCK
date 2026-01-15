@@ -29,6 +29,18 @@ jobs:
           New-Item -Force -ItemType Directory artifacts | Out-Null
           python -m tools.verify_foundation --artifacts-dir artifacts
 
+      - name: Run safe_pull (PowerShell 5.1)
+        shell: pwsh
+        run: |
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/safe_pull_v1.ps1 -Mode dry_run -ArtifactsDir artifacts/ps51
+          python -m tools.verify_safe_pull_contract --artifacts-dir artifacts/ps51
+
+      - name: Run safe_pull (PowerShell 7)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File scripts/safe_pull_v1.ps1 -Mode dry_run -ArtifactsDir artifacts/ps7
+          python -m tools.verify_safe_pull_contract --artifacts-dir artifacts/ps7
+
       - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v4
