@@ -114,10 +114,22 @@ Stable Windows entrypoint for daily sync + health checks.
 
 ## Foundation Gate (P0)
 One-shot, fail-closed aggregator gate used by CI and UI.
-- Runs: docs_contract, pr_template_contract, defensive_redteam, windows_smoke, import-smoke (tools.ui_app)
-- Outputs: artifacts/foundation_summary.json + per-step logs under artifacts/
-- Rule: unknown => FAIL with an artifacts path to inspect
-- Windows note: zoneinfo relies on tzdata; install requirements.txt to avoid timezone failures.
+- Gate: `python -m tools.verify_foundation --artifacts-dir artifacts`
+- Artifacts (always written):
+  - `artifacts/foundation_summary.json`
+  - `artifacts/foundation_markers.txt`
+  - `artifacts/foundation_exception.json` (only on unexpected exceptions)
+- Summary schema (top-level keys):
+  - `ts_utc`, `cmd`, `artifacts_dir`, `summary_status`, `degraded`, `failed`, `results`, `stdout_summary_line`
+  - `exception` (optional, only on unexpected exceptions)
+- Result entries:
+  - `name`, `status`, `degraded`, `detail` (optional)
+- Output markers (stdout + `foundation_markers.txt`):
+  - `FOUNDATION_START|ts_utc=...|artifacts_dir=...`
+  - `FOUNDATION_GATE|name=...|status=...|degraded=0/1`
+  - `FOUNDATION_SUMMARY|status=PASS/FAIL|degraded=0/1|failed=0/1`
+  - `FOUNDATION_END|exit_code=0/1|next=...`
+- Rule: unknown/exception => FAIL with artifacts for inspection.
 
 ## Edits Contract Gate (P0)
 Validates strict JSON-only edits outputs.
