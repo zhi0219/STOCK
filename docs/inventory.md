@@ -266,8 +266,8 @@ Version: v1
   - markers_expected: IMPORT_END, IMPORT_START, IMPORT_SUMMARY
   - artifacts_expected: artifacts/import_contract_result.json, artifacts/import_contract_traceback.txt
 - **tools.verify_foundation**: `python -m tools.verify_foundation --artifacts-dir artifacts`
-  - markers_expected: FOUNDATION_SUMMARY
-  - artifacts_expected: none
+  - markers_expected: FOUNDATION_END, FOUNDATION_START, FOUNDATION_SUMMARY
+  - artifacts_expected: artifacts/foundation_exception.json, artifacts/foundation_markers.txt, artifacts/foundation_summary.json
 - **tools.verify_pr36_gate**: `python3 tools/verify_pr36_gate.py (if present)`
   - markers_expected: none
   - artifacts_expected: none
@@ -293,6 +293,9 @@ Version: v1
 - `artifacts/execution_model_runs` (produced_by: tools/verify_execution_model.py)
 - `artifacts/experiment_ledger.jsonl` (produced_by: tools/experiment_ledger.py, tools/verify_consistency.py, tools/verify_multiple_testing_control.py)
 - `artifacts/experiment_ledger_summary.json` (produced_by: tools/verify_consistency.py, tools/verify_multiple_testing_control.py)
+- `artifacts/foundation_exception.json` (produced_by: tools/verify_foundation.py)
+- `artifacts/foundation_markers.txt` (produced_by: tools/verify_foundation.py)
+- `artifacts/foundation_summary.json` (produced_by: tools/verify_foundation.py)
 - `artifacts/gates.log` (produced_by: scripts/ci_gates.sh, tools/action_center_report.py)
 - `artifacts/import_contract_result.json` (produced_by: scripts/ci_gates.sh, tools/doctor_report.py, tools/verify_import_contract.py)
 - `artifacts/import_contract_traceback.txt` (produced_by: scripts/ci_gates.sh, tools/verify_import_contract.py)
@@ -879,7 +882,7 @@ Version: v1
   - files: tools/verify_foundation.py
   - commands: python -m tools.verify_foundation --help
   - gates: tools.verify_foundation
-  - artifacts: none
+  - artifacts: artifacts/foundation_exception.json, artifacts/foundation_markers.txt, artifacts/foundation_summary.json
 - **verify_import_contract**
   - files: tools/verify_import_contract.py
   - commands: python -m tools.verify_import_contract --help
