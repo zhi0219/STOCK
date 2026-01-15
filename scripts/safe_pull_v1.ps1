@@ -37,6 +37,7 @@ $script:RunPayload = [ordered]@{}
 $script:RunPhases = New-Object System.Collections.Generic.List[object]
 $script:PhaseSeen = @{}
 $script:CurrentPhase = "init"
+$script:ArtifactsDirRejectReason = ""
 $script:StepEmitted = [ordered]@{
   precheck = $false
   lock = $false
@@ -88,6 +89,26 @@ function Get-ArtifactPointer {
     return $FileName
   }
   return (Join-Path $script:ArtifactsRel $FileName)
+}
+
+function Write-ArtifactsDirRejection {
+  param(
+    [string]$Requested,
+    [string]$Resolved,
+    [string]$Reason,
+    [string]$RepoRoot
+  )
+  $detailPath = Join-Path $script:ArtifactsDir "artifacts_dir_rejected.txt"
+  $detailLines = @(
+    "requested=$Requested",
+    "resolved=$Resolved",
+    "reason=$Reason",
+    "repo_root=$RepoRoot"
+  )
+  Write-TextArtifact -Path $detailPath -Content ($detailLines -join "`n")
+  $summary = [ordered]@{ ts_utc = Get-UtcTimestamp }
+  $next = Get-ArtifactPointer -FileName "artifacts_dir_rejected.txt"
+  Write-SummaryAndStop -Status "FAIL" -Reason "artifacts_dir_rejected" -Next $next -SummaryPayload $summary -ExitCode 1 -Phase "init" -EvidenceArtifact $next
 }
 
 function Emit-RunStart {
@@ -428,6 +449,7 @@ try {
   try {
     $script:ArtifactsDir = Resolve-AllowedArtifactsDir -RepoRoot $provisionalRoot -ArtifactsDir $ArtifactsDir
   } catch {
+    $script:ArtifactsDirRejectReason = $_.Exception.Message
     $script:ArtifactsDir = Join-Path $provisionalRoot "artifacts"
   }
   $script:ArtifactsDir = [IO.Path]::GetFullPath($script:ArtifactsDir)
@@ -456,6 +478,10 @@ try {
     next = ""
     phases = @()
   }
+  if (-not [string]::IsNullOrWhiteSpace($script:ArtifactsDirRejectReason)) {
+    Write-ArtifactsDirRejection -Requested $ArtifactsDir -Resolved $script:ArtifactsDir -Reason $script:ArtifactsDirRejectReason -RepoRoot $provisionalRoot
+  }
+
   Emit-RunStart -RepoRoot $provisionalRoot -Cwd $cwdFull -Mode $mode -ArtifactsDir $script:ArtifactsRel
   Write-RunArtifact
   $script:DecisionTrace.inputs = [ordered]@{
@@ -518,9 +544,8 @@ try {
   try {
     $script:ArtifactsDir = Resolve-AllowedArtifactsDir -RepoRoot $script:RepoRoot -ArtifactsDir $ArtifactsDir
   } catch {
-    $summary = [ordered]@{ ts_utc = $ts }
-    $next = Get-ArtifactPointer -FileName "safe_pull_run.json"
-    Write-SummaryAndStop -Status "FAIL" -Reason "artifacts_dir_outside_allowlist" -Next $next -SummaryPayload $summary -ExitCode 1 -Phase "init" -EvidenceArtifact $next
+    $script:ArtifactsDirRejectReason = $_.Exception.Message
+    Write-ArtifactsDirRejection -Requested $ArtifactsDir -Resolved $script:ArtifactsDir -Reason $script:ArtifactsDirRejectReason -RepoRoot $script:RepoRoot
   }
   $script:ArtifactsDir = [IO.Path]::GetFullPath($script:ArtifactsDir)
   Initialize-Artifacts -ArtifactsDir $script:ArtifactsDir
@@ -596,8 +621,8 @@ try {
     Write-SummaryAndStop -Status "FAIL" -Reason "unmerged_paths" -Next $next -SummaryPayload $summary -ExitCode 1 -Phase "precheck" -EvidenceArtifact $next
   }
 
-  $blockedStates = Resolve-GitStateBlocks -RepoRoot $script:RepoRoot
-  if ($blockedStates.Count -gt 0) {
+  $blockedStates = @(Resolve-GitStateBlocks -RepoRoot $script:RepoRoot)
+  if (@($blockedStates).Count -gt 0) {
     $blockedText = ($blockedStates | Sort-Object) -join ","
     $summary = [ordered]@{ ts_utc = $ts }
     $next = Get-ArtifactPointer -FileName "safe_pull_run.json"
@@ -608,8 +633,11 @@ try {
   if (-not [string]::IsNullOrWhiteSpace($statusBefore.Stdout)) {
     $porcelainLines = $statusBefore.Stdout.Split("`n") | ForEach-Object { $_.TrimEnd() } | Where-Object { $_ }
   }
-  $untrackedLines = $porcelainLines | Where-Object { $_ -like "??*" }
-  $trackedLines = $porcelainLines | Where-Object { $_ -notlike "??*" }
+  $untrackedLines = @($porcelainLines | Where-Object { $_ -match '^\?\?' })
+  $trackedLines = @($porcelainLines | Where-Object { $_ -notmatch '^\?\?' })
+  $porcelainCount = @($porcelainLines).Count
+  $trackedCount = @($trackedLines).Count
+  $untrackedCount = @($untrackedLines).Count
 
   $upstream = ""
   $upstreamStatus = "NO_UPSTREAM"
@@ -645,7 +673,7 @@ try {
 
   if ($ahead -gt 0 -and $behind -gt 0) { $diverged = 1 }
 
-  Emit-PrecheckMarker -Branch $branchName -Detached $detached -Upstream $upstream -UpstreamStatus $upstreamStatus -Porcelain $porcelainLines.Count -Untracked $untrackedLines.Count -Ahead $ahead -Behind $behind -Diverged $diverged
+  Emit-PrecheckMarker -Branch $branchName -Detached $detached -Upstream $upstream -UpstreamStatus $upstreamStatus -Porcelain $porcelainCount -Untracked $untrackedCount -Ahead $ahead -Behind $behind -Diverged $diverged
 
   if ($diverged -eq 1) {
     $summary = [ordered]@{ ts_utc = $ts }
@@ -653,7 +681,7 @@ try {
     Write-SummaryAndStop -Status "FAIL" -Reason "diverged_branch" -Next $next -SummaryPayload $summary -ExitCode 1 -Phase "precheck" -EvidenceArtifact $next
   }
 
-  if ($untrackedLines.Count -gt 0) {
+  if ($untrackedCount -gt 0) {
     $untrackedPath = Join-Path $script:ArtifactsDir "git_untracked_before.txt"
     $untrackedSample = $untrackedLines | Select-Object -First 200
     Write-TextArtifact -Path $untrackedPath -Content ($untrackedSample -join "`n")
@@ -664,7 +692,7 @@ try {
     }
   }
 
-  if ($trackedLines.Count -gt 0) {
+  if ($trackedCount -gt 0) {
     if ($RequireClean) {
       $summary = [ordered]@{ ts_utc = $ts }
       $next = Get-ArtifactPointer -FileName "git_porcelain_before.txt"
@@ -673,7 +701,8 @@ try {
     if ($DryRun) {
       $summary = [ordered]@{ ts_utc = $ts }
       $next = Get-ArtifactPointer -FileName "git_porcelain_before.txt"
-      Write-SummaryAndStop -Status "FAIL" -Reason "dirty_worktree_dry_run" -Next $next -SummaryPayload $summary -ExitCode 1 -Phase "precheck" -EvidenceArtifact $next
+      $reason = "dirty_worktree_dry_run:tracked=$trackedCount:untracked=$untrackedCount"
+      Write-SummaryAndStop -Status "FAIL" -Reason $reason -Next $next -SummaryPayload $summary -ExitCode 1 -Phase "precheck" -EvidenceArtifact $next
     }
     if (-not $AllowStash) {
       $summary = [ordered]@{ ts_utc = $ts }
@@ -691,8 +720,8 @@ try {
     ahead = $ahead
     behind = $behind
     diverged = $diverged
-    porcelain = $porcelainLines.Count
-    untracked = $untrackedLines.Count
+    porcelain = $porcelainCount
+    untracked = $untrackedCount
   }
   Add-RunPhase -Phase "precheck" -Status "OK"
 
@@ -759,7 +788,7 @@ try {
   $stashRef = ""
   $stashMessage = ""
   $stashIncludesUntracked = 0
-  if ($trackedLines.Count -gt 0) {
+  if ($trackedCount -gt 0) {
     $stashMessage = "safe_pull_pre_" + $ts
     $stashArgs = @("stash", "push", "-m", $stashMessage)
     if ($IncludeUntracked) {
@@ -852,6 +881,7 @@ try {
   if (-not [string]::IsNullOrWhiteSpace($statusAfter.Stdout)) {
     $postLines = $statusAfter.Stdout.Split("`n") | ForEach-Object { $_.TrimEnd() } | Where-Object { $_ }
   }
+  $postLinesCount = @($postLines).Count
   $postAhead = $ahead
   $postBehind = $behind
   $postDiverged = $diverged
@@ -866,7 +896,7 @@ try {
   }
   if ($postAhead -gt 0 -and $postBehind -gt 0) { $postDiverged = 1 } else { $postDiverged = 0 }
 
-  Emit-PostcheckMarker -Porcelain $postLines.Count -Branch $branchName -Upstream $upstream -Ahead $postAhead -Behind $postBehind -Diverged $postDiverged
+  Emit-PostcheckMarker -Porcelain $postLinesCount -Branch $branchName -Upstream $upstream -Ahead $postAhead -Behind $postBehind -Diverged $postDiverged
   Add-RunPhase -Phase "postcheck" -Status "OK"
 
   if ($DryRun) {
@@ -878,7 +908,7 @@ try {
   }
 
   if (-not $DryRun) {
-    if ($postLines.Count -gt 0) {
+    if ($postLinesCount -gt 0) {
       $summary = [ordered]@{ ts_utc = $ts }
       $next = Get-ArtifactPointer -FileName "git_porcelain_after.txt"
       Write-SummaryAndStop -Status "FAIL" -Reason "dirty_worktree_after_pull" -Next $next -SummaryPayload $summary -ExitCode 1 -Phase "postcheck" -EvidenceArtifact $next
