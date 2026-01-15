@@ -1,0 +1,16 @@
+{
+  "status": "FAIL",
+  "reason": "internal_exception",
+  "phase": "init",
+  "run_id": "2024-01-01T00:00:00Z-1234",
+  "mode": "apply",
+  "next": "safe_pull/2024-01-01T00:00:00Z-1234/safe_pull_exception.txt",
+  "dry_run": false,
+  "artifacts_dir": "safe_pull/2024-01-01T00:00:00Z-1234",
+  "artifacts_dir_abs": "/repo/artifacts/safe_pull/2024-01-01T00:00:00Z-1234",
+  "evidence_artifact": "safe_pull/2024-01-01T00:00:00Z-1234/safe_pull_exception.txt",
+  "contract_version": 20250214,
+  "warnings": [],
+  "ts_utc": "2024-01-01T00:00:00Z",
+  "what_would_change_my_mind": "If CI passes ps51+ps7 and verifier PASS, accept. If artifacts write outside -ArtifactsDir, reject."
+}

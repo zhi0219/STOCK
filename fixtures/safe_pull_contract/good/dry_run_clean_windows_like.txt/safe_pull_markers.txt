@@ -1,11 +1,11 @@
-SAFE_PULL_RUN_START|run_id=2024-01-01T00:00:00Z-1234|ts_utc=2024-01-01T00:00:00Z|repo_root=/repo|cwd=/repo|mode=dry_run|artifacts_dir=artifacts/safe_pull
+SAFE_PULL_RUN_START|run_id=2024-01-01T00:00:00Z-1234|ts_utc=2024-01-01T00:00:00Z|repo_root=/repo|cwd=/repo|mode=dry_run|artifacts_dir=safe_pull/2024-01-01T00:00:00Z-1234
 SAFE_PULL_START|ts_utc=2024-01-01T00:00:00Z|repo_root=/repo|cwd=/repo|git=git|mode=dry_run
 SAFE_PULL_PRECHECK|branch=main|detached=0|upstream=origin/main|upstream_status=OK|porcelain=0|untracked=0|ahead=0|behind=0|diverged=0
-SAFE_PULL_LOCK|status=OK|path=/repo/artifacts/locks/safe_pull_v1.lock|owner=HOST|stale=0
+SAFE_PULL_LOCK|status=OK|path=/repo/artifacts/safe_pull/2024-01-01T00:00:00Z-1234/locks/safe_pull_v1.lock|owner=HOST|stale=0
 SAFE_PULL_STASH|status=SKIP|ref=|includes_untracked=0|message=clean
 SAFE_PULL_FETCH|status=OK|exit=0|stdout=out.txt|stderr=err.txt
 SAFE_PULL_PULL_FF_ONLY|status=SKIP|exit=0|stdout=|stderr=|reason=dry_run
 SAFE_PULL_POSTCHECK|porcelain=0|branch=main|upstream=origin/main|ahead=0|behind=0|diverged=0
-SAFE_PULL_SUMMARY|status=PASS|reason=ok|phase=summary|next=none|run_id=2024-01-01T00:00:00Z-1234|mode=dry_run|notes=fetch/pull_skipped|artifacts_dir=artifacts/safe_pull
+SAFE_PULL_SUMMARY|status=PASS|reason=ok|phase=summary|next=none|run_id=2024-01-01T00:00:00Z-1234|mode=dry_run|notes=fetch/pull_skipped|artifacts_dir=safe_pull/2024-01-01T00:00:00Z-1234|evidence=safe_pull/2024-01-01T00:00:00Z-1234/safe_pull_summary.json
 SAFE_PULL_RUN_END|run_id=2024-01-01T00:00:00Z-1234|status=PASS|next=none
 SAFE_PULL_END

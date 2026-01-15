@@ -7,8 +7,11 @@
   "next": "none",
   "dry_run": true,
   "notes": "fetch/pull_skipped",
-  "artifacts_dir": "artifacts/safe_pull",
-  "evidence_artifact": "artifacts/safe_pull/safe_pull_summary.json",
+  "artifacts_dir": "safe_pull/2024-01-01T00:00:00Z-1234",
+  "artifacts_dir_abs": "/repo/artifacts/safe_pull/2024-01-01T00:00:00Z-1234",
+  "evidence_artifact": "safe_pull/2024-01-01T00:00:00Z-1234/safe_pull_summary.json",
+  "contract_version": 20250214,
   "warnings": [],
+  "what_would_change_my_mind": "If CI passes ps51+ps7 and verifier PASS, accept. If artifacts write outside -ArtifactsDir, reject.",
   "ts_utc": "2024-01-01T00:00:00Z"
 }

@@ -54,6 +54,14 @@ class SafePullContractTests(unittest.TestCase):
         self.assertIn('if ($null -eq $stdoutText) { $stdoutText = "" }', content)
         self.assertIn('if ($null -eq $stderrText) { $stderrText = "" }', content)
 
+    def test_safe_pull_payloads_no_dot_assign(self) -> None:
+        content = (Path("scripts") / "safe_pull_v1.ps1").read_text(
+            encoding="utf-8", errors="replace"
+        )
+        self.assertIn("function OD-Set", content)
+        self.assertNotRegex(content, r"RunPayload\.\w+\s*=")
+        self.assertNotRegex(content, r"SummaryPayload\.\w+\s*=")
+
 
 if __name__ == "__main__":
     unittest.main()

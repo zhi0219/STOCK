@@ -37,6 +37,11 @@ REQUIRED_ARTIFACTS = [
     "safe_pull_precheck_ahead_behind.txt",
 ]
 
+ALLOWED_CONTRACT_VERSIONS = {
+    20250214: "current",
+    20250213: "previous",
+}
+
 
 def _ts_utc() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -102,6 +107,7 @@ def _validate_summary(payload: dict[str, Any]) -> list[str]:
         "phase",
         "run_id",
         "evidence_artifact",
+        "contract_version",
     ]
     errors: list[str] = []
     for key in required_keys:
@@ -109,6 +115,17 @@ def _validate_summary(payload: dict[str, Any]) -> list[str]:
             errors.append(f"summary_missing_key:{key}")
     if payload.get("status") not in {"PASS", "FAIL", "DEGRADED"}:
         errors.append("summary_invalid_status")
+    contract_version = payload.get("contract_version")
+    version_int: int | None = None
+    if contract_version is not None:
+        try:
+            version_int = int(contract_version)
+        except (TypeError, ValueError):
+            version_int = None
+    if version_int is None:
+        errors.append("summary_contract_version_invalid")
+    elif version_int not in ALLOWED_CONTRACT_VERSIONS:
+        errors.append(f"summary_contract_version_unknown:{version_int}")
     return errors
 
 
@@ -146,13 +163,38 @@ def _validate_invariants(
     return errors
 
 
-def _check_contract(input_dir: Path) -> tuple[str, list[str]]:
+def _resolve_input_dir(input_dir: Path) -> tuple[Path, str, list[str]]:
     errors: list[str] = []
+    latest_path = input_dir / "safe_pull" / "_latest.txt"
+    if latest_path.exists():
+        latest_value = latest_path.read_text(encoding="utf-8", errors="replace").strip()
+        if not latest_value:
+            errors.append("layout_detected:root_with_latest")
+            errors.append("latest_file_empty")
+            return input_dir, "root_with_latest", errors
+        resolved = Path(latest_value)
+        if not resolved.exists():
+            errors.append("layout_detected:root_with_latest")
+            errors.append(f"latest_path_missing:{latest_value}")
+        return resolved, "root_with_latest", errors
+    if (input_dir / "safe_pull_markers.txt").exists():
+        return input_dir, "run_dir", errors
+    if any((input_dir / artifact).exists() for artifact in REQUIRED_ARTIFACTS):
+        return input_dir, "legacy_flat", errors
+    errors.append("layout_detected:unknown")
+    errors.append("layout_unrecognized")
+    return input_dir, "unknown", errors
+
+
+def _check_contract(input_dir: Path) -> tuple[str, list[str], str, Path]:
+    resolved_dir, layout, errors = _resolve_input_dir(input_dir)
+    if errors:
+        return "FAIL", errors, layout, resolved_dir
     for artifact in REQUIRED_ARTIFACTS:
-        if not (input_dir / artifact).exists():
+        if not (resolved_dir / artifact).exists():
             errors.append(f"missing_artifact:{artifact}")
 
-    markers_path = input_dir / "safe_pull_markers.txt"
+    markers_path = resolved_dir / "safe_pull_markers.txt"
     marker_lines = [
         line.strip()
         for line in _read_text(markers_path).splitlines()
@@ -166,7 +208,7 @@ def _check_contract(input_dir: Path) -> tuple[str, list[str]]:
         if not any(line.startswith(marker) for line in marker_lines):
             errors.append(f"missing_marker:{marker}")
 
-    summary_path = input_dir / "safe_pull_summary.json"
+    summary_path = resolved_dir / "safe_pull_summary.json"
     summary_payload: dict[str, Any] = {}
     if summary_path.exists():
         try:
@@ -177,21 +219,24 @@ def _check_contract(input_dir: Path) -> tuple[str, list[str]]:
         summary_payload = {}
 
     errors.extend(_validate_summary(summary_payload))
-    errors.extend(_validate_invariants(input_dir, summary_payload, marker_payloads))
+    errors.extend(_validate_invariants(resolved_dir, summary_payload, marker_payloads))
 
     status = "PASS" if not errors else "FAIL"
-    return status, errors
+    return status, errors, layout, resolved_dir
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     input_dir = args.input_dir if args.input_dir is not None else args.artifacts_dir
-    status, errors = _check_contract(input_dir)
+    status, errors, layout, resolved_dir = _check_contract(input_dir)
 
     payload = {
         "status": status,
         "errors": errors,
         "input_dir": input_dir.as_posix(),
+        "resolved_input_dir": resolved_dir.as_posix(),
+        "layout": layout,
+        "layout_detail": f"detected:{layout}",
         "ts_utc": _ts_utc(),
     }
 

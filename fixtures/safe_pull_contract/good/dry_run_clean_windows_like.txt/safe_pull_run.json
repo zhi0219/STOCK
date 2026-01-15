@@ -53,5 +53,8 @@
       "status": "PASS",
       "ts_utc": "2024-01-01T00:00:06Z"
     }
-  ]
+  ],
+  "artifacts_dir": "safe_pull/2024-01-01T00:00:00Z-1234",
+  "artifacts_dir_abs": "/repo/artifacts/safe_pull/2024-01-01T00:00:00Z-1234",
+  "contract_version": 20250214
 }
