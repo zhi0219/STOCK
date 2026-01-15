@@ -100,7 +100,7 @@ function Add-RunPhase {
 
 function Write-RunArtifact {
   $runPath = Join-Path $script:ArtifactsDir "safe_pull_run.json"
-  $script:RunPayload.phases = @($script:RunPhases)
+  $script:RunPayload["phases"] = @($script:RunPhases.ToArray())
   $runJson = $script:RunPayload | ConvertTo-Json -Depth 8
   Write-TextArtifact -Path $runPath -Content $runJson
 }
@@ -737,8 +737,13 @@ try {
   }
 
   $blockedStates = Resolve-GitStateBlocks -RepoRoot $script:RepoRoot
+<<<<<<< HEAD
+  if (@($blockedStates).Count -gt 0) {
+    $blockedText = ($blockedStates | Sort-Object) -join ","
+=======
   if ($blockedStates.Count -gt 0) {
     $blockedText = (@($blockedStates | Sort-Object)) -join ","
+>>>>>>> origin/main
     $summary = [ordered]@{ ts_utc = $ts }
     $next = Get-ArtifactPointer -FileName "safe_pull_run.json"
     Write-SummaryAndStop -Status "FAIL" -Reason ("git_state_present:" + $blockedText) -Next $next -SummaryPayload $summary -ExitCode 1 -Phase "precheck" -EvidenceArtifact $next
@@ -748,8 +753,13 @@ try {
   if (-not [string]::IsNullOrWhiteSpace($statusBefore.Stdout)) {
     $porcelainLines = @($statusBefore.Stdout.Split("`n") | ForEach-Object { $_.TrimEnd() } | Where-Object { $_ })
   }
+<<<<<<< HEAD
+  $untrackedLines = @($porcelainLines | Where-Object { $_ -match '^\?\?' })
+  $trackedLines = @($porcelainLines | Where-Object { $_ -notmatch '^\?\?' })
+=======
   $untrackedLines = @($porcelainLines | Where-Object { $_ -like "??*" })
   $trackedLines = @($porcelainLines | Where-Object { $_ -notlike "??*" })
+>>>>>>> origin/main
 
   $upstream = ""
   $upstreamStatus = "NO_UPSTREAM"
@@ -785,7 +795,7 @@ try {
 
   if ($ahead -gt 0 -and $behind -gt 0) { $diverged = 1 }
 
-  Emit-PrecheckMarker -Branch $branchName -Detached $detached -Upstream $upstream -UpstreamStatus $upstreamStatus -Porcelain $porcelainLines.Count -Untracked $untrackedLines.Count -Ahead $ahead -Behind $behind -Diverged $diverged
+  Emit-PrecheckMarker -Branch $branchName -Detached $detached -Upstream $upstream -UpstreamStatus $upstreamStatus -Porcelain @($porcelainLines).Count -Untracked @($untrackedLines).Count -Ahead $ahead -Behind $behind -Diverged $diverged
 
   if ($diverged -eq 1) {
     $summary = [ordered]@{ ts_utc = $ts }
@@ -793,7 +803,7 @@ try {
     Write-SummaryAndStop -Status "FAIL" -Reason "diverged_branch" -Next $next -SummaryPayload $summary -ExitCode 1 -Phase "precheck" -EvidenceArtifact $next
   }
 
-  if ($untrackedLines.Count -gt 0) {
+  if (@($untrackedLines).Count -gt 0) {
     $untrackedPath = Join-Path $script:ArtifactsDir "git_untracked_before.txt"
     $untrackedSample = @($untrackedLines | Select-Object -First 200)
     Write-TextArtifact -Path $untrackedPath -Content ($untrackedSample -join "`n")
@@ -804,7 +814,7 @@ try {
     }
   }
 
-  if ($trackedLines.Count -gt 0) {
+  if (@($trackedLines).Count -gt 0) {
     if ($RequireClean) {
       $summary = [ordered]@{ ts_utc = $ts }
       $next = Get-ArtifactPointer -FileName "git_porcelain_before.txt"
@@ -899,7 +909,7 @@ try {
   $stashRef = ""
   $stashMessage = ""
   $stashIncludesUntracked = 0
-  if ($trackedLines.Count -gt 0) {
+  if (@($trackedLines).Count -gt 0) {
     $stashMessage = "safe_pull_pre_" + $ts
     $stashArgs = @("stash", "push", "-m", $stashMessage)
     if ($IncludeUntracked) {
