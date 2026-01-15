@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
+import traceback
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
@@ -56,6 +59,38 @@ def _detect_missing_optional_deps(text: str) -> list[str]:
 def _format_missing(deps: Iterable[str]) -> str:
     parts = list(deps)
     return "missing_deps=" + ",".join(parts) if parts else ""
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _ensure_dir(path: Path) -> Path:
+    path.mkdir(parents=True, exist_ok=True)
+    return path.resolve()
+
+
+def _write_text_utf8_nobom_lf(path: Path, lines: Iterable[str]) -> None:
+    text = "\n".join(lines) + "\n"
+    with path.open("w", encoding="utf-8", newline="\n") as handle:
+        handle.write(text)
+
+
+def _write_json(path: Path, payload: dict) -> None:
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    data = json.dumps(payload, ensure_ascii=False, indent=2)
+    with tmp_path.open("w", encoding="utf-8", newline="\n") as handle:
+        handle.write(data + "\n")
+    tmp_path.replace(path)
+
+
+def _exception_payload(error: BaseException) -> dict:
+    return {
+        "ts_utc": _utc_now_iso(),
+        "type": type(error).__name__,
+        "message": str(error),
+        "traceback": "".join(traceback.format_exception(type(error), error, error.__traceback__)),
+    }
 
 
 def run_gate(script_name: str) -> GateResult:
@@ -112,7 +147,7 @@ def main(argv: list[str] | None = None) -> int:
         default="artifacts",
         help="Artifacts directory (reserved for future use).",
     )
-    parser.parse_args(argv)
+    args = parser.parse_args(argv)
 
     if configure_stdio_utf8:
         try:
@@ -120,37 +155,93 @@ def main(argv: list[str] | None = None) -> int:
         except Exception:
             pass
 
-    print("===FOUNDATION_GATES_START===")
-    results: list[GateResult] = []
-    for gate in GATES:
-        result = run_gate(gate)
-        results.append(result)
-        print(
-            "|".join(
-                part
-                for part in [
-                    f"GATE_RESULT|name={result.name}",
-                    f"status={result.status}",
-                    f"exit={result.returncode}",
-                    result.reason if result.reason else None,
-                ]
-                if part is not None
-            )
-        )
-        if result.stdout:
-            print(f"--- {result.name} stdout ---")
-            print(result.stdout.rstrip())
-        if result.stderr:
-            print(f"--- {result.name} stderr ---")
-            print(result.stderr.rstrip())
+    try:
+        artifacts_dir = _ensure_dir(Path(args.artifacts_dir))
+    except Exception as exc:
+        print(f"FOUNDATION_EVIDENCE_WRITE_FAIL|detail={exc}")
+        return 1
 
-    has_failures = any(r.status == "FAIL" for r in results)
+    ts_start = _utc_now_iso()
+    markers: list[str] = [f"FOUNDATION_START|ts_utc={ts_start}|artifacts_dir={artifacts_dir}"]
+    results: list[GateResult] = []
+    exception_info: dict | None = None
+
+    print("===FOUNDATION_GATES_START===")
+    try:
+        for gate in GATES:
+            result = run_gate(gate)
+            results.append(result)
+            markers.append(
+                f"FOUNDATION_GATE|name={result.name}|status={result.status}|degraded={int(result.degraded)}"
+            )
+            print(
+                "|".join(
+                    part
+                    for part in [
+                        f"GATE_RESULT|name={result.name}",
+                        f"status={result.status}",
+                        f"exit={result.returncode}",
+                        result.reason if result.reason else None,
+                    ]
+                    if part is not None
+                )
+            )
+            if result.stdout:
+                print(f"--- {result.name} stdout ---")
+                print(result.stdout.rstrip())
+            if result.stderr:
+                print(f"--- {result.name} stderr ---")
+                print(result.stderr.rstrip())
+    except Exception as exc:
+        exception_info = _exception_payload(exc)
+        print(f"FOUNDATION_EXCEPTION|type={exception_info['type']}")
+
+    has_failures = any(r.status == "FAIL" for r in results) or exception_info is not None
     degraded = any(r.degraded for r in results)
     summary_status = "FAIL" if has_failures else "PASS"
-    print(
+    summary_line = (
         f"FOUNDATION_SUMMARY|status={summary_status}|degraded={int(degraded)}|failed={int(has_failures)}"
     )
+    print(summary_line)
     print("===FOUNDATION_GATES_END===")
+
+    next_step = "review artifacts" if has_failures else "none"
+    markers.append(summary_line)
+    markers.append(f"FOUNDATION_END|exit_code={int(has_failures)}|next={next_step}")
+
+    summary_payload: dict = {
+        "ts_utc": ts_start,
+        "cmd": "tools.verify_foundation",
+        "artifacts_dir": str(artifacts_dir),
+        "summary_status": summary_status,
+        "degraded": int(degraded),
+        "failed": int(has_failures),
+        "results": [
+            {
+                "name": result.name,
+                "status": result.status,
+                "degraded": int(result.degraded),
+                **({"detail": result.reason} if result.reason else {}),
+            }
+            for result in results
+        ],
+        "stdout_summary_line": summary_line,
+    }
+    if exception_info is not None:
+        summary_payload["exception"] = exception_info
+
+    summary_path = artifacts_dir / "foundation_summary.json"
+    markers_path = artifacts_dir / "foundation_markers.txt"
+    exception_path = artifacts_dir / "foundation_exception.json"
+
+    try:
+        _write_json(summary_path, summary_payload)
+        _write_text_utf8_nobom_lf(markers_path, markers)
+        if exception_info is not None:
+            _write_json(exception_path, exception_info)
+    except Exception as exc:
+        print(f"FOUNDATION_EVIDENCE_WRITE_FAIL|detail={exc}")
+        return 1
 
     return 1 if has_failures else 0
 
