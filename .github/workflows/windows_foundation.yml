@@ -23,6 +23,130 @@ jobs:
           if (Test-Path "requirements.txt") { python -m pip install -r requirements.txt }
           if (Test-Path "requirements-dev.txt") { python -m pip install -r requirements-dev.txt }
 
+      - name: PS5.1 parse check (safe_pull)
+        shell: powershell
+        run: |
+          $parseErrors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD "scripts\safe_pull_v1.ps1"), [ref]$null, [ref]$parseErrors) | Out-Null
+          if ($parseErrors.Count -gt 0) {
+            $parseErrors | ForEach-Object { Write-Host $_.Message }
+            throw "safe_pull_ps51_parse_failed"
+          }
+
+      - name: PS5.1 parse check (safe_pull smoke judge)
+        shell: powershell
+        run: |
+          $parseErrors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD "scripts\safe_pull_smoke_judge.ps1"), [ref]$null, [ref]$parseErrors) | Out-Null
+          if ($parseErrors.Count -gt 0) {
+            $parseErrors | ForEach-Object { Write-Host $_.Message }
+            throw "safe_pull_smoke_judge_ps51_parse_failed"
+          }
+
+      - name: Safe pull dry run (Windows PowerShell 5.1)
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $safePullDir = Join-Path $PWD "artifacts\ps51"
+          New-Item -Force -ItemType Directory $safePullDir | Out-Null
+          Write-Host ("SAFE_PULL_ARTIFACTS_DIR|ps=5.1|dir=" + $safePullDir)
+          $dry = $true
+          $dryLine = "WF_DRYRUN_TYPE|$($dry.GetType().FullName)|value=$dry"
+          Write-Host $dryLine
+          Set-Content -LiteralPath (Join-Path $safePullDir "wf_dryrun_type.txt") -Value $dryLine -Encoding utf8
+          $stdoutPath = Join-Path $safePullDir "safe_pull_invocation_stdout.txt"
+          $stderrPath = Join-Path $safePullDir "safe_pull_invocation_stderr.txt"
+          Set-Content -LiteralPath $stdoutPath -Value "" -Encoding utf8
+          Set-Content -LiteralPath $stderrPath -Value "" -Encoding utf8
+          $safePullScript = Join-Path $PWD "scripts\safe_pull_v1.ps1"
+          $args = @(
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            $safePullScript,
+            "-ArtifactsDir",
+            $safePullDir,
+            "-DryRun:$dry",
+            "-AllowStash:$true",
+            "-IncludeUntracked:$false",
+            "-RequireClean:$false"
+          )
+          $exitCode = 1
+          try {
+            $process = Start-Process -FilePath "powershell.exe" -ArgumentList $args -NoNewWindow -Wait -PassThru -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
+            $exitCode = $process.ExitCode
+          } catch {
+            Add-Content -LiteralPath $stderrPath -Value $_.Exception.Message -Encoding utf8
+          }
+          $invocation = [ordered]@{
+            shell = "powershell.exe"
+            exit_code = $exitCode
+            stdout_path = $stdoutPath
+            stderr_path = $stderrPath
+          }
+          $invocation | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $safePullDir "safe_pull_invocation.json") -Encoding utf8
+
+      - name: Safe pull smoke judge (Windows PowerShell 5.1)
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $safePullDir = Join-Path $PWD "artifacts\ps51"
+          $judgeScript = Join-Path $PWD "scripts\safe_pull_smoke_judge.ps1"
+          & $judgeScript -RepoRoot $PWD -ArtifactsDir $safePullDir
+
+      - name: Safe pull dry run (PowerShell 7)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $safePullDir = Join-Path $PWD "artifacts\ps7"
+          New-Item -Force -ItemType Directory $safePullDir | Out-Null
+          Write-Host ("SAFE_PULL_ARTIFACTS_DIR|ps=7|dir=" + $safePullDir)
+          $dry = $true
+          $dryLine = "WF_DRYRUN_TYPE|$($dry.GetType().FullName)|value=$dry"
+          Write-Host $dryLine
+          Set-Content -LiteralPath (Join-Path $safePullDir "wf_dryrun_type.txt") -Value $dryLine -Encoding utf8
+          $stdoutPath = Join-Path $safePullDir "safe_pull_invocation_stdout.txt"
+          $stderrPath = Join-Path $safePullDir "safe_pull_invocation_stderr.txt"
+          Set-Content -LiteralPath $stdoutPath -Value "" -Encoding utf8
+          Set-Content -LiteralPath $stderrPath -Value "" -Encoding utf8
+          $safePullScript = Join-Path $PWD "scripts\safe_pull_v1.ps1"
+          $args = @(
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            $safePullScript,
+            "-ArtifactsDir",
+            $safePullDir,
+            "-DryRun:$dry",
+            "-AllowStash:$true",
+            "-IncludeUntracked:$false",
+            "-RequireClean:$false"
+          )
+          $exitCode = 1
+          try {
+            $process = Start-Process -FilePath "pwsh" -ArgumentList $args -NoNewWindow -Wait -PassThru -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
+            $exitCode = $process.ExitCode
+          } catch {
+            Add-Content -LiteralPath $stderrPath -Value $_.Exception.Message -Encoding utf8
+          }
+          $invocation = [ordered]@{
+            shell = "pwsh"
+            exit_code = $exitCode
+            stdout_path = $stdoutPath
+            stderr_path = $stderrPath
+          }
+          $invocation | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $safePullDir "safe_pull_invocation.json") -Encoding utf8
+
+      - name: Safe pull smoke judge (PowerShell 7)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $safePullDir = Join-Path $PWD "artifacts\ps7"
+          $judgeScript = Join-Path $PWD "scripts\safe_pull_smoke_judge.ps1"
+          & $judgeScript -RepoRoot $PWD -ArtifactsDir $safePullDir
+
       - name: Run Foundation Gate
         shell: pwsh
         run: |

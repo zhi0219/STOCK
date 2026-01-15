@@ -81,6 +81,18 @@ def _read_text(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="replace") if path.exists() else ""
 
 
+def _read_invocation(input_dir: Path) -> tuple[dict[str, Any] | None, list[str]]:
+    errors: list[str] = []
+    invocation_path = input_dir / "safe_pull_invocation.json"
+    if not invocation_path.exists():
+        return None, errors
+    try:
+        return json.loads(invocation_path.read_text(encoding="utf-8")), errors
+    except json.JSONDecodeError:
+        errors.append("invocation_json_invalid")
+        return None, errors
+
+
 def _parse_markers(lines: list[str]) -> tuple[list[str], dict[str, dict[str, str]]]:
     errors: list[str] = []
     parsed: dict[str, dict[str, str]] = {}
@@ -176,9 +188,29 @@ def _validate_summary_text(summary_text: str) -> list[str]:
 
 def _check_contract(input_dir: Path) -> tuple[str, list[str]]:
     errors: list[str] = []
-    for artifact in REQUIRED_ARTIFACTS:
-        if not (input_dir / artifact).exists():
-            errors.append(f"missing_artifact:{artifact}")
+    missing_artifacts = [
+        artifact for artifact in REQUIRED_ARTIFACTS if not (input_dir / artifact).exists()
+    ]
+    invocation_payload, invocation_errors = _read_invocation(input_dir)
+    errors.extend(invocation_errors)
+    if missing_artifacts:
+        exit_code = None
+        if invocation_payload is not None:
+            exit_code = invocation_payload.get("exit_code")
+        if exit_code not in (None, 0):
+            errors.append("upstream_failed")
+            errors.append(f"upstream_failed_exit_code:{exit_code}")
+            stdout_path = invocation_payload.get("stdout_path") if invocation_payload else None
+            stderr_path = invocation_payload.get("stderr_path") if invocation_payload else None
+            if stdout_path:
+                errors.append(f"upstream_failed_stdout:{stdout_path}")
+            if stderr_path:
+                errors.append(f"upstream_failed_stderr:{stderr_path}")
+            for artifact in missing_artifacts:
+                errors.append(f"upstream_failed_missing_artifact:{artifact}")
+        else:
+            for artifact in missing_artifacts:
+                errors.append(f"missing_artifact:{artifact}")
 
     markers_path = input_dir / "safe_pull_markers.txt"
     marker_lines = [
