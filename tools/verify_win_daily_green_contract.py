@@ -20,7 +20,7 @@ REQUIRED_COMMAND_PATTERNS = [
     r"-WriteDocs",
     r"-WriteDocs[\s\S]*?\"NO\"",
     r"-AllowStash",
-    r"-DryRun",
+    r"(-DryRun|-Mode\s+(dry_run|apply))",
     r"-RequireClean",
     r"git status --porcelain",
     r"Start-Process",
