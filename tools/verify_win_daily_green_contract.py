@@ -20,7 +20,6 @@ REQUIRED_COMMAND_PATTERNS = [
     r"-WriteDocs",
     r"-WriteDocs[\s\S]*?\"NO\"",
     r"-AllowStash",
-    r"-DryRun",
     r"-RequireClean",
     r"git status --porcelain",
     r"Start-Process",
@@ -31,6 +30,9 @@ REQUIRED_COMMAND_PATTERNS = [
     r"safe_pull",
     r"repo_doctor",
 ]
+
+DRY_RUN_CANONICAL_PATTERN = r"-DryRun"
+DRY_RUN_LEGACY_PATTERN = r"-Mode\s+dry_run"
 
 DISALLOWED_COMMAND_PATTERNS = [
     r"Out-Host",
@@ -66,11 +68,12 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _check_contract(script_path: Path) -> tuple[str, list[str]]:
+def _check_contract(script_path: Path) -> tuple[str, list[str], list[str]]:
     errors: list[str] = []
+    warnings: list[str] = []
     if not script_path.exists():
         errors.append("missing_script")
-        return "FAIL", errors
+        return "FAIL", errors, warnings
 
     content = script_path.read_text(encoding="utf-8", errors="replace")
 
@@ -82,12 +85,19 @@ def _check_contract(script_path: Path) -> tuple[str, list[str]]:
         if not re.search(pattern, content):
             errors.append(f"missing_command_pattern:{pattern}")
 
+    if re.search(DRY_RUN_CANONICAL_PATTERN, content):
+        pass
+    elif re.search(DRY_RUN_LEGACY_PATTERN, content):
+        warnings.append("legacy_dry_run_mode_syntax")
+    else:
+        errors.append("missing_command_pattern:dry_run_syntax")
+
     for pattern in DISALLOWED_COMMAND_PATTERNS:
         if re.search(pattern, content):
             errors.append(f"disallowed_command_pattern:{pattern}")
 
     status = "PASS" if not errors else "FAIL"
-    return status, errors
+    return status, errors, warnings
 
 
 def validate_marker_output(output: str | Iterable[str]) -> tuple[bool, list[str]]:
@@ -122,10 +132,11 @@ def validate_marker_output(output: str | Iterable[str]) -> tuple[bool, list[str]
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv or [])
-    status, errors = _check_contract(args.script)
+    status, errors, warnings = _check_contract(args.script)
     payload = {
         "status": status,
         "errors": errors,
+        "warnings": warnings,
         "script": args.script.as_posix(),
         "ts_utc": _ts_utc(),
     }
@@ -133,12 +144,14 @@ def main(argv: list[str] | None = None) -> int:
     artifacts_dir = args.artifacts_dir
     _write_json(artifacts_dir / "verify_win_daily_green_contract.json", payload)
     (artifacts_dir / "verify_win_daily_green_contract.txt").write_text(
-        "\n".join(errors) if errors else "ok",
+        "\n".join(errors + warnings) if errors or warnings else "ok",
         encoding="utf-8",
     )
 
     print("WIN_DAILY_GREEN_CONTRACT_START")
-    print(f"{SUMMARY_MARKER}|status={status}|errors={len(errors)}")
+    print(
+        f"{SUMMARY_MARKER}|status={status}|errors={len(errors)}|warnings={len(warnings)}"
+    )
     print("WIN_DAILY_GREEN_CONTRACT_END")
 
     return 0 if status == "PASS" else 1

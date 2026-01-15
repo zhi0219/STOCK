@@ -488,6 +488,42 @@ fi
 
 if [[ ${rc} -eq 0 ]]; then
   set +e
+  python3 -m tools.verify_windows_foundation_workflow --artifacts-dir "${artifacts_dir}"
+  workflow_contract_exit=$?
+  set -e
+  if [[ ${workflow_contract_exit} -ne 0 ]]; then
+    status="FAIL"
+    failing_gate="verify_windows_foundation_workflow"
+    rc=${workflow_contract_exit}
+  fi
+fi
+
+if [[ ${rc} -eq 0 ]]; then
+  set +e
+  python3 -m tools.autoheal_collect --artifacts-dir "${artifacts_dir}/autoheal"
+  autoheal_collect_exit=$?
+  set -e
+  if [[ ${autoheal_collect_exit} -ne 0 ]]; then
+    status="FAIL"
+    failing_gate="autoheal_collect"
+    rc=${autoheal_collect_exit}
+  fi
+fi
+
+if [[ ${rc} -eq 0 ]]; then
+  set +e
+  python3 -m tools.verify_autoheal_contract --artifacts-dir "${artifacts_dir}/autoheal"
+  autoheal_contract_exit=$?
+  set -e
+  if [[ ${autoheal_contract_exit} -ne 0 ]]; then
+    status="FAIL"
+    failing_gate="verify_autoheal_contract"
+    rc=${autoheal_contract_exit}
+  fi
+fi
+
+if [[ ${rc} -eq 0 ]]; then
+  set +e
   python3 -m tools.verify_safe_pull_contract \
     --artifacts-dir "${artifacts_dir}" \
     --input-dir "fixtures/safe_pull_contract/good"

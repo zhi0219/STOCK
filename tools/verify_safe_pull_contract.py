@@ -91,6 +91,34 @@ def _parse_markers(lines: list[str]) -> tuple[list[str], dict[str, dict[str, str
     return errors, parsed
 
 
+def _resolve_input_dir(input_dir: Path, artifacts_dir: Path) -> Path:
+    if input_dir.exists() and input_dir.is_file():
+        pointer_text = input_dir.read_text(encoding="utf-8", errors="replace").strip()
+        if pointer_text:
+            candidate = Path(pointer_text)
+            if not candidate.is_absolute():
+                candidate = (Path.cwd() / candidate).resolve()
+            return candidate
+    latest_path = input_dir / "_latest.txt"
+    if latest_path.exists():
+        pointer_text = latest_path.read_text(encoding="utf-8", errors="replace").strip()
+        if pointer_text:
+            candidate = Path(pointer_text)
+            if not candidate.is_absolute():
+                candidate = (Path.cwd() / candidate).resolve()
+            return candidate
+    if input_dir == artifacts_dir and (artifacts_dir / "_latest.txt").exists():
+        pointer_text = (artifacts_dir / "_latest.txt").read_text(
+            encoding="utf-8", errors="replace"
+        ).strip()
+        if pointer_text:
+            candidate = Path(pointer_text)
+            if not candidate.is_absolute():
+                candidate = (Path.cwd() / candidate).resolve()
+            return candidate
+    return input_dir
+
+
 def _validate_summary(payload: dict[str, Any]) -> list[str]:
     required_keys = [
         "status",
@@ -101,6 +129,7 @@ def _validate_summary(payload: dict[str, Any]) -> list[str]:
         "reason",
         "phase",
         "run_id",
+        "fs_run_id",
         "evidence_artifact",
     ]
     errors: list[str] = []
@@ -186,6 +215,7 @@ def _check_contract(input_dir: Path) -> tuple[str, list[str]]:
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     input_dir = args.input_dir if args.input_dir is not None else args.artifacts_dir
+    input_dir = _resolve_input_dir(input_dir, args.artifacts_dir)
     status, errors = _check_contract(input_dir)
 
     payload = {
