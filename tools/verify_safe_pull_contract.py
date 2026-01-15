@@ -22,6 +22,7 @@ REQUIRED_MARKERS = [
 REQUIRED_ARTIFACTS = [
     "safe_pull_run.json",
     "safe_pull_summary.json",
+    "safe_pull_summary.txt",
     "safe_pull_out.txt",
     "safe_pull_err.txt",
     "safe_pull_markers.txt",
@@ -35,6 +36,18 @@ REQUIRED_ARTIFACTS = [
     "safe_pull_precheck_head.txt",
     "safe_pull_precheck_upstream.txt",
     "safe_pull_precheck_ahead_behind.txt",
+    "git_status_porcelain.out.txt",
+    "git_status_porcelain.err.txt",
+    "git_fetch.out.txt",
+    "git_fetch.err.txt",
+    "git_checkout_main.out.txt",
+    "git_checkout_main.err.txt",
+    "git_pull_ff_only.out.txt",
+    "git_pull_ff_only.err.txt",
+    "git_rev_parse_head.out.txt",
+    "git_rev_parse_head.err.txt",
+    "git_rev_parse_origin_main.out.txt",
+    "git_rev_parse_origin_main.err.txt",
 ]
 
 
@@ -146,6 +159,21 @@ def _validate_invariants(
     return errors
 
 
+def _validate_summary_text(summary_text: str) -> list[str]:
+    errors: list[str] = []
+    if not summary_text:
+        return ["summary_txt_missing"]
+    first_line = summary_text.splitlines()[0] if summary_text else ""
+    if not first_line.startswith("SAFE_PULL_SUMMARY|"):
+        errors.append("summary_txt_missing_marker")
+        return errors
+    required_tokens = ["repo=", "evidence_dir=", "head=", "origin_main=", "ts_utc="]
+    for token in required_tokens:
+        if token not in first_line:
+            errors.append(f"summary_txt_missing_token:{token}")
+    return errors
+
+
 def _check_contract(input_dir: Path) -> tuple[str, list[str]]:
     errors: list[str] = []
     for artifact in REQUIRED_ARTIFACTS:
@@ -178,6 +206,7 @@ def _check_contract(input_dir: Path) -> tuple[str, list[str]]:
 
     errors.extend(_validate_summary(summary_payload))
     errors.extend(_validate_invariants(input_dir, summary_payload, marker_payloads))
+    errors.extend(_validate_summary_text(_read_text(input_dir / "safe_pull_summary.txt")))
 
     status = "PASS" if not errors else "FAIL"
     return status, errors
