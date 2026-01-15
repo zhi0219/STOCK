@@ -36,6 +36,7 @@ REQUIRED_ARTIFACTS = [
     "safe_pull_precheck_upstream.txt",
     "safe_pull_precheck_ahead_behind.txt",
 ]
+CURRENT_CONTRACT_VERSION = 2
 
 
 def _ts_utc() -> str:
@@ -146,6 +147,21 @@ def _validate_invariants(
     return errors
 
 
+def _validate_contract_version(
+    summary: dict[str, Any], run_payload: dict[str, Any]
+) -> list[str]:
+    errors: list[str] = []
+    supported_versions = {CURRENT_CONTRACT_VERSION, CURRENT_CONTRACT_VERSION - 1}
+    summary_version = summary.get("contract_version")
+    run_version = run_payload.get("contract_version")
+    if summary_version is None or run_version is None:
+        errors.append("missing_contract_version")
+        return errors
+    if summary_version not in supported_versions or run_version not in supported_versions:
+        errors.append("unsupported_contract_version")
+    return errors
+
+
 def _check_contract(input_dir: Path) -> tuple[str, list[str]]:
     errors: list[str] = []
     for artifact in REQUIRED_ARTIFACTS:
@@ -176,8 +192,19 @@ def _check_contract(input_dir: Path) -> tuple[str, list[str]]:
     else:
         summary_payload = {}
 
+    run_payload: dict[str, Any] = {}
+    run_path = input_dir / "safe_pull_run.json"
+    if run_path.exists():
+        try:
+            run_payload = json.loads(run_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            errors.append("run_json_invalid")
+    else:
+        run_payload = {}
+
     errors.extend(_validate_summary(summary_payload))
     errors.extend(_validate_invariants(input_dir, summary_payload, marker_payloads))
+    errors.extend(_validate_contract_version(summary_payload, run_payload))
 
     status = "PASS" if not errors else "FAIL"
     return status, errors

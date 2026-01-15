@@ -23,5 +23,6 @@
       "status": "FAIL",
       "ts_utc": "2024-01-01T00:00:01Z"
     }
-  ]
+  ],
+  "contract_version": 2
 }

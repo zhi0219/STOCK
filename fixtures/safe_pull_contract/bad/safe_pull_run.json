@@ -17,5 +17,6 @@
   "status": "PASS",
   "reason": "ok",
   "next": "none",
-  "phases": []
+  "phases": [],
+  "contract_version": 2
 }

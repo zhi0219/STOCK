@@ -28,7 +28,7 @@ REQUIRED_COMMAND_PATTERNS = [
     r"pull\.rebase=false",
     r"pull --ff-only",
     r"stash\",\s*\"push",
-    r"git status --porcelain",
+    r"status --porcelain",
     r"ls-files -u",
     r"rev-list --left-right --count",
     r"symbolic-ref -q --short HEAD",

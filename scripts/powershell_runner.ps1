@@ -1,4 +1,14 @@
 $ErrorActionPreference = "Stop"
+$script:Utf8NoBomEncoding = New-Object System.Text.UTF8Encoding $false
+
+function Write-Utf8NoBomText {
+  param(
+    [string]$Path,
+    [string]$Content
+  )
+  if ($null -eq $Content) { $Content = "" }
+  [IO.File]::WriteAllText($Path, $Content, $script:Utf8NoBomEncoding)
+}
 
 function Get-PsRunnerRepoRoot {
   param(
@@ -45,7 +55,7 @@ function Initialize-PsRunnerArtifacts {
   }
   foreach ($entry in $paths.GetEnumerator()) {
     if (-not (Test-Path -LiteralPath $entry.Value)) {
-      Set-Content -LiteralPath $entry.Value -Value "" -Encoding utf8
+      Write-Utf8NoBomText -Path $entry.Value -Content ""
     }
   }
   return $paths
@@ -185,13 +195,13 @@ function Invoke-PsRunner {
     ts_utc = $ts
     }
     $summaryJson = $summary | ConvertTo-Json -Depth 6
-    Set-Content -LiteralPath $paths.SummaryPath -Value $summaryJson -Encoding utf8
+    Write-Utf8NoBomText -Path $paths.SummaryPath -Content $summaryJson
 
     $markers.Add("$MarkerPrefix`_SUMMARY|status=$status|reason=$reason|exit_code=$exitCode|stdout=$($paths.StdoutPath)|stderr=$($paths.StderrPath)")
     $markers.Add("$MarkerPrefix`_END")
     Write-Host $markers[-2]
     Write-Host $markers[-1]
-    Set-Content -LiteralPath $paths.MarkersPath -Value ($markers -join "`n") -Encoding utf8
+    Write-Utf8NoBomText -Path $paths.MarkersPath -Content ($markers -join "`n")
   }
 
   return [PSCustomObject]@{

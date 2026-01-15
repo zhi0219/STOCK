@@ -1,0 +1,14 @@
+{
+  "status": "PASS",
+  "reason": "ok",
+  "phase": "summary",
+  "run_id": "2024-01-01T00:00:00Z-1234",
+  "mode": "dry_run",
+  "next": "none",
+  "dry_run": true,
+  "notes": "fetch/pull_skipped",
+  "artifacts_dir": "artifacts/safe_pull",
+  "evidence_artifact": "artifacts/safe_pull/safe_pull_summary.json",
+  "warnings": [],
+  "ts_utc": "2024-01-01T00:00:00Z"
+}

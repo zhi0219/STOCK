@@ -45,6 +45,18 @@ class VerifySafePullContractTests(unittest.TestCase):
                 )
                 self.assertNotEqual(rc, 0, msg=f"fixture passed: {fixture_dir}")
 
+    def test_contract_version_errors(self) -> None:
+        base_dir = Path("fixtures") / "safe_pull_contract" / "bad"
+        missing_dir = base_dir / "missing_contract_version"
+        unsupported_dir = base_dir / "unsupported_contract_version"
+        for fixture_dir, expected in [
+            (missing_dir, "missing_contract_version"),
+            (unsupported_dir, "unsupported_contract_version"),
+        ]:
+            status, errors = verify_safe_pull_contract._check_contract(fixture_dir)
+            self.assertEqual(status, "FAIL")
+            self.assertIn(expected, errors)
+
 
 if __name__ == "__main__":
     unittest.main()

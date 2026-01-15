@@ -5,6 +5,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$contractVersion = 2
 
 function Get-UtcTimestamp {
   return (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
@@ -31,7 +32,7 @@ function Fail-DailyGreen {
   if ([string]::IsNullOrWhiteSpace($FailedStep)) { $FailedStep = "unknown" }
   if ([string]::IsNullOrWhiteSpace($Next)) { $Next = "none" }
   $runDirValue = if ([string]::IsNullOrWhiteSpace($script:DailyGreenRunDir)) { "unknown" } else { $script:DailyGreenRunDir }
-  Write-Host ("DAILY_GREEN_SUMMARY|status=FAIL|failed_step=" + $FailedStep + "|next=" + $Next + "|run_dir=" + $runDirValue)
+  Write-Host ("DAILY_GREEN_SUMMARY|status=FAIL|failed_step=" + $FailedStep + "|next=" + $Next + "|run_dir=" + $runDirValue + "|contract_version=" + $contractVersion)
   Write-Host "DAILY_GREEN_END"
   exit 1
 }
@@ -136,7 +137,7 @@ if (-not $pythonExe) {
   Fail-DailyGreen -FailedStep "preflight_python" -Next "install_python_and_retry"
 }
 
-Write-Host ("DAILY_GREEN_START|ts_utc=" + $ts + "|repo_root=" + $repoRootFull + "|artifacts_dir=" + $artifactsRoot + "|run_dir=" + $runDir + "|python=" + $pythonExe + "|autostash=" + $autoStashValue)
+Write-Host ("DAILY_GREEN_START|ts_utc=" + $ts + "|repo_root=" + $repoRootFull + "|artifacts_dir=" + $artifactsRoot + "|run_dir=" + $runDir + "|python=" + $pythonExe + "|autostash=" + $autoStashValue + "|contract_version=" + $contractVersion)
 
 $gitExe = Resolve-GitExe
 if (-not $gitExe) {
@@ -168,7 +169,8 @@ $safePullArgs = @(
   $safePullScript,
   "-ArtifactsDir",
   $safePullDir,
-  "-DryRun:$false",
+  "-Mode",
+  "apply",
   "-AllowStash:$allowStash",
   "-IncludeUntracked:$false",
   "-RequireClean:$requireClean"
@@ -217,6 +219,6 @@ if (-not [string]::IsNullOrWhiteSpace($postCombined)) {
 }
 
 Write-DailyLog -Message "daily green pass"
-Write-Host ("DAILY_GREEN_SUMMARY|status=PASS|failed_step=none|next=none|run_dir=" + $runDir)
+Write-Host ("DAILY_GREEN_SUMMARY|status=PASS|failed_step=none|next=none|run_dir=" + $runDir + "|contract_version=" + $contractVersion)
 Write-Host "DAILY_GREEN_END"
 exit 0

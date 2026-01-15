@@ -7,6 +7,18 @@ on:
 jobs:
   windows-foundation:
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: ps51
+            shell: powershell
+            ps_exe: powershell.exe
+            artifacts_dir: artifacts/ps51
+          - name: ps7
+            shell: pwsh
+            ps_exe: pwsh
+            artifacts_dir: artifacts/ps7
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -17,21 +29,30 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        shell: pwsh
+        shell: ${{ matrix.shell }}
         run: |
           python -m pip install --upgrade pip
           if (Test-Path "requirements.txt") { python -m pip install -r requirements.txt }
           if (Test-Path "requirements-dev.txt") { python -m pip install -r requirements-dev.txt }
 
-      - name: Run Foundation Gate
-        shell: pwsh
+      - name: Run safe_pull (${{ matrix.name }})
+        shell: ${{ matrix.shell }}
         run: |
-          New-Item -Force -ItemType Directory artifacts | Out-Null
-          python -m tools.verify_foundation --artifacts-dir artifacts
+          New-Item -Force -ItemType Directory ${{ matrix.artifacts_dir }} | Out-Null
+          $safePullScript = Join-Path "scripts" "safe_pull_v1.ps1"
+          & ${{ matrix.ps_exe }} -NoProfile -ExecutionPolicy Bypass -File $safePullScript -Mode dry_run -ArtifactsDir ${{ matrix.artifacts_dir }}
+          $latestPath = Join-Path ${{ matrix.artifacts_dir }} "safe_pull" "_latest.txt"
+          $latestDir = (Get-Content -Raw -LiteralPath $latestPath).Trim()
+          python -m tools.verify_safe_pull_contract --artifacts-dir (Join-Path ${{ matrix.artifacts_dir }} "contract") --input-dir $latestDir
+
+      - name: Run Foundation Gate (${{ matrix.name }})
+        shell: ${{ matrix.shell }}
+        run: |
+          python -m tools.verify_foundation --artifacts-dir ${{ matrix.artifacts_dir }}
 
       - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: windows-foundation-artifacts
+          name: windows-foundation-artifacts-${{ matrix.name }}
           path: artifacts/**
