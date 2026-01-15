@@ -606,10 +606,12 @@ try {
 
   $porcelainLines = @()
   if (-not [string]::IsNullOrWhiteSpace($statusBefore.Stdout)) {
-    $porcelainLines = $statusBefore.Stdout.Split("`n") | ForEach-Object { $_.TrimEnd() } | Where-Object { $_ }
+    $porcelainLines = @(
+      $statusBefore.Stdout.Split("`n") | ForEach-Object { $_.TrimEnd() } | Where-Object { $_ }
+    )
   }
-  $untrackedLines = $porcelainLines | Where-Object { $_ -like "??*" }
-  $trackedLines = $porcelainLines | Where-Object { $_ -notlike "??*" }
+  $untrackedLines = @($porcelainLines | Where-Object { $_ -like "??*" })
+  $trackedLines = @($porcelainLines | Where-Object { $_ -notlike "??*" })
 
   $upstream = ""
   $upstreamStatus = "NO_UPSTREAM"
@@ -850,7 +852,9 @@ try {
 
   $postLines = @()
   if (-not [string]::IsNullOrWhiteSpace($statusAfter.Stdout)) {
-    $postLines = $statusAfter.Stdout.Split("`n") | ForEach-Object { $_.TrimEnd() } | Where-Object { $_ }
+    $postLines = @(
+      $statusAfter.Stdout.Split("`n") | ForEach-Object { $_.TrimEnd() } | Where-Object { $_ }
+    )
   }
   $postAhead = $ahead
   $postBehind = $behind
